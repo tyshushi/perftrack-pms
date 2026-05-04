@@ -70,8 +70,6 @@ class Department(Base):
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     users      = relationship("User", back_populates="department")
-    children   = relationship("Department", backref="parent", foreign_keys=[parent_id])
-
 
 class User(Base):
     __tablename__ = "users"
