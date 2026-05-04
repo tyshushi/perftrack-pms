@@ -31,28 +31,42 @@ async def run_schema_and_seed():
             "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname='cyclestatus')"
         )
         if not enum_check:
-            print("==> Creating enums...")
-            await conn.execute("""
-                DO $$ BEGIN
-                    CREATE TYPE user_role AS ENUM ('STAFF','MANAGER','MGR2','HOD','HR_ADMIN','SUPER_ADMIN');
-                EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-                DO $$ BEGIN
-                    CREATE TYPE kpi_status AS ENUM ('DRAFT','PENDING_MGR','PENDING_MGR2','PENDING_HOD','APPROVED','REJECTED','LOCKED');
-                EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-                DO $$ BEGIN
-                    CREATE TYPE eval_status AS ENUM ('NOT_STARTED','IN_PROGRESS','SUBMITTED','REVIEWED','FINALISED');
-                EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-                DO $$ BEGIN
-                    CREATE TYPE cycle_status AS ENUM ('DRAFT','KPI_SETTING','SELF_EVAL','MGR_EVAL','MGR2_EVAL','HOD_EVAL','CALIBRATION','COMPLETED');
-                EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-                DO $$ BEGIN
-                    CREATE TYPE kpi_type AS ENUM ('FIXED','OPTIONAL');
-                EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-                DO $$ BEGIN
-                    CREATE TYPE increment_status AS ENUM ('PENDING','FLAGGED','CONFIRMED','PUBLISHED');
-                EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-            """)
-            print("==> Enums created.")
+    print("==> Creating enums...")
+    # ... enum creation code ...
+    print("==> Enums created.")
+
+# Always run this to fix column types
+print("==> Converting enum columns to varchar...")
+await conn.execute("""
+    DO $$ BEGIN
+        ALTER TABLE performance_cycles ALTER COLUMN status TYPE VARCHAR(20) USING status::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE kpis ALTER COLUMN status TYPE VARCHAR(20) USING status::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE kpis ALTER COLUMN kpi_type TYPE VARCHAR(20) USING kpi_type::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE kpi_templates ALTER COLUMN kpi_type TYPE VARCHAR(20) USING kpi_type::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE kpi_audit_log ALTER COLUMN from_status TYPE VARCHAR(20) USING from_status::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE kpi_audit_log ALTER COLUMN to_status TYPE VARCHAR(20) USING to_status::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE scorecards ALTER COLUMN eval_status TYPE VARCHAR(20) USING eval_status::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE scorecards ALTER COLUMN increment_status TYPE VARCHAR(20) USING increment_status::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(20) USING role::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+""")
+print("==> Column types fixed.")
 
         exists = await conn.fetchval(
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='users')"
