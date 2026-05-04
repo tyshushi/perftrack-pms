@@ -24,7 +24,10 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 export default function App() {
   const fetchMe = useAuthStore((s) => s.fetchMe);
 
-  useEffect(() => { fetchMe(); }, []);
+  useEffect(() => { 
+  const token = localStorage.getItem('access_token');
+  if (token) fetchMe(); 
+}, []);
 
   return (
     <QueryClientProvider client={queryClient}>
