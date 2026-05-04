@@ -1,4 +1,3 @@
-"""Users route with CSV import and profile management"""
 from uuid import UUID
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -17,17 +16,6 @@ router = APIRouter()
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────
-
-class UserCreate(BaseModel):
-    employee_id:   str
-    email:         str
-    full_name:     str
-    role:          str
-    job_grade:     Optional[str] = None
-    department_id: Optional[UUID] = None
-    manager_id:    Optional[UUID] = None
-    password:      str
-
 
 class ManagerUpdate(BaseModel):
     direct_manager_id:    Optional[UUID] = None
@@ -53,11 +41,30 @@ class ImportConfirmRow(BaseModel):
     employee_type:   Optional[str] = None
     category:        Optional[str] = None
     employment_unit: Optional[str] = None
-    action:          str  # create, update, deactivate
+    dm_code:         Optional[str] = None
+    rm_code:         Optional[str] = None
+    hod_code:        Optional[str] = None
+    action:          str
 
 
 class ImportConfirmRequest(BaseModel):
     rows: List[ImportConfirmRow]
+
+
+class UserCreate(BaseModel):
+    employee_id:   str
+    email:         str
+    full_name:     str
+    role:          str
+    job_grade:     Optional[str]  = None
+    department_id: Optional[UUID] = None
+    manager_id:    Optional[UUID] = None
+    password:      str
+
+
+class PasswordChange(BaseModel):
+    current_password: Optional[str] = None
+    new_password:     str
 
 
 # ── Constants ──────────────────────────────────────────────────────────────
@@ -66,10 +73,8 @@ REQUIRED_COLUMNS = {
     "Employee Code", "Name", "Employment Unit", "Department",
     "Division", "Section", "Position Title", "Grade", "Category",
     "Country", "Work Location", "Employee Type", "Hire Date",
-    "Gender", "ROLE"
+    "Gender", "ROLE",
 }
-
-VALID_ROLES = {"STAFF", "MANAGER", "MGR2", "HOD", "HR_ADMIN", "SUPER_ADMIN"}
 
 
 def normalize_role(role_str: str) -> str:
@@ -101,16 +106,16 @@ def normalize_role(role_str: str) -> str:
 def parse_date(date_str: str) -> Optional[date]:
     if not date_str or not date_str.strip():
         return None
+    from datetime import datetime
     for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y", "%d-%m-%Y", "%d %b %Y", "%d %B %Y"):
         try:
-            from datetime import datetime
             return datetime.strptime(date_str.strip(), fmt).date()
         except ValueError:
             continue
     return None
 
 
-# ── User endpoints ─────────────────────────────────────────────────────────
+# ── User list ──────────────────────────────────────────────────────────────
 
 @router.get("/")
 async def list_users(
@@ -134,11 +139,11 @@ async def list_users(
             "full_name":             u.full_name,
             "role":                  u.role,
             "job_grade":             u.job_grade,
-            "department_id":         str(u.department_id) if u.department_id else None,
-            "manager_id":            str(u.manager_id) if u.manager_id else None,
-            "direct_manager_id":     str(u.direct_manager_id) if u.direct_manager_id else None,
-            "reviewing_manager_id":  str(u.reviewing_manager_id) if u.reviewing_manager_id else None,
-            "hod_id":                str(u.hod_id) if u.hod_id else None,
+            "department_id":         str(u.department_id)         if u.department_id         else None,
+            "manager_id":            str(u.manager_id)            if u.manager_id            else None,
+            "direct_manager_id":     str(u.direct_manager_id)     if u.direct_manager_id     else None,
+            "reviewing_manager_id":  str(u.reviewing_manager_id)  if u.reviewing_manager_id  else None,
+            "hod_id":                str(u.hod_id)                if u.hod_id                else None,
             "approval_levels":       u.approval_levels or 3,
             "is_active":             u.is_active,
             "position_title":        u.position_title,
@@ -156,36 +161,39 @@ async def list_users(
     ]
 
 
+# ── Direct reports ─────────────────────────────────────────────────────────
+
 @router.get("/direct-reports")
 async def direct_reports(
     db:           AsyncSession = Depends(get_db),
     current_user: User         = Depends(get_current_user),
 ):
-    """Get all users where current user is direct manager, reviewing manager, or HOD."""
     result = await db.execute(
         select(User).where(
             User.is_active == True,
             (User.direct_manager_id    == current_user.id) |
             (User.reviewing_manager_id == current_user.id) |
-            (User.hod_id               == current_user.id)
+            (User.hod_id               == current_user.id),
         ).order_by(User.full_name)
     )
     users = result.scalars().all()
     return [
         {
-            "id":           str(u.id),
-            "full_name":    u.full_name,
-            "employee_id":  u.employee_id,
-            "role":         u.role,
-            "job_grade":    u.job_grade,
-            "direct_manager_id":    str(u.direct_manager_id)    if u.direct_manager_id    else None,
-            "reviewing_manager_id": str(u.reviewing_manager_id) if u.reviewing_manager_id else None,
-            "hod_id":               str(u.hod_id)               if u.hod_id               else None,
-            "approval_levels":      u.approval_levels or 3,
+            "id":                    str(u.id),
+            "full_name":             u.full_name,
+            "employee_id":           u.employee_id,
+            "role":                  u.role,
+            "job_grade":             u.job_grade,
+            "direct_manager_id":     str(u.direct_manager_id)     if u.direct_manager_id     else None,
+            "reviewing_manager_id":  str(u.reviewing_manager_id)  if u.reviewing_manager_id  else None,
+            "hod_id":                str(u.hod_id)                if u.hod_id                else None,
+            "approval_levels":       u.approval_levels or 3,
         }
         for u in users
     ]
 
+
+# ── Create user ────────────────────────────────────────────────────────────
 
 @router.post("/")
 async def create_user(
@@ -209,19 +217,20 @@ async def create_user(
     return {"id": str(user.id), "email": user.email}
 
 
+# ── User profile ───────────────────────────────────────────────────────────
+
 @router.get("/{user_id}/profile")
 async def get_user_profile(
     user_id:      UUID,
     db:           AsyncSession = Depends(get_db),
     current_user: User         = Depends(get_current_user),
 ):
-    """Get full user profile including all org fields and manager details."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "User not found")
 
-    async def get_manager_info(uid):
+    async def mgr_info(uid):
         if not uid:
             return None
         r = await db.execute(select(User).where(User.id == uid))
@@ -236,7 +245,6 @@ async def get_user_profile(
             "email":       u.email,
         }
 
-    # Get department name
     dept_name = None
     if user.department_id:
         from app.models.user import Department
@@ -257,8 +265,6 @@ async def get_user_profile(
         "department_name": dept_name,
         "is_active":       user.is_active,
         "approval_levels": user.approval_levels or 3,
-
-        # Org fields
         "employment_unit": user.employment_unit,
         "division":        user.division,
         "section":         user.section,
@@ -269,13 +275,13 @@ async def get_user_profile(
         "employee_type":   user.employee_type,
         "hire_date":       str(user.hire_date) if user.hire_date else None,
         "gender":          user.gender,
-
-        # Approval chain
-        "direct_manager":    await get_manager_info(user.direct_manager_id),
-        "reviewing_manager": await get_manager_info(user.reviewing_manager_id),
-        "hod":               await get_manager_info(user.hod_id),
+        "direct_manager":    await mgr_info(user.direct_manager_id),
+        "reviewing_manager": await mgr_info(user.reviewing_manager_id),
+        "hod":               await mgr_info(user.hod_id),
     }
 
+
+# ── Update managers ────────────────────────────────────────────────────────
 
 @router.patch("/{user_id}/managers")
 async def update_managers(
@@ -284,7 +290,6 @@ async def update_managers(
     db:           AsyncSession = Depends(get_db),
     current_user: User         = Depends(get_current_user),
 ):
-    """HR Admin or Manager can update an employee's reporting managers."""
     if current_user.role not in ["HR_ADMIN", "SUPER_ADMIN", "MANAGER", "MGR2", "HOD"]:
         raise HTTPException(403, "Not authorised to change reporting managers")
 
@@ -294,11 +299,11 @@ async def update_managers(
         raise HTTPException(404, "User not found")
 
     if body.direct_manager_id    is not None:
-        user.direct_manager_id    = body.direct_manager_id    if body.direct_manager_id    != UUID("00000000-0000-0000-0000-000000000000") else None
+        user.direct_manager_id    = body.direct_manager_id    or None
     if body.reviewing_manager_id is not None:
-        user.reviewing_manager_id = body.reviewing_manager_id if body.reviewing_manager_id != UUID("00000000-0000-0000-0000-000000000000") else None
+        user.reviewing_manager_id = body.reviewing_manager_id or None
     if body.hod_id               is not None:
-        user.hod_id               = body.hod_id               if body.hod_id               != UUID("00000000-0000-0000-0000-000000000000") else None
+        user.hod_id               = body.hod_id               or None
     if body.approval_levels      is not None:
         user.approval_levels      = body.approval_levels
 
@@ -306,14 +311,15 @@ async def update_managers(
     return {"message": "Managers updated successfully"}
 
 
+# ── Change password ────────────────────────────────────────────────────────
+
 @router.patch("/{user_id}/password")
 async def change_password(
-    user_id: UUID,
-    body:    dict,
-    db:      AsyncSession = Depends(get_db),
-    current_user: User    = Depends(get_current_user),
+    user_id:      UUID,
+    body:         PasswordChange,
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(get_current_user),
 ):
-    """User can change their own password. HR Admin can change anyone's."""
     if str(current_user.id) != str(user_id) and current_user.role not in ["HR_ADMIN", "SUPER_ADMIN"]:
         raise HTTPException(403, "Not authorised")
 
@@ -323,20 +329,19 @@ async def change_password(
         raise HTTPException(404, "User not found")
 
     from app.core.security import hash_password, verify_password
-    if str(current_user.id) == str(user_id):
-        if not verify_password(body.get("current_password", ""), user.hashed_password):
+    if str(current_user.id) == str(user_id) and body.current_password:
+        if not verify_password(body.current_password, user.hashed_password):
             raise HTTPException(400, "Current password is incorrect")
 
-    new_password = body.get("new_password", "")
-    if len(new_password) < 8:
+    if not body.new_password or len(body.new_password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
 
-    user.hashed_password = hash_password(new_password)
+    user.hashed_password = hash_password(body.new_password)
     await db.flush()
     return {"message": "Password changed successfully"}
 
 
-# ── CSV Import ─────────────────────────────────────────────────────────────
+# ── CSV import preview ─────────────────────────────────────────────────────
 
 @router.post("/import/preview")
 async def import_preview(
@@ -344,7 +349,6 @@ async def import_preview(
     db:           AsyncSession = Depends(get_db),
     _:            User         = Depends(require_hr_admin),
 ):
-    """Parse CSV and return preview: NEW, DUPLICATE, MISSING."""
     content = await file.read()
     try:
         text = content.decode("utf-8-sig")
@@ -356,8 +360,7 @@ async def import_preview(
     if not reader.fieldnames:
         raise HTTPException(400, "CSV file is empty or unreadable")
 
-    csv_columns = set(reader.fieldnames)
-    missing_cols = REQUIRED_COLUMNS - csv_columns
+    missing_cols = REQUIRED_COLUMNS - set(reader.fieldnames)
     if missing_cols:
         raise HTTPException(400, f"Missing columns: {', '.join(sorted(missing_cols))}")
 
@@ -365,43 +368,35 @@ async def import_preview(
     if not rows:
         raise HTTPException(400, "CSV has no data rows")
 
-    # Fetch all existing users
     result = await db.execute(select(User))
     existing_users = result.scalars().all()
     by_code  = {u.employee_id: u for u in existing_users}
     by_email = {u.email: u for u in existing_users}
 
-    # Build employee code lookup for manager matching
-    code_to_id = {u.employee_id: str(u.id) for u in existing_users}
-
     csv_codes = set()
     preview   = []
 
     for i, row in enumerate(rows, start=2):
-        emp_code  = row.get("Employee Code", "").strip()
-        name      = row.get("Name", "").strip()
-        email     = row.get("Email", row.get("email", "")).strip()
-        dept      = row.get("Department", "").strip()
-        division  = row.get("Division", "").strip()
-        section   = row.get("Section", "").strip()
-        position  = row.get("Position Title", "").strip()
-        grade     = row.get("Grade", "").strip()
-        role_raw  = row.get("ROLE", "").strip()
-        role      = normalize_role(role_raw)
+        emp_code = row.get("Employee Code", "").strip()
+        name     = row.get("Name", "").strip()
+        email    = row.get("Email", row.get("email", "")).strip()
+        dept     = row.get("Department", "").strip()
+        division = row.get("Division", "").strip()
+        section  = row.get("Section", "").strip()
+        position = row.get("Position Title", "").strip()
+        grade    = row.get("Grade", "").strip()
+        role     = normalize_role(row.get("ROLE", ""))
         hire_date = row.get("Hire Date", "").strip()
-        gender    = row.get("Gender", "").strip()
-        country   = row.get("Country", "").strip()
-        work_loc  = row.get("Work Location", "").strip()
-        emp_type  = row.get("Employee Type", "").strip()
-        category  = row.get("Category", "").strip()
-        emp_unit  = row.get("Employment Unit", "").strip()
-
-        # Optional manager columns from CSV
+        gender   = row.get("Gender", "").strip()
+        country  = row.get("Country", "").strip()
+        work_loc = row.get("Work Location", "").strip()
+        emp_type = row.get("Employee Type", "").strip()
+        category = row.get("Category", "").strip()
+        emp_unit = row.get("Employment Unit", "").strip()
         dm_code  = row.get("Direct Manager Code", row.get("Manager Code", "")).strip()
         rm_code  = row.get("Reviewing Manager Code", "").strip()
         hod_code = row.get("HOD Code", "").strip()
 
-        # Generate email if missing
         if not email and emp_code:
             email = f"{emp_code.lower()}@company.local"
 
@@ -442,11 +437,10 @@ async def import_preview(
 
         if existing:
             changes = {}
-            if name      and existing.full_name  != name:  changes["name"]  = {"from": existing.full_name,  "to": name}
-            if grade     and existing.job_grade   != grade: changes["grade"] = {"from": existing.job_grade,   "to": grade}
-            if role      and existing.role        != role:  changes["role"]  = {"from": existing.role,        "to": role}
-            if position  and existing.position_title != position: changes["position"] = {"from": existing.position_title, "to": position}
-
+            if name     and existing.full_name     != name:     changes["name"]     = {"from": existing.full_name,     "to": name}
+            if grade    and existing.job_grade      != grade:    changes["grade"]    = {"from": existing.job_grade,      "to": grade}
+            if role     and existing.role           != role:     changes["role"]     = {"from": existing.role,           "to": role}
+            if position and existing.position_title != position: changes["position"] = {"from": existing.position_title, "to": position}
             preview.append({
                 **base,
                 "status":  "DUPLICATE",
@@ -460,9 +454,7 @@ async def import_preview(
                 "message": "Will be created as a new user",
             })
 
-    # Find MISSING employees
-    active_users = [u for u in existing_users if u.is_active]
-    for user in active_users:
+    for user in [u for u in existing_users if u.is_active]:
         if user.employee_id not in csv_codes:
             preview.append({
                 "row":            None,
@@ -489,16 +481,19 @@ async def import_preview(
                 "message":        "In system but not in CSV — may have left the organisation",
             })
 
-    summary = {
-        "total_in_csv": len(rows),
-        "new":          sum(1 for p in preview if p["status"] == "NEW"),
-        "duplicates":   sum(1 for p in preview if p["status"] == "DUPLICATE"),
-        "missing":      sum(1 for p in preview if p["status"] == "MISSING"),
-        "errors":       sum(1 for p in preview if p["status"] == "ERROR"),
+    return {
+        "summary": {
+            "total_in_csv": len(rows),
+            "new":          sum(1 for p in preview if p["status"] == "NEW"),
+            "duplicates":   sum(1 for p in preview if p["status"] == "DUPLICATE"),
+            "missing":      sum(1 for p in preview if p["status"] == "MISSING"),
+            "errors":       sum(1 for p in preview if p["status"] == "ERROR"),
+        },
+        "rows": preview,
     }
 
-    return {"summary": summary, "rows": preview}
 
+# ── CSV import confirm ─────────────────────────────────────────────────────
 
 @router.post("/import/confirm")
 async def import_confirm(
@@ -506,42 +501,32 @@ async def import_confirm(
     db:   AsyncSession         = Depends(get_db),
     _:    User                 = Depends(require_hr_admin),
 ):
-    """Apply confirmed import actions."""
     from app.core.security import hash_password
     from datetime import datetime as dt
 
-    # Build lookup maps
     result = await db.execute(select(User))
-    all_users = result.scalars().all()
-    by_code   = {u.employee_id: u for u in all_users}
+    all_users  = result.scalars().all()
+    by_code    = {u.employee_id: u for u in all_users}
     code_to_id = {u.employee_id: u.id for u in all_users}
 
-    # Fetch departments
     from app.models.user import Department
     dr = await db.execute(select(Department).where(Department.is_active == True))
-    all_depts = dr.scalars().all()
-    dept_by_name = {d.name.lower(): d.id for d in all_depts}
+    dept_by_name = {d.name.lower(): d.id for d in dr.scalars().all()}
 
     created = updated = deactivated = skipped = 0
 
     for row in body.rows:
-        # Resolve department
-        dept_id = None
-        if row.department:
-            dept_id = dept_by_name.get(row.department.lower())
-
-        # Resolve manager IDs from codes
-        dm_id  = code_to_id.get(getattr(row, 'dm_code',  None) or "") if hasattr(row, 'dm_code')  else None
-        rm_id  = code_to_id.get(getattr(row, 'rm_code',  None) or "") if hasattr(row, 'rm_code')  else None
-        hod_id = code_to_id.get(getattr(row, 'hod_code', None) or "") if hasattr(row, 'hod_code') else None
-
-        parsed_hire_date = parse_date(row.hire_date) if row.hire_date else None
+        dept_id        = dept_by_name.get((row.department or "").lower())
+        dm_id          = code_to_id.get(row.dm_code  or "")
+        rm_id          = code_to_id.get(row.rm_code  or "")
+        hod_id         = code_to_id.get(row.hod_code or "")
+        parsed_date    = parse_date(row.hire_date) if row.hire_date else None
 
         if row.action == "create":
             if row.employee_code in by_code:
                 skipped += 1
                 continue
-            new_user = User(
+            db.add(User(
                 employee_id          = row.employee_code,
                 email                = row.email,
                 full_name            = row.name,
@@ -556,15 +541,14 @@ async def import_confirm(
                 country              = row.country,
                 work_location        = row.work_location,
                 employee_type        = row.employee_type,
-                hire_date            = parsed_hire_date,
+                hire_date            = parsed_date,
                 gender               = row.gender,
                 direct_manager_id    = dm_id,
                 reviewing_manager_id = rm_id,
                 hod_id               = hod_id,
                 hashed_password      = hash_password("Welcome@1234"),
                 is_active            = True,
-            )
-            db.add(new_user)
+            ))
             created += 1
 
         elif row.action == "update":
@@ -572,23 +556,23 @@ async def import_confirm(
             if not user:
                 skipped += 1
                 continue
-            if row.name:           user.full_name       = row.name
-            if row.grade:          user.job_grade        = row.grade
-            if row.role:           user.role             = row.role
-            if row.position:       user.position_title   = row.position
-            if row.division:       user.division         = row.division
-            if row.section:        user.section          = row.section
-            if row.employment_unit: user.employment_unit = row.employment_unit
-            if row.category:       user.category         = row.category
-            if row.country:        user.country          = row.country
-            if row.work_location:  user.work_location    = row.work_location
-            if row.employee_type:  user.employee_type    = row.employee_type
-            if row.gender:         user.gender           = row.gender
-            if parsed_hire_date:   user.hire_date        = parsed_hire_date
-            if dept_id:            user.department_id    = dept_id
-            if dm_id:              user.direct_manager_id    = dm_id
-            if rm_id:              user.reviewing_manager_id = rm_id
-            if hod_id:             user.hod_id               = hod_id
+            if row.name:            user.full_name        = row.name
+            if row.grade:           user.job_grade         = row.grade
+            if row.role:            user.role              = row.role
+            if row.position:        user.position_title    = row.position
+            if row.division:        user.division          = row.division
+            if row.section:         user.section           = row.section
+            if row.employment_unit: user.employment_unit   = row.employment_unit
+            if row.category:        user.category          = row.category
+            if row.country:         user.country           = row.country
+            if row.work_location:   user.work_location     = row.work_location
+            if row.employee_type:   user.employee_type     = row.employee_type
+            if row.gender:          user.gender            = row.gender
+            if parsed_date:         user.hire_date         = parsed_date
+            if dept_id:             user.department_id     = dept_id
+            if dm_id:               user.direct_manager_id    = dm_id
+            if rm_id:               user.reviewing_manager_id = rm_id
+            if hod_id:              user.hod_id               = hod_id
             user.updated_at = dt.utcnow()
             updated += 1
 
@@ -607,5 +591,5 @@ async def import_confirm(
         "updated":     updated,
         "deactivated": deactivated,
         "skipped":     skipped,
-        "message":     f"Import complete. New users get temporary password: Welcome@1234",
+        "message":     "Import complete. New users get temporary password: Welcome@1234",
     }
