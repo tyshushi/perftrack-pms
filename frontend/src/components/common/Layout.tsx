@@ -21,6 +21,7 @@ export default function Layout() {
     { to: '/dashboard',     label: 'Dashboard',        icon: '▦', show: isHOD(role) || isMgr(role) },
     { to: '/admin',         label: 'HR Admin',         icon: '⚙', show: isHR(role) },
     { to: '/notifications', label: 'Notifications',    icon: '◻', badge: unreadCount, show: true },
+    { to: '/users', label: 'User Management', icon: '◫', show: isHR(role) },
   ].filter(n => n.show);
 
   return (
