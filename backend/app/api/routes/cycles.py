@@ -79,11 +79,14 @@ async def list_cycles(
 
 @router.post("/")
 async def create_cycle(
-    body:         CycleCreate,
-    db:           AsyncSession = Depends(get_db),
-    current_user: User         = Depends(require_hr_admin),
+    body: CycleCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    cycle = PerformanceCycle(**body.model_dump(), created_by=current_user.id)
+    if current_user.role.value not in ["HR_ADMIN", "SUPER_ADMIN"]:
+        raise HTTPException(403, "HR Admin only")
+    data = body.model_dump()
+    cycle = PerformanceCycle(**data, created_by=current_user.id)
     db.add(cycle)
     await db.flush()
     await db.refresh(cycle)
