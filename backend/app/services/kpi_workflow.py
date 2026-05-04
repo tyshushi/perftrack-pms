@@ -82,12 +82,12 @@ class KpiWorkflowService:
         """Manager/MGR2/HOD scores and approves or rejects a KPI."""
         kpi = await self._get_kpi(kpi_id)
         allowed = APPROVER_ROLES.get(kpi.status, [])
-        if actor.role.value not in allowed:
+        if actor.role not in allowed:
             raise HTTPException(403, f"Your role cannot act on KPIs in status {kpi.status}")
 
         # Set score and comment
-        score_field   = SCORE_FIELD.get(actor.role.value)
-        comment_field = COMMENT_FIELD.get(actor.role.value)
+        score_field   = SCORE_FIELD.get(actor.role)
+        comment_field = COMMENT_FIELD.get(actor.role)
         if score_field:
             setattr(kpi, score_field, score)
         if comment_field:
@@ -95,7 +95,7 @@ class KpiWorkflowService:
 
         # Determine next status
         if action == "approve":
-            next_status = self._next_approval_status(kpi.status, actor.role.value)
+            next_status = self._next_approval_status(kpi.status, actor.role)
         else:
             next_status = KpiStatus.REJECTED
 
@@ -125,7 +125,7 @@ class KpiWorkflowService:
     async def lock_kpi(self, kpi_id: UUID, actor: User) -> Kpi:
         """HR Admin locks an approved KPI."""
         kpi = await self._get_kpi(kpi_id)
-        if actor.role.value not in ["HR_ADMIN", "SUPER_ADMIN"]:
+        if actor.role not in ["HR_ADMIN", "SUPER_ADMIN"]:
             raise HTTPException(403, "Only HR Admin can lock KPIs")
         if kpi.status != KpiStatus.APPROVED:
             raise HTTPException(400, "Only APPROVED KPIs can be locked")

@@ -25,7 +25,7 @@ async def list_scorecards(
         .where(Scorecard.cycle_id == cycle_id)
     if department_id:
         q = q.where(User.department_id == department_id)
-    if current_user.role.value == "STAFF":
+    if current_user.role == "STAFF":
         q = q.where(Scorecard.user_id == current_user.id)
     result = await db.execute(q.order_by(Scorecard.final_score.desc().nulls_last()))
     rows = result.all()
@@ -40,8 +40,8 @@ async def list_scorecards(
             "band_rank": sc.band_rank,
             "percentile": float(sc.percentile) if sc.percentile else None,
             "increment_pct": float(sc.increment_pct) if sc.increment_pct else None,
-            "increment_status": sc.increment_status.value if sc.increment_status else None,
-            "eval_status": sc.eval_status.value,
+            "increment_status": sc.increment_status,
+            "eval_status": sc.eval_status,
             "is_locked": sc.is_locked,
         }
         for sc, u in rows

@@ -67,7 +67,7 @@ async def list_cycles(
     return [
         {
             "id": str(c.id), "name": c.name, "year": c.year,
-            "status": c.status.value,
+            "status": c.status,
             "kpi_setting_start": str(c.kpi_setting_start),
             "kpi_setting_end": str(c.kpi_setting_end),
             "self_eval_start": str(c.self_eval_start),
@@ -83,14 +83,14 @@ async def create_cycle(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role.value not in ["HR_ADMIN", "SUPER_ADMIN"]:
+    if current_user.role not in ["HR_ADMIN", "SUPER_ADMIN"]:
         raise HTTPException(403, "HR Admin only")
     data = body.model_dump()
     cycle = PerformanceCycle(**data, created_by=current_user.id)
     db.add(cycle)
     await db.flush()
     await db.refresh(cycle)
-    return {"id": str(cycle.id), "name": cycle.name, "status": cycle.status.value}
+    return {"id": str(cycle.id), "name": cycle.name, "status": cycle.status}
 
 
 @router.patch("/{cycle_id}/status")
@@ -104,9 +104,9 @@ async def advance_cycle_status(
     cycle = result.scalar_one_or_none()
     if not cycle:
         raise HTTPException(404)
-    cycle.status = CycleStatus(status)
+    cycle.status = status
     await db.flush()
-    return {"status": cycle.status.value}
+    return {"status": cycle.status}
 
 
 @router.post("/{cycle_id}/increment-bands")

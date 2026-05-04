@@ -83,10 +83,10 @@ async def list_kpis(
     """
     q = select(Kpi).where(Kpi.cycle_id == cycle_id)
 
-    if current_user.role.value in ["HR_ADMIN", "SUPER_ADMIN"]:
+    if current_user.role in ["HR_ADMIN", "SUPER_ADMIN"]:
         if user_id:
             q = q.where(Kpi.user_id == user_id)
-    elif current_user.role.value in ["MANAGER", "MGR2", "HOD"]:
+    elif current_user.role in ["MANAGER", "MGR2", "HOD"]:
         # Can view their own or their reports'
         if user_id and user_id != current_user.id:
             q = q.where(Kpi.user_id == user_id)
@@ -109,7 +109,7 @@ async def create_kpi(
     current_user: User         = Depends(get_current_user),
 ):
     """Staff creates an optional KPI, or HR/Manager cascades a fixed one."""
-    kpi_type = KpiType.FIXED if current_user.role.value in ["HR_ADMIN","SUPER_ADMIN","MANAGER","MGR2","HOD"] and body.template_id else KpiType.OPTIONAL
+    kpi_type = KpiType.FIXED if current_user.role in ["HR_ADMIN","SUPER_ADMIN","MANAGER","MGR2","HOD"] and body.template_id else KpiType.OPTIONAL
     kpi = Kpi(
         cycle_id    = body.cycle_id,
         user_id     = current_user.id,
@@ -141,7 +141,7 @@ async def update_kpi(
     kpi = result.scalar_one_or_none()
     if not kpi:
         raise HTTPException(404, "KPI not found")
-    if kpi.user_id != current_user.id and current_user.role.value not in ["HR_ADMIN","SUPER_ADMIN"]:
+    if kpi.user_id != current_user.id and current_user.role not in ["HR_ADMIN","SUPER_ADMIN"]:
         raise HTTPException(403, "Not authorised")
     if kpi.status != KpiStatus.DRAFT:
         raise HTTPException(400, "Only DRAFT KPIs can be edited")
@@ -163,7 +163,7 @@ async def delete_kpi(
     kpi = result.scalar_one_or_none()
     if not kpi:
         raise HTTPException(404)
-    if kpi.user_id != current_user.id and current_user.role.value not in ["HR_ADMIN","SUPER_ADMIN"]:
+    if kpi.user_id != current_user.id and current_user.role not in ["HR_ADMIN","SUPER_ADMIN"]:
         raise HTTPException(403)
     if kpi.status != KpiStatus.DRAFT:
         raise HTTPException(400, "Cannot delete a submitted KPI")

@@ -36,7 +36,7 @@ async def login(
     await db.execute(update(User).where(User.id == user.id).values(last_login=datetime.utcnow()))
 
     return TokenOut(
-        access_token  = create_access_token({"sub": str(user.id), "role": user.role.value}),
+        access_token  = create_access_token({"sub": str(user.id), "role": user.role}),
         refresh_token = create_refresh_token({"sub": str(user.id)}),
     )
 
@@ -48,7 +48,7 @@ async def me(current_user: User = Depends(get_current_user)):
         "employee_id":   current_user.employee_id,
         "email":         current_user.email,
         "full_name":     current_user.full_name,
-        "role":          current_user.role.value,
+        "role":          current_user.role,
         "job_grade":     current_user.job_grade,
         "department_id": str(current_user.department_id) if current_user.department_id else None,
         "manager_id":    str(current_user.manager_id) if current_user.manager_id else None,

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.db.session import get_db
 from app.core.security import get_current_user, require_hr_admin, hash_password
-from app.models.user import User, UserRole
+from app.models.user import User
 
 router = APIRouter()
 
@@ -41,7 +41,7 @@ async def list_users(
     return [
         {
             "id": str(u.id), "employee_id": u.employee_id, "email": u.email,
-            "full_name": u.full_name, "role": u.role.value,
+            "full_name": u.full_name, "role": u.role,
             "job_grade": u.job_grade,
             "department_id": str(u.department_id) if u.department_id else None,
             "manager_id": str(u.manager_id) if u.manager_id else None,
@@ -60,7 +60,7 @@ async def create_user(
         employee_id     = body.employee_id,
         email           = body.email,
         full_name       = body.full_name,
-        role            = UserRole(body.role),
+        role            = body.role,
         job_grade       = body.job_grade,
         department_id   = body.department_id,
         manager_id      = body.manager_id,
@@ -82,6 +82,6 @@ async def direct_reports(
     users = result.scalars().all()
     return [
         {"id": str(u.id), "full_name": u.full_name, "employee_id": u.employee_id,
-         "role": u.role.value, "job_grade": u.job_grade}
+         "role": u.role, "job_grade": u.job_grade}
         for u in users
     ]
