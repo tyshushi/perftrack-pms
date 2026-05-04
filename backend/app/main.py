@@ -25,6 +25,35 @@ async def run_schema_and_seed():
         return
     try:
         conn = await asyncpg.connect(url)
+        
+        # Check if enums exist and create if missing
+        enum_check = await conn.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname='cyclestatus')"
+        )
+        if not enum_check:
+            print("==> Creating enums...")
+            await conn.execute("""
+                DO $$ BEGIN
+                    CREATE TYPE user_role AS ENUM ('STAFF','MANAGER','MGR2','HOD','HR_ADMIN','SUPER_ADMIN');
+                EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+                DO $$ BEGIN
+                    CREATE TYPE kpi_status AS ENUM ('DRAFT','PENDING_MGR','PENDING_MGR2','PENDING_HOD','APPROVED','REJECTED','LOCKED');
+                EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+                DO $$ BEGIN
+                    CREATE TYPE eval_status AS ENUM ('NOT_STARTED','IN_PROGRESS','SUBMITTED','REVIEWED','FINALISED');
+                EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+                DO $$ BEGIN
+                    CREATE TYPE cycle_status AS ENUM ('DRAFT','KPI_SETTING','SELF_EVAL','MGR_EVAL','MGR2_EVAL','HOD_EVAL','CALIBRATION','COMPLETED');
+                EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+                DO $$ BEGIN
+                    CREATE TYPE kpi_type AS ENUM ('FIXED','OPTIONAL');
+                EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+                DO $$ BEGIN
+                    CREATE TYPE increment_status AS ENUM ('PENDING','FLAGGED','CONFIRMED','PUBLISHED');
+                EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+            """)
+            print("==> Enums created.")
+
         exists = await conn.fetchval(
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='users')"
         )
