@@ -25,48 +25,38 @@ async def run_schema_and_seed():
         return
     try:
         conn = await asyncpg.connect(url)
-        
-        # Check if enums exist and create if missing
-        enum_check = await conn.fetchval(
-            "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname='cyclestatus')"
-        )
-        if not enum_check:
-    print("==> Creating enums...")
-    # ... enum creation code ...
-    print("==> Enums created.")
 
-# Always run this to fix column types
-print("==> Converting enum columns to varchar...")
-await conn.execute("""
-    DO $$ BEGIN
-        ALTER TABLE performance_cycles ALTER COLUMN status TYPE VARCHAR(20) USING status::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
-    DO $$ BEGIN
-        ALTER TABLE kpis ALTER COLUMN status TYPE VARCHAR(20) USING status::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
-    DO $$ BEGIN
-        ALTER TABLE kpis ALTER COLUMN kpi_type TYPE VARCHAR(20) USING kpi_type::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
-    DO $$ BEGIN
-        ALTER TABLE kpi_templates ALTER COLUMN kpi_type TYPE VARCHAR(20) USING kpi_type::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
-    DO $$ BEGIN
-        ALTER TABLE kpi_audit_log ALTER COLUMN from_status TYPE VARCHAR(20) USING from_status::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
-    DO $$ BEGIN
-        ALTER TABLE kpi_audit_log ALTER COLUMN to_status TYPE VARCHAR(20) USING to_status::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
-    DO $$ BEGIN
-        ALTER TABLE scorecards ALTER COLUMN eval_status TYPE VARCHAR(20) USING eval_status::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
-    DO $$ BEGIN
-        ALTER TABLE scorecards ALTER COLUMN increment_status TYPE VARCHAR(20) USING increment_status::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
-    DO $$ BEGIN
-        ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(20) USING role::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
-""")
-print("==> Column types fixed.")
+        # Fix enum columns to varchar
+        await conn.execute("""
+            DO $$ BEGIN
+                ALTER TABLE performance_cycles ALTER COLUMN status TYPE VARCHAR(20) USING status::text;
+            EXCEPTION WHEN others THEN NULL; END $$;
+            DO $$ BEGIN
+                ALTER TABLE kpis ALTER COLUMN status TYPE VARCHAR(20) USING status::text;
+            EXCEPTION WHEN others THEN NULL; END $$;
+            DO $$ BEGIN
+                ALTER TABLE kpis ALTER COLUMN kpi_type TYPE VARCHAR(20) USING kpi_type::text;
+            EXCEPTION WHEN others THEN NULL; END $$;
+            DO $$ BEGIN
+                ALTER TABLE kpi_templates ALTER COLUMN kpi_type TYPE VARCHAR(20) USING kpi_type::text;
+            EXCEPTION WHEN others THEN NULL; END $$;
+            DO $$ BEGIN
+                ALTER TABLE kpi_audit_log ALTER COLUMN from_status TYPE VARCHAR(20) USING from_status::text;
+            EXCEPTION WHEN others THEN NULL; END $$;
+            DO $$ BEGIN
+                ALTER TABLE kpi_audit_log ALTER COLUMN to_status TYPE VARCHAR(20) USING to_status::text;
+            EXCEPTION WHEN others THEN NULL; END $$;
+            DO $$ BEGIN
+                ALTER TABLE scorecards ALTER COLUMN eval_status TYPE VARCHAR(20) USING eval_status::text;
+            EXCEPTION WHEN others THEN NULL; END $$;
+            DO $$ BEGIN
+                ALTER TABLE scorecards ALTER COLUMN increment_status TYPE VARCHAR(20) USING increment_status::text;
+            EXCEPTION WHEN others THEN NULL; END $$;
+            DO $$ BEGIN
+                ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(20) USING role::text;
+            EXCEPTION WHEN others THEN NULL; END $$;
+        """)
+        print("==> Column types fixed.")
 
         exists = await conn.fetchval(
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='users')"
@@ -81,6 +71,7 @@ print("==> Column types fixed.")
             print("==> Database ready!")
         else:
             print("==> Database already initialised, skipping seed.")
+
         await conn.close()
     except Exception as e:
         print(f"==> DB init warning: {e}")
