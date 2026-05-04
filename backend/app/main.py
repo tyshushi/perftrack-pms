@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import json, os
 
 from app.core.config import settings
-from app.db.session import engine
+from app.db.session import engine, Base
 from app.api.routes import (
     auth, users, departments, cycles, weight_rules,
     kpi_templates, kpis, evaluations, scorecards,
@@ -12,8 +12,37 @@ from app.api.routes import (
 )
 
 
+async def run_schema_and_seed():
+    """Run schema.sql and seed.sql on startup if tables don't exist yet."""
+    import asyncpg
+    raw_url = os.environ.get("DATABASE_URL", "")
+    url = raw_url.replace("postgresql+asyncpg://", "postgresql://").replace("postgres://", "postgresql://")
+    if not url:
+        return
+    try:
+        conn = await asyncpg.connect(url)
+        # Check if users table already exists
+        exists = await conn.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='users')"
+        )
+        if not exists:
+            print("==> Running schema.sql...")
+            schema = open("schema.sql").read()
+            await conn.execute(schema)
+            print("==> Running seed.sql...")
+            seed = open("seed.sql").read()
+            await conn.execute(seed)
+            print("==> Database ready!")
+        else:
+            print("==> Database already initialised, skipping seed.")
+        await conn.close()
+    except Exception as e:
+        print(f"==> DB init warning: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await run_schema_and_seed()
     yield
 
 
@@ -32,7 +61,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register all routers
 app.include_router(auth.router,          prefix="/api/v1/auth",          tags=["Auth"])
 app.include_router(users.router,         prefix="/api/v1/users",         tags=["Users"])
 app.include_router(departments.router,   prefix="/api/v1/departments",   tags=["Departments"])
