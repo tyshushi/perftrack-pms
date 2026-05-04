@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from app.db.session import get_db
 from app.core.security import get_current_user, require_hr_admin
-from app.models.user import PerformanceCycle, CycleStatus, User, IncrementBand, BellCurveTarget, RatingScale, WeightRule
+from app.models.user import PerformanceCycle, User, IncrementBand, BellCurveTarget, RatingScale, WeightRule
 
 router = APIRouter()
 
