@@ -59,8 +59,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://tyshushi.github.io"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 app.include_router(auth_router,          prefix="/api/v1/auth",          tags=["Auth"])
