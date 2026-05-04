@@ -46,4 +46,25 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   fetchMe: async () => {
     const token = localStorage.getItem('access_token');
-    if (!tok
+    if (!token) return;
+    try {
+      const me = await authApi.me();
+      set({ user: me.data });
+    } catch {
+      localStorage.removeItem('access_token');
+    }
+  },
+}));
+
+export const ROLE_LABELS: Record<string, string> = {
+  STAFF: 'Staff',
+  MANAGER: 'Manager',
+  MGR2: "Manager's Manager",
+  HOD: 'HOD / CxO',
+  HR_ADMIN: 'HR Admin',
+  SUPER_ADMIN: 'Super Admin',
+};
+
+export const isHR  = (role: string) => ['HR_ADMIN', 'SUPER_ADMIN'].includes(role);
+export const isMgr = (role: string) => ['MANAGER', 'MGR2', 'HOD', 'HR_ADMIN', 'SUPER_ADMIN'].includes(role);
+export const isHOD = (role: string) => ['HOD', 'HR_ADMIN', 'SUPER_ADMIN'].includes(role);
