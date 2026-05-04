@@ -33,8 +33,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       localStorage.setItem('access_token', res.data.access_token);
       const me = await authApi.me();
       set({ user: me.data, isLoading: false });
-    } catch (e: any) {
-      set({ error: e.response?.data?.detail || 'Login failed', isLoading: false });
     }
   },
 
