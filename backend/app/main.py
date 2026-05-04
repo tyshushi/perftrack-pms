@@ -1,3 +1,8 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+import os
+
 from app.api.routes.auth import router as auth_router
 from app.api.routes.users import router as users_router
 from app.api.routes.departments import router as departments_router
@@ -10,11 +15,9 @@ from app.api.routes.scorecards import router as scorecards_router
 from app.api.routes.increments import router as increments_router
 from app.api.routes.notifications import router as notifications_router
 from app.api.routes.admin import router as admin_router
-)
 
 
 async def run_schema_and_seed():
-    """Run schema.sql and seed.sql on startup if tables don't exist yet."""
     import asyncpg
     raw_url = os.environ.get("DATABASE_URL", "")
     url = raw_url.replace("postgresql+asyncpg://", "postgresql://").replace("postgres://", "postgresql://")
@@ -22,7 +25,6 @@ async def run_schema_and_seed():
         return
     try:
         conn = await asyncpg.connect(url)
-        # Check if users table already exists
         exists = await conn.fetchval(
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='users')"
         )
@@ -49,7 +51,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Performance Management System",
-    description="Enterprise PMS for ~6,000 users with multi-level KPI approval, evaluation, and increment calculation.",
     version="1.0.0",
     lifespan=lifespan,
 )
