@@ -1,40 +1,34 @@
 import axios from 'axios';
 
-const API_URL = 'https://perftrack-pms.onrender.com';
-
-export const api = axios.create({
-  baseURL: `${API_URL}/api/v1`,
+const api = axios.create({
+  baseURL: 'https://perftrack-pms.onrender.com/api/v1',
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Attach token from localStorage
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// Auto-redirect on 401
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
       localStorage.removeItem('access_token');
-      window.location.href = '/login';
+      window.location.href = '/perftrack-pms/login';
     }
     return Promise.reject(err);
   }
 );
 
-// ── Auth ──────────────────────────────────────────────────────────────────
 export const authApi = {
-  login:  (email: string, password: string) =>
+  login: (email: string, password: string) =>
     api.post('/auth/login', new URLSearchParams({ username: email, password }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }),
   me: () => api.get('/auth/me'),
 };
 
-// ── Cycles ───────────────────────────────────────────────────────────────
 export const cyclesApi = {
   list:              ()           => api.get('/cycles/'),
   create:            (data: any)  => api.post('/cycles/', data),
@@ -45,7 +39,6 @@ export const cyclesApi = {
   advanceStatus:     (id: string, status: string) => api.patch(`/cycles/${id}/status?status=${status}`),
 };
 
-// ── KPIs ─────────────────────────────────────────────────────────────────
 export const kpisApi = {
   list:         (cycleId: string, userId?: string) =>
     api.get('/kpis/', { params: { cycle_id: cycleId, user_id: userId } }),
@@ -61,20 +54,17 @@ export const kpisApi = {
   auditLog:     (id: string) => api.get(`/kpis/${id}/audit`),
 };
 
-// ── Users ────────────────────────────────────────────────────────────────
 export const usersApi = {
   list:          (params?: any) => api.get('/users/', { params }),
   create:        (data: any)    => api.post('/users/', data),
   directReports: ()             => api.get('/users/direct-reports'),
 };
 
-// ── Departments ───────────────────────────────────────────────────────────
 export const departmentsApi = {
   list:   () => api.get('/departments/'),
   create: (data: any) => api.post('/departments/', data),
 };
 
-// ── Scorecards ────────────────────────────────────────────────────────────
 export const scorecardsApi = {
   list:        (cycleId: string, deptId?: string) =>
     api.get('/scorecards/', { params: { cycle_id: cycleId, department_id: deptId } }),
@@ -84,8 +74,7 @@ export const scorecardsApi = {
     api.post('/scorecards/bell-curve', null, { params: { cycle_id: cycleId } }),
 };
 
-// ── Notifications ─────────────────────────────────────────────────────────
 export const notificationsApi = {
-  list:       (unreadOnly?: boolean) => api.get('/notifications/', { params: { unread_only: unreadOnly } }),
+  list:        (unreadOnly?: boolean) => api.get('/notifications/', { params: { unread_only: unreadOnly } }),
   markAllRead: () => api.patch('/notifications/read-all'),
 };
