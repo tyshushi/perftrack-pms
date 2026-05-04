@@ -1,9 +1,13 @@
+import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from app.core.config import settings
+
+# Fix Render's DATABASE_URL format — force asyncpg driver
+raw_url = os.environ.get("DATABASE_URL", "postgresql+asyncpg://pms_user:pms_secret@localhost:5432/pms_db")
+DATABASE_URL = raw_url.replace("postgresql://", "postgresql+asyncpg://").replace("postgres://", "postgresql+asyncpg://")
 
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    DATABASE_URL,
     pool_size=20,
     max_overflow=40,
     pool_pre_ping=True,
