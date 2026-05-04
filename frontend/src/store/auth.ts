@@ -45,15 +45,16 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   fetchMe: async () => {
-    const token = localStorage.getItem('access_token');
-    if (!token) return;
-    try {
-      const me = await authApi.me();
-      set({ user: me.data });
-    } catch {
-      localStorage.removeItem('access_token');
-    }
-  },
+  const token = localStorage.getItem('access_token');
+  if (!token) return;
+  try {
+    const me = await authApi.me();
+    set({ user: me.data });
+  } catch {
+    localStorage.removeItem('access_token');
+    set({ user: null });
+  }
+},
 }));
 
 export const ROLE_LABELS: Record<string, string> = {
