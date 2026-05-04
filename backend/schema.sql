@@ -1,21 +1,11 @@
 -- ============================================================
 -- Performance Management System — PostgreSQL Schema
+-- Full schema with manager-based approval chain
 -- ============================================================
 
 -- Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
--- ============================================================
--- ENUMS
--- ============================================================
-
-CREATE TYPE user_role AS ENUM ('STAFF', 'MANAGER', 'MGR2', 'HOD', 'HR_ADMIN', 'SUPER_ADMIN');
-CREATE TYPE kpi_status AS ENUM ('DRAFT', 'PENDING_MGR', 'PENDING_MGR2', 'PENDING_HOD', 'APPROVED', 'REJECTED', 'LOCKED');
-CREATE TYPE eval_status AS ENUM ('NOT_STARTED', 'IN_PROGRESS', 'SUBMITTED', 'REVIEWED', 'FINALISED');
-CREATE TYPE cycle_status AS ENUM ('DRAFT', 'KPI_SETTING', 'SELF_EVAL', 'MGR_EVAL', 'MGR2_EVAL', 'HOD_EVAL', 'CALIBRATION', 'COMPLETED');
-CREATE TYPE kpi_type AS ENUM ('FIXED', 'OPTIONAL');
-CREATE TYPE increment_status AS ENUM ('PENDING', 'FLAGGED', 'CONFIRMED', 'PUBLISHED');
 
 -- ============================================================
 -- DEPARTMENTS
@@ -36,33 +26,41 @@ CREATE TABLE departments (
 -- ============================================================
 
 CREATE TABLE users (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    employee_id     VARCHAR(50) UNIQUE NOT NULL,
-    email           VARCHAR(255) UNIQUE NOT NULL,
-    full_name       VARCHAR(150) NOT NULL,
-    role            user_role NOT NULL DEFAULT 'STAFF',
-    job_grade       VARCHAR(20),                          -- e.g. G1, G2, M1, M2
-    department_id   UUID REFERENCES departments(id),
-    manager_id      UUID REFERENCES users(id),            -- direct reporting line
-    is_active       BOOLEAN DEFAULT TRUE,
-    hashed_password TEXT NOT NULL,
-    last_login      TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW()
-);
+    id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    employee_id          VARCHAR(50) UNIQUE NOT NULL,
+    email                VARCHAR(255) UNIQUE NOT NULL,
+    full_name            VARCHAR(150) NOT NULL,
+    role                 VARCHAR(20) NOT NULL DEFAULT 'STAFF',
+    job_grade            VARCHAR(20),
 
--- Recursive CTE helper view: full reporting chain per user (up to 4 levels)
-CREATE VIEW user_hierarchy AS
-WITH RECURSIVE chain AS (
-    SELECT id, full_name, role, manager_id, department_id, 0 AS depth
-    FROM users WHERE is_active = TRUE
-    UNION ALL
-    SELECT u.id, u.full_name, u.role, u.manager_id, u.department_id, c.depth + 1
-    FROM users u
-    JOIN chain c ON u.id = c.manager_id
-    WHERE c.depth < 4
-)
-SELECT * FROM chain;
+    -- Org structure fields (from CSV)
+    employment_unit      VARCHAR(100),
+    department_id        UUID REFERENCES departments(id),
+    division             VARCHAR(100),
+    section              VARCHAR(100),
+    position_title       VARCHAR(150),
+    category             VARCHAR(50),
+    country              VARCHAR(100),
+    work_location        VARCHAR(100),
+    employee_type        VARCHAR(50),
+    hire_date            DATE,
+    gender               VARCHAR(20),
+
+    -- Legacy single manager (kept for compatibility)
+    manager_id           UUID REFERENCES users(id),
+
+    -- Explicit approval chain (assigned per employee)
+    direct_manager_id    UUID REFERENCES users(id),
+    reviewing_manager_id UUID REFERENCES users(id),
+    hod_id               UUID REFERENCES users(id),
+    approval_levels      INT DEFAULT 3,
+
+    is_active            BOOLEAN DEFAULT TRUE,
+    hashed_password      TEXT NOT NULL,
+    last_login           TIMESTAMPTZ,
+    created_at           TIMESTAMPTZ DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ DEFAULT NOW()
+);
 
 -- ============================================================
 -- PERFORMANCE CYCLES
@@ -70,9 +68,9 @@ SELECT * FROM chain;
 
 CREATE TABLE performance_cycles (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name                VARCHAR(100) NOT NULL,             -- e.g. "FY2026 Annual"
+    name                VARCHAR(100) NOT NULL,
     year                INT NOT NULL,
-    status              cycle_status NOT NULL DEFAULT 'DRAFT',
+    status              VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
 
     -- Phase windows (HR configures)
     kpi_setting_start   DATE NOT NULL,
@@ -94,18 +92,18 @@ CREATE TABLE performance_cycles (
 );
 
 -- ============================================================
--- WEIGHT RULES (per role or department per cycle)
+-- WEIGHT RULES (per category, per dept/grade per cycle)
 -- ============================================================
 
 CREATE TABLE weight_rules (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     cycle_id            UUID NOT NULL REFERENCES performance_cycles(id) ON DELETE CASCADE,
-    department_id       UUID REFERENCES departments(id),   -- NULL = applies to all depts
-    job_grade           VARCHAR(20),                       -- NULL = applies to all grades
-    category            VARCHAR(50) NOT NULL,              -- e.g. Financial, Customer, Internal, Learning
-    min_weight          INT NOT NULL DEFAULT 0,            -- minimum % allowed
-    max_weight          INT NOT NULL DEFAULT 100,          -- maximum % allowed
-    fixed_weight        INT,                               -- if set, staff cannot change this
+    department_id       UUID REFERENCES departments(id),
+    job_grade           VARCHAR(20),
+    category            VARCHAR(50) NOT NULL,
+    min_weight          INT NOT NULL DEFAULT 0,
+    max_weight          INT NOT NULL DEFAULT 100,
+    fixed_weight        INT,
     created_by          UUID REFERENCES users(id),
     created_at          TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT chk_weight CHECK (min_weight >= 0 AND max_weight <= 100 AND min_weight <= max_weight)
@@ -121,15 +119,13 @@ CREATE TABLE kpi_templates (
     name            VARCHAR(200) NOT NULL,
     description     TEXT,
     category        VARCHAR(50) NOT NULL,
-    kpi_type        kpi_type NOT NULL DEFAULT 'FIXED',
-    weight          INT NOT NULL,                           -- % weight assigned
+    kpi_type        VARCHAR(20) NOT NULL DEFAULT 'FIXED',
+    weight          INT NOT NULL,
     target          VARCHAR(200) NOT NULL,
-    measurement     TEXT,                                   -- how to measure this KPI
-
-    -- Scope: who this template applies to
-    department_id   UUID REFERENCES departments(id),        -- NULL = all departments
-    job_grade       VARCHAR(20),                            -- NULL = all grades
-    cascaded_by     UUID REFERENCES users(id),              -- HR or Manager who cascaded it
+    measurement     TEXT,
+    department_id   UUID REFERENCES departments(id),
+    job_grade       VARCHAR(20),
+    cascaded_by     UUID REFERENCES users(id),
     is_active       BOOLEAN DEFAULT TRUE,
     created_at      TIMESTAMPTZ DEFAULT NOW()
 );
@@ -142,22 +138,22 @@ CREATE TABLE kpis (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     cycle_id        UUID NOT NULL REFERENCES performance_cycles(id),
     user_id         UUID NOT NULL REFERENCES users(id),
-    template_id     UUID REFERENCES kpi_templates(id),     -- NULL if staff-created optional KPI
+    template_id     UUID REFERENCES kpi_templates(id),
 
     name            VARCHAR(200) NOT NULL,
     description     TEXT,
     category        VARCHAR(50) NOT NULL,
-    kpi_type        kpi_type NOT NULL DEFAULT 'OPTIONAL',
-    weight          INT NOT NULL,                           -- % of total score
+    kpi_type        VARCHAR(20) NOT NULL DEFAULT 'OPTIONAL',
+    weight          INT NOT NULL,
     target          VARCHAR(200) NOT NULL,
     measurement     TEXT,
 
-    -- Scores (each level fills in theirs)
+    -- Scores per approval level
     self_score      NUMERIC(3,1),
-    mgr_score       NUMERIC(3,1),
-    mgr2_score      NUMERIC(3,1),
-    hod_score       NUMERIC(3,1),
-    final_score     NUMERIC(3,1),                          -- computed: weighted avg of all scores
+    mgr_score       NUMERIC(3,1),   -- direct manager score
+    mgr2_score      NUMERIC(3,1),   -- reviewing manager score
+    hod_score       NUMERIC(3,1),   -- HOD score
+    final_score     NUMERIC(3,1),
 
     -- Comments per level
     self_comment    TEXT,
@@ -165,24 +161,27 @@ CREATE TABLE kpis (
     mgr2_comment    TEXT,
     hod_comment     TEXT,
 
-    status          kpi_status NOT NULL DEFAULT 'DRAFT',
+    -- Status uses manager-based pending states
+    -- DRAFT | PENDING_DM | PENDING_RM | PENDING_HOD | APPROVED | REJECTED | LOCKED
+    status          VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW(),
 
-    CONSTRAINT chk_weight_range CHECK (weight >= 0 AND weight <= 100),
+    CONSTRAINT chk_kpi_weight CHECK (weight >= 0 AND weight <= 100),
     UNIQUE (cycle_id, user_id, name)
 );
 
 -- ============================================================
--- KPI AUDIT LOG (every status transition recorded)
+-- KPI AUDIT LOG
 -- ============================================================
 
 CREATE TABLE kpi_audit_log (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     kpi_id          UUID NOT NULL REFERENCES kpis(id),
     actor_id        UUID NOT NULL REFERENCES users(id),
-    from_status     kpi_status,
-    to_status       kpi_status NOT NULL,
+    from_status     VARCHAR(20),
+    to_status       VARCHAR(20) NOT NULL,
     comment         TEXT,
     score_given     NUMERIC(3,1),
     created_at      TIMESTAMPTZ DEFAULT NOW()
@@ -195,15 +194,15 @@ CREATE TABLE kpi_audit_log (
 CREATE TABLE rating_scales (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     cycle_id        UUID NOT NULL REFERENCES performance_cycles(id) ON DELETE CASCADE,
-    score           NUMERIC(3,1) NOT NULL,                  -- e.g. 1, 2, 3, 4, 5
-    label           VARCHAR(50) NOT NULL,                   -- e.g. "Outstanding"
+    score           NUMERIC(3,1) NOT NULL,
+    label           VARCHAR(50) NOT NULL,
     description     TEXT,
-    color_hex       VARCHAR(7),                             -- UI display colour
+    color_hex       VARCHAR(7),
     UNIQUE (cycle_id, score)
 );
 
 -- ============================================================
--- EMPLOYEE SCORECARDS (aggregate per employee per cycle)
+-- SCORECARDS (aggregate per employee per cycle)
 -- ============================================================
 
 CREATE TABLE scorecards (
@@ -211,25 +210,25 @@ CREATE TABLE scorecards (
     cycle_id            UUID NOT NULL REFERENCES performance_cycles(id),
     user_id             UUID NOT NULL REFERENCES users(id),
 
-    -- Weighted average scores
+    -- Weighted totals
     self_total          NUMERIC(4,2),
-    mgr_total           NUMERIC(4,2),
-    mgr2_total          NUMERIC(4,2),
+    mgr_total           NUMERIC(4,2),   -- direct manager weighted avg
+    mgr2_total          NUMERIC(4,2),   -- reviewing manager weighted avg
     hod_total           NUMERIC(4,2),
-    final_score         NUMERIC(4,2),                       -- weighted composite
+    final_score         NUMERIC(4,2),
 
-    -- Bell curve / forced ranking
-    performance_band    VARCHAR(50),                        -- e.g. "Top Performer", "Meets Expectations"
-    band_rank           INT,                                -- rank within department
+    -- Bell curve / ranking
+    performance_band    VARCHAR(50),
+    band_rank           INT,
     percentile          NUMERIC(5,2),
 
-    -- Increment linkage
-    increment_pct       NUMERIC(5,2),                       -- auto-calculated %
-    increment_status    increment_status DEFAULT 'PENDING',
-    increment_confirmed_by UUID REFERENCES users(id),
-    increment_confirmed_at TIMESTAMPTZ,
+    -- Increment
+    increment_pct           NUMERIC(5,2),
+    increment_status        VARCHAR(20) DEFAULT 'PENDING',
+    increment_confirmed_by  UUID REFERENCES users(id),
+    increment_confirmed_at  TIMESTAMPTZ,
 
-    eval_status         eval_status NOT NULL DEFAULT 'NOT_STARTED',
+    eval_status         VARCHAR(20) NOT NULL DEFAULT 'NOT_STARTED',
     is_locked           BOOLEAN DEFAULT FALSE,
     created_at          TIMESTAMPTZ DEFAULT NOW(),
     updated_at          TIMESTAMPTZ DEFAULT NOW(),
@@ -244,24 +243,24 @@ CREATE TABLE scorecards (
 CREATE TABLE increment_bands (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     cycle_id        UUID NOT NULL REFERENCES performance_cycles(id) ON DELETE CASCADE,
-    band_name       VARCHAR(50) NOT NULL,                   -- e.g. "Outstanding"
+    band_name       VARCHAR(50) NOT NULL,
     min_score       NUMERIC(4,2) NOT NULL,
     max_score       NUMERIC(4,2) NOT NULL,
-    increment_pct   NUMERIC(5,2) NOT NULL,                  -- % salary increment
+    increment_pct   NUMERIC(5,2) NOT NULL,
     description     TEXT,
     CONSTRAINT chk_score_range CHECK (min_score >= 0 AND max_score <= 5)
 );
 
 -- ============================================================
--- BELL CURVE TARGETS (HR sets target distribution per cycle)
+-- BELL CURVE TARGETS
 -- ============================================================
 
 CREATE TABLE bell_curve_targets (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     cycle_id        UUID NOT NULL REFERENCES performance_cycles(id) ON DELETE CASCADE,
-    department_id   UUID REFERENCES departments(id),        -- NULL = org-wide
+    department_id   UUID REFERENCES departments(id),
     band_name       VARCHAR(50) NOT NULL,
-    target_pct      NUMERIC(5,2) NOT NULL,                  -- e.g. 10% should be "Outstanding"
+    target_pct      NUMERIC(5,2) NOT NULL,
     CONSTRAINT chk_target CHECK (target_pct >= 0 AND target_pct <= 100)
 );
 
@@ -274,8 +273,8 @@ CREATE TABLE notifications (
     user_id         UUID NOT NULL REFERENCES users(id),
     title           VARCHAR(200) NOT NULL,
     body            TEXT NOT NULL,
-    type            VARCHAR(50),                            -- e.g. KPI_PENDING, EVAL_DUE, APPROVED
-    reference_id    UUID,                                   -- kpi_id or scorecard_id
+    type            VARCHAR(50),
+    reference_id    UUID,
     is_read         BOOLEAN DEFAULT FALSE,
     created_at      TIMESTAMPTZ DEFAULT NOW()
 );
@@ -284,11 +283,14 @@ CREATE TABLE notifications (
 -- INDEXES
 -- ============================================================
 
-CREATE INDEX idx_users_manager ON users(manager_id);
-CREATE INDEX idx_users_department ON users(department_id);
-CREATE INDEX idx_kpis_cycle_user ON kpis(cycle_id, user_id);
-CREATE INDEX idx_kpis_status ON kpis(status);
-CREATE INDEX idx_kpi_audit_kpi ON kpi_audit_log(kpi_id);
-CREATE INDEX idx_scorecards_cycle ON scorecards(cycle_id);
-CREATE INDEX idx_notifications_user ON notifications(user_id, is_read);
-CREATE INDEX idx_weight_rules_cycle ON weight_rules(cycle_id, department_id);
+CREATE INDEX idx_users_manager          ON users(manager_id);
+CREATE INDEX idx_users_direct_manager   ON users(direct_manager_id);
+CREATE INDEX idx_users_reviewing_manager ON users(reviewing_manager_id);
+CREATE INDEX idx_users_hod              ON users(hod_id);
+CREATE INDEX idx_users_department       ON users(department_id);
+CREATE INDEX idx_kpis_cycle_user        ON kpis(cycle_id, user_id);
+CREATE INDEX idx_kpis_status            ON kpis(status);
+CREATE INDEX idx_kpi_audit_kpi          ON kpi_audit_log(kpi_id);
+CREATE INDEX idx_scorecards_cycle       ON scorecards(cycle_id);
+CREATE INDEX idx_notifications_user     ON notifications(user_id, is_read);
+CREATE INDEX idx_weight_rules_cycle     ON weight_rules(cycle_id, department_id);
