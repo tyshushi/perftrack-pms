@@ -5,13 +5,13 @@ import { kpisApi, cyclesApi } from '../api/client';
 import { useForm } from 'react-hook-form';
 
 const STATUS_STYLES: Record<string, { label: string; bg: string; color: string }> = {
-  DRAFT:        { label: 'Draft',           bg: '#f5f5f3', color: '#666' },
-  PENDING_MGR:  { label: 'Pending Manager', bg: '#fef9c3', color: '#854d0e' },
-  PENDING_MGR2: { label: "Pending Mgr²",    bg: '#fef3c7', color: '#92400e' },
-  PENDING_HOD:  { label: 'Pending HOD',     bg: '#ffedd5', color: '#9a3412' },
-  APPROVED:     { label: 'Approved',        bg: '#dcfce7', color: '#166534' },
-  REJECTED:     { label: 'Rejected',        bg: '#fee2e2', color: '#991b1b' },
-  LOCKED:       { label: 'Locked',          bg: '#e0f2fe', color: '#0c4a6e' },
+  DRAFT:       { label: 'Draft',                    bg: '#f5f5f3', color: '#666' },
+  PENDING_DM:  { label: 'Pending Direct Manager',   bg: '#fef9c3', color: '#854d0e' },
+  PENDING_RM:  { label: 'Pending Reviewing Mgr',    bg: '#ffedd5', color: '#9a3412' },
+  PENDING_HOD: { label: 'Pending HOD',              bg: '#fce7f3', color: '#9d174d' },
+  APPROVED:    { label: 'Approved',                 bg: '#dcfce7', color: '#166534' },
+  REJECTED:    { label: 'Rejected',                 bg: '#fee2e2', color: '#991b1b' },
+  LOCKED:      { label: 'Locked',                   bg: '#e0f2fe', color: '#0c4a6e' },
 };
 
 const WORKFLOW_STEPS = ['DRAFT', 'PENDING_MGR', 'PENDING_MGR2', 'PENDING_HOD', 'APPROVED'];
@@ -28,22 +28,34 @@ function StatusPill({ status }: { status: string }) {
 }
 
 function WorkflowBar({ status }: { status: string }) {
-  const idx = WORKFLOW_STEPS.indexOf(status);
+  const steps = ['DRAFT', 'PENDING_DM', 'PENDING_RM', 'PENDING_HOD', 'APPROVED'];
+  const labels = ['Draft', 'Direct Mgr', 'Reviewing Mgr', 'HOD', 'Done'];
+  const idx = steps.indexOf(status);
+  const done = status === 'APPROVED' || status === 'LOCKED';
+
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:0, margin:'10px 0 4px' }}>
-      {WORKFLOW_STEPS.map((s, i) => (
-        <div key={s} style={{ display:'flex', alignItems:'center', flex: i < WORKFLOW_STEPS.length - 1 ? '1' : 'none' }}>
-          <div style={{
-            width:20, height:20, borderRadius:'50%', flexShrink:0,
-            display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, fontWeight:600,
-            background: i < idx || status === 'APPROVED' || status === 'LOCKED' ? '#166534'
-                      : i === idx ? '#1a1a18' : '#e5e4df',
-            color: i <= idx || status === 'APPROVED' ? '#fff' : '#888',
-          }}>
-            {i < idx || status === 'APPROVED' || status === 'LOCKED' ? '✓' : i+1}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 0, margin: '10px 0 4px' }}>
+      {steps.map((s, i) => (
+        <div key={s} style={{ display: 'flex', alignItems: 'center',
+          flex: i < steps.length - 1 ? '1' : 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{
+              width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 9, fontWeight: 600,
+              background: i < idx || done ? '#166534' : i === idx ? '#1a1a18' : '#e5e4df',
+              color: i <= idx || done ? '#fff' : '#888',
+            }}>
+              {i < idx || done ? '✓' : i + 1}
+            </div>
+            <span style={{ fontSize: 10, color: i === idx ? '#1a1a18' : '#888',
+              fontWeight: i === idx ? 500 : 400, whiteSpace: 'nowrap' }}>
+              {labels[i]}
+            </span>
           </div>
-          {i < WORKFLOW_STEPS.length - 1 && (
-            <div style={{ flex:1, height:1, background: i < idx ? '#166534' : '#e5e4df' }} />
+          {i < steps.length - 1 && (
+            <div style={{ flex: 1, height: 1, background: i < idx ? '#166534' : '#e5e4df',
+              margin: '0 4px' }} />
           )}
         </div>
       ))}
