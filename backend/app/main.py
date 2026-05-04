@@ -55,7 +55,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=json.loads(settings.CORS_ORIGINS),
+    allow_origins=["https://tyshushi.github.io"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
