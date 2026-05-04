@@ -81,3 +81,8 @@ export const notificationsApi = {
   list:        (unreadOnly?: boolean) => api.get('/notifications/', { params: { unread_only: unreadOnly } }),
   markAllRead: () => api.patch('/notifications/read-all'),
 };
+
+export const userProfileApi = {
+  getProfile:     (id: string) => api.get(`/users/${id}/profile`),
+  updateManagers: (id: string, data: any) => api.patch(`/users/${id}/managers`, data),
+};
