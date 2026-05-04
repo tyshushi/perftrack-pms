@@ -9,6 +9,13 @@
       * { box-sizing: border-box; margin: 0; padding: 0; }
       body { font-family: system-ui, -apple-system, sans-serif; }
     </style>
+    <script>
+    var redirect = sessionStorage.getItem('redirect');
+    if (redirect) {
+    sessionStorage.removeItem('redirect');
+    window.history.replaceState(null, '', '/perftrack-pms' + redirect);
+    }
+    </script>
     <script type="module" crossorigin src="/perftrack-pms/assets/index-BBW9vnxU.js"></script>
   </head>
   <body>
