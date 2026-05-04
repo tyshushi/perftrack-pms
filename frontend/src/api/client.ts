@@ -15,8 +15,11 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('access_token');
-      window.location.href = '/perftrack-pms/login';
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        localStorage.removeItem('access_token');
+        window.location.href = '/perftrack-pms/login';
+      }
     }
     return Promise.reject(err);
   }
