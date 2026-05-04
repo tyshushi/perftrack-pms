@@ -53,3 +53,29 @@ async def me(current_user: User = Depends(get_current_user)):
         "department_id": str(current_user.department_id) if current_user.department_id else None,
         "manager_id":    str(current_user.manager_id) if current_user.manager_id else None,
     }
+
+
+@router.post("/reset-demo-passwords")
+async def reset_demo_passwords(db: AsyncSession = Depends(get_db)):
+    """Temporary endpoint to reset demo account passwords."""
+    from app.core.security import hash_password
+    from sqlalchemy import update
+    
+    emails = [
+        'staff@pms.local',
+        'manager@pms.local', 
+        'mgr2@pms.local',
+        'hod@pms.local',
+        'hradmin@pms.local',
+    ]
+    
+    new_hash = hash_password('demo1234')
+    
+    for email in emails:
+        await db.execute(
+            update(User)
+            .where(User.email == email)
+            .values(hashed_password=new_hash)
+        )
+    
+    return {"message": "Passwords reset to demo1234"}
