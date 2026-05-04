@@ -73,24 +73,47 @@ class Department(Base):
 
 class User(Base):
     __tablename__ = "users"
-    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    employee_id     = Column(String(50), unique=True, nullable=False)
-    email           = Column(String(255), unique=True, nullable=False)
-    full_name       = Column(String(150), nullable=False)
-    role            = Column(String(20), nullable=False, default="STAFF")
-    job_grade       = Column(String(20))
-    department_id   = Column(UUID(as_uuid=True), ForeignKey("departments.id"))
-    manager_id      = Column(UUID(as_uuid=True), ForeignKey("users.id"))
-    is_active       = Column(Boolean, default=True)
-    hashed_password = Column(Text, nullable=False)
-    last_login      = Column(DateTime(timezone=True))
-    created_at      = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at      = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    id                   = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id          = Column(String(50), unique=True, nullable=False)
+    email                = Column(String(255), unique=True, nullable=False)
+    full_name            = Column(String(150), nullable=False)
+    role                 = Column(String(20), nullable=False, default="STAFF")
+    job_grade            = Column(String(20))
 
-    department  = relationship("Department", back_populates="users")
-    manager     = relationship("User", remote_side="User.id", foreign_keys=[manager_id])
-    kpis        = relationship("Kpi", back_populates="user", foreign_keys="Kpi.user_id")
-    scorecards  = relationship("Scorecard", back_populates="user", foreign_keys="Scorecard.user_id")
+    # Org structure
+    employment_unit      = Column(String(100))
+    division             = Column(String(100))
+    section              = Column(String(100))
+    position_title       = Column(String(150))
+    category             = Column(String(50))
+    country              = Column(String(100))
+    work_location        = Column(String(100))
+    employee_type        = Column(String(50))
+    hire_date            = Column(Date)
+    gender               = Column(String(20))
+
+    # Legacy manager
+    manager_id           = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+
+    # Approval chain
+    direct_manager_id    = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    reviewing_manager_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    hod_id               = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    approval_levels      = Column(Integer, default=3)
+
+    is_active            = Column(Boolean, default=True)
+    hashed_password      = Column(Text, nullable=False)
+    last_login           = Column(DateTime(timezone=True))
+    created_at           = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at           = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    department    = relationship("Department", back_populates="users")
+    manager       = relationship("User", remote_side="User.id", foreign_keys="User.manager_id")
+    direct_manager    = relationship("User", foreign_keys="User.direct_manager_id",    primaryjoin="User.direct_manager_id==User.id")
+    reviewing_manager = relationship("User", foreign_keys="User.reviewing_manager_id", primaryjoin="User.reviewing_manager_id==User.id")
+    hod               = relationship("User", foreign_keys="User.hod_id",               primaryjoin="User.hod_id==User.id")
+    kpis          = relationship("Kpi", back_populates="user", foreign_keys="Kpi.user_id")
+    scorecards    = relationship("Scorecard", back_populates="user", foreign_keys="Scorecard.user_id")
     notifications = relationship("Notification", back_populates="user")
 
 
