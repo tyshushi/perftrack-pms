@@ -354,14 +354,23 @@ async def import_confirm(
                 skipped += 1
                 continue
             new_user = User(
-                employee_id     = row.employee_code,
-                email           = row.email,
-                full_name       = row.name,
-                role            = row.role or "STAFF",
-                job_grade       = row.grade,
-                hashed_password = hash_password("Welcome@1234"),  # temp password
-                is_active       = True,
-            )
+    employee_id      = row.employee_code,
+    email            = row.email,
+    full_name        = row.name,
+    role             = row.role or "STAFF",
+    job_grade        = row.grade,
+    employment_unit  = row.employment_unit,
+    division         = row.division,
+    section          = row.section,
+    position_title   = row.position,
+    category         = row.category,
+    country          = row.country,
+    work_location    = row.work_location,
+    employee_type    = row.employee_type,
+    gender           = row.gender,
+    hashed_password  = hash_password("Welcome@1234"),
+    is_active        = True,
+)
             db.add(new_user)
             created += 1
 
