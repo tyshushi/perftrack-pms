@@ -8,7 +8,13 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { register, handleSubmit } = useForm<{ email: string; password: string }>();
 
-  useEffect(() => { if (user) navigate('/kpis'); }, [user]);
+  useEffect(() => { 
+    if (user) navigate('/kpis', { replace: true }); 
+  }, [user, navigate]);
+
+  async function onSubmit(data: { email: string; password: string }) {
+    await login(data.email, data.password);
+  }
 
   return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f5f3', fontFamily:'system-ui,sans-serif' }}>
@@ -26,7 +32,7 @@ export default function LoginPage() {
 
         {error && <div style={{ background:'#fee2e2', color:'#991b1b', padding:'8px 12px', borderRadius:8, fontSize:13, marginBottom:14 }}>{error}</div>}
 
-        <form onSubmit={handleSubmit(d => login(d.email, d.password))}>
+        <form onSubmit={handleSubmit(onSubmit)}>
           <div style={{ marginBottom:12 }}>
             <label style={{ fontSize:12, fontWeight:500, color:'#666', display:'block', marginBottom:5 }}>Email</label>
             <input style={S.input} type="email" {...register('email', { required:true })} placeholder="you@company.com" autoFocus />
