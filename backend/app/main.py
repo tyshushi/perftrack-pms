@@ -26,38 +26,80 @@ async def run_schema_and_seed():
     try:
         conn = await asyncpg.connect(url)
 
-        # Fix enum columns to varchar
-        await conn.execute("""
-            DO $$ BEGIN
-                ALTER TABLE performance_cycles ALTER COLUMN status TYPE VARCHAR(20) USING status::text;
-            EXCEPTION WHEN others THEN NULL; END $$;
-            DO $$ BEGIN
-                ALTER TABLE kpis ALTER COLUMN status TYPE VARCHAR(20) USING status::text;
-            EXCEPTION WHEN others THEN NULL; END $$;
-            DO $$ BEGIN
-                ALTER TABLE kpis ALTER COLUMN kpi_type TYPE VARCHAR(20) USING kpi_type::text;
-            EXCEPTION WHEN others THEN NULL; END $$;
-            DO $$ BEGIN
-                ALTER TABLE kpi_templates ALTER COLUMN kpi_type TYPE VARCHAR(20) USING kpi_type::text;
-            EXCEPTION WHEN others THEN NULL; END $$;
-            DO $$ BEGIN
-                ALTER TABLE kpi_audit_log ALTER COLUMN from_status TYPE VARCHAR(20) USING from_status::text;
-            EXCEPTION WHEN others THEN NULL; END $$;
-            DO $$ BEGIN
-                ALTER TABLE kpi_audit_log ALTER COLUMN to_status TYPE VARCHAR(20) USING to_status::text;
-            EXCEPTION WHEN others THEN NULL; END $$;
-            DO $$ BEGIN
-                ALTER TABLE scorecards ALTER COLUMN eval_status TYPE VARCHAR(20) USING eval_status::text;
-            EXCEPTION WHEN others THEN NULL; END $$;
-            DO $$ BEGIN
-                ALTER TABLE scorecards ALTER COLUMN increment_status TYPE VARCHAR(20) USING increment_status::text;
-            EXCEPTION WHEN others THEN NULL; END $$;
-            DO $$ BEGIN
-                ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(20) USING role::text;
-            EXCEPTION WHEN others THEN NULL; END $$;
-        """)
-        print("==> Column types fixed.")
+        # Add new columns if they don't exist
+await conn.execute("""
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN employment_unit VARCHAR(100);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN division VARCHAR(100);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN section VARCHAR(100);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN position_title VARCHAR(150);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN category VARCHAR(50);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN country VARCHAR(100);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN work_location VARCHAR(100);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN employee_type VARCHAR(50);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN hire_date DATE;
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN gender VARCHAR(20);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN direct_manager_id UUID REFERENCES users(id);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN reviewing_manager_id UUID REFERENCES users(id);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN hod_id UUID REFERENCES users(id);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN approval_levels INT DEFAULT 3;
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 
+    DO $$ BEGIN
+        ALTER TABLE performance_cycles ALTER COLUMN status TYPE VARCHAR(20) USING status::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE kpis ALTER COLUMN status TYPE VARCHAR(20) USING status::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE kpis ALTER COLUMN kpi_type TYPE VARCHAR(20) USING kpi_type::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE kpi_templates ALTER COLUMN kpi_type TYPE VARCHAR(20) USING kpi_type::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE kpi_audit_log ALTER COLUMN from_status TYPE VARCHAR(20) USING from_status::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE kpi_audit_log ALTER COLUMN to_status TYPE VARCHAR(20) USING to_status::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE scorecards ALTER COLUMN eval_status TYPE VARCHAR(20) USING eval_status::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE scorecards ALTER COLUMN increment_status TYPE VARCHAR(20) USING increment_status::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN
+        ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(20) USING role::text;
+    EXCEPTION WHEN others THEN NULL; END $$;
+""")
+print("==> Schema migrations complete.")
         exists = await conn.fetchval(
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='users')"
         )
