@@ -33,10 +33,10 @@ export const authApi = {
 };
 
 export const cyclesApi = {
-  list:              ()           => api.get('/cycles/'),
-  create:            (data: any)  => api.post('/cycles/', data),
+  list:              ()                      => api.get('/cycles/'),
+  create:            (data: any)             => api.post('/cycles/', data),
   setIncrementBands: (id: string, bands: any[]) => api.post(`/cycles/${id}/increment-bands`, bands),
-  getIncrementBands: (id: string) => api.get(`/cycles/${id}/increment-bands`),
+  getIncrementBands: (id: string)            => api.get(`/cycles/${id}/increment-bands`),
   setRatingScales:   (id: string, scales: any[]) => api.post(`/cycles/${id}/rating-scales`, scales),
   setWeightRules:    (id: string, rules: any[])  => api.post(`/cycles/${id}/weight-rules`, rules),
   advanceStatus:     (id: string, status: string) => api.patch(`/cycles/${id}/status?status=${status}`),
@@ -83,6 +83,6 @@ export const notificationsApi = {
 };
 
 export const userProfileApi = {
-  getProfile:     (id: string) => api.get(`/users/${id}/profile`),
+  getProfile:     (id: string)           => api.get(`/users/${id}/profile`),
   updateManagers: (id: string, data: any) => api.patch(`/users/${id}/managers`, data),
 };
