@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>PerfTrack</title>
+    <script>
+      var path = window.location.pathname;
+      var base = '/perftrack-pms';
+      if (path.indexOf(base) === 0) {
+        path = path.slice(base.length) || '/';
+      }
+      sessionStorage.setItem('redirect', path);
+      window.location.replace(base);
+    </script>
+  </head>
+</html>
