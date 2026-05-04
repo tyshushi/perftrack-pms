@@ -1,14 +1,15 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-import json, os
-
-from app.core.config import settings
-from app.db.session import engine, Base
-from app.api.routes import (
-    auth, users, departments, cycles, weight_rules,
-    kpi_templates, kpis, evaluations, scorecards,
-    increments, notifications, admin
+from app.api.routes.auth import router as auth_router
+from app.api.routes.users import router as users_router
+from app.api.routes.departments import router as departments_router
+from app.api.routes.cycles import router as cycles_router
+from app.api.routes.weight_rules import router as weight_rules_router
+from app.api.routes.kpi_templates import router as kpi_templates_router
+from app.api.routes.kpis import router as kpis_router
+from app.api.routes.evaluations import router as evaluations_router
+from app.api.routes.scorecards import router as scorecards_router
+from app.api.routes.increments import router as increments_router
+from app.api.routes.notifications import router as notifications_router
+from app.api.routes.admin import router as admin_router
 )
 
 
@@ -61,18 +62,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router,          prefix="/api/v1/auth",          tags=["Auth"])
-app.include_router(users.router,         prefix="/api/v1/users",         tags=["Users"])
-app.include_router(departments.router,   prefix="/api/v1/departments",   tags=["Departments"])
-app.include_router(cycles.router,        prefix="/api/v1/cycles",        tags=["Cycles"])
-app.include_router(weight_rules.router,  prefix="/api/v1/weight-rules",  tags=["Weight Rules"])
-app.include_router(kpi_templates.router, prefix="/api/v1/kpi-templates", tags=["KPI Templates"])
-app.include_router(kpis.router,          prefix="/api/v1/kpis",          tags=["KPIs"])
-app.include_router(evaluations.router,   prefix="/api/v1/evaluations",   tags=["Evaluations"])
-app.include_router(scorecards.router,    prefix="/api/v1/scorecards",    tags=["Scorecards"])
-app.include_router(increments.router,    prefix="/api/v1/increments",    tags=["Increments"])
-app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
-app.include_router(admin.router,         prefix="/api/v1/admin",         tags=["Admin"])
+app.include_router(auth_router,          prefix="/api/v1/auth",          tags=["Auth"])
+app.include_router(users_router,         prefix="/api/v1/users",         tags=["Users"])
+app.include_router(departments_router,   prefix="/api/v1/departments",   tags=["Departments"])
+app.include_router(cycles_router,        prefix="/api/v1/cycles",        tags=["Cycles"])
+app.include_router(weight_rules_router,  prefix="/api/v1/weight-rules",  tags=["Weight Rules"])
+app.include_router(kpi_templates_router, prefix="/api/v1/kpi-templates", tags=["KPI Templates"])
+app.include_router(kpis_router,          prefix="/api/v1/kpis",          tags=["KPIs"])
+app.include_router(evaluations_router,   prefix="/api/v1/evaluations",   tags=["Evaluations"])
+app.include_router(scorecards_router,    prefix="/api/v1/scorecards",    tags=["Scorecards"])
+app.include_router(increments_router,    prefix="/api/v1/increments",    tags=["Increments"])
+app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["Notifications"])
+app.include_router(admin_router,         prefix="/api/v1/admin",         tags=["Admin"])
 
 
 @app.get("/health")
