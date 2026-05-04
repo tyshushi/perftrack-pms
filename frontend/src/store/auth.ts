@@ -27,16 +27,22 @@ export const useAuthStore = create<AuthState>((set) => ({
   error: null,
 
   login: async (email, password) => {
-    set({ isLoading: true, error: null });
-    try {
-      const res = await authApi.login(email, password);
-      localStorage.setItem('access_token', res.data.access_token);
-      const me = await authApi.me();
-      set({ user: me.data, isLoading: false });
-    } catch (e: any) {
-      set({ error: e.response?.data?.detail || 'Login failed', isLoading: false });
-    }
-  },
+  set({ isLoading: true, error: null });
+  try {
+    const res = await authApi.login(email, password);
+    const token = res.data.access_token;
+    localStorage.setItem('access_token', token);
+    const me = await authApi.me();
+    set({ user: me.data, isLoading: false, error: null });
+  } catch (e: any) {
+    localStorage.removeItem('access_token');
+    set({ 
+      error: e.response?.data?.detail || 'Login failed', 
+      isLoading: false,
+      user: null 
+    });
+  }
+},
 
   logout: () => {
     localStorage.removeItem('access_token');
