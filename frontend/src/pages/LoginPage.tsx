@@ -9,8 +9,10 @@ export default function LoginPage() {
   const { register, handleSubmit } = useForm<{ email: string; password: string }>();
 
   useEffect(() => { 
-    if (user) navigate('/kpis', { replace: true }); 
-  }, [user, navigate]);
+  if (user) {
+    navigate('/kpis', { replace: true });
+  }
+}, [user]);
 
   async function onSubmit(data: { email: string; password: string }) {
     await login(data.email, data.password);
