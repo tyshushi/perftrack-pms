@@ -1,3 +1,4 @@
+import UsersPage from './pages/UsersPage';
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -33,6 +34,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter basename="/perftrack-pms">
         <Routes>
+          <Route path="users" element={<UsersPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
             <Route index element={<Navigate to="/kpis" replace />} />
