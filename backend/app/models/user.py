@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import (
     Column, String, Boolean, Integer, Numeric, Text,
-    ForeignKey, DateTime, Date, Enum as SAEnum, UniqueConstraint, CheckConstraint
+    ForeignKey, DateTime, Date, UniqueConstraint, CheckConstraint
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -77,7 +77,7 @@ class User(Base):
     employee_id     = Column(String(50), unique=True, nullable=False)
     email           = Column(String(255), unique=True, nullable=False)
     full_name       = Column(String(150), nullable=False)
-    role            = Column(SAEnum(UserRole), nullable=False, default=UserRole.STAFF)
+    role            = Column(String(20), nullable=False, default="STAFF")
     job_grade       = Column(String(20))
     department_id   = Column(UUID(as_uuid=True), ForeignKey("departments.id"))
     manager_id      = Column(UUID(as_uuid=True), ForeignKey("users.id"))
@@ -99,7 +99,7 @@ class PerformanceCycle(Base):
     id                  = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name                = Column(String(100), nullable=False)
     year                = Column(Integer, nullable=False)
-    status              = Column(SAEnum(CycleStatus), default=CycleStatus.DRAFT, nullable=False)
+    status              = Column(String(20), default="DRAFT", nullable=False)
     kpi_setting_start   = Column(Date, nullable=False)
     kpi_setting_end     = Column(Date, nullable=False)
     self_eval_start     = Column(Date, nullable=False)
@@ -145,7 +145,7 @@ class KpiTemplate(Base):
     name            = Column(String(200), nullable=False)
     description     = Column(Text)
     category        = Column(String(50), nullable=False)
-    kpi_type        = Column(SAEnum(KpiType), default=KpiType.FIXED, nullable=False)
+    kpi_type        = Column(String(20), default="FIXED", nullable=False)
     weight          = Column(Integer, nullable=False)
     target          = Column(String(200), nullable=False)
     measurement     = Column(Text)
@@ -167,7 +167,7 @@ class Kpi(Base):
     name            = Column(String(200), nullable=False)
     description     = Column(Text)
     category        = Column(String(50), nullable=False)
-    kpi_type        = Column(SAEnum(KpiType), default=KpiType.OPTIONAL, nullable=False)
+    kpi_type        = Column(String(20), default="OPTIONAL", nullable=False)
     weight          = Column(Integer, nullable=False)
     target          = Column(String(200), nullable=False)
     measurement     = Column(Text)
@@ -180,7 +180,7 @@ class Kpi(Base):
     mgr_comment     = Column(Text)
     mgr2_comment    = Column(Text)
     hod_comment     = Column(Text)
-    status          = Column(SAEnum(KpiStatus), default=KpiStatus.DRAFT, nullable=False)
+    status          = Column(String(20), default="DRAFT", nullable=False)
     created_at      = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at      = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -198,8 +198,8 @@ class KpiAuditLog(Base):
     id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     kpi_id      = Column(UUID(as_uuid=True), ForeignKey("kpis.id"), nullable=False)
     actor_id    = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    from_status = Column(SAEnum(KpiStatus))
-    to_status   = Column(SAEnum(KpiStatus), nullable=False)
+    from_status = Column(String(20))
+    to_status   = Column(String(20))
     comment     = Column(Text)
     score_given = Column(Numeric(3, 1))
     created_at  = Column(DateTime(timezone=True), default=datetime.utcnow)
@@ -234,10 +234,10 @@ class Scorecard(Base):
     band_rank               = Column(Integer)
     percentile              = Column(Numeric(5, 2))
     increment_pct           = Column(Numeric(5, 2))
-    increment_status        = Column(SAEnum(IncrementStatus), default=IncrementStatus.PENDING)
+    increment_status        = Column(String(20), default="PENDING")
     increment_confirmed_by  = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     increment_confirmed_at  = Column(DateTime(timezone=True))
-    eval_status             = Column(SAEnum(EvalStatus), default=EvalStatus.NOT_STARTED, nullable=False)
+    eval_status             = Column(String(20), default="NOT_STARTED", nullable=False)
     is_locked               = Column(Boolean, default=False)
     created_at              = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at              = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
