@@ -38,12 +38,28 @@ function Avatar({ name, size = 32 }: { name: string; size?: number }) {
   );
 }
 
+// ── Solid color tokens (fallbacks so the drawer is never transparent) ─────
+// These resolve to var(...) when defined, but fall back to concrete colors
+// so the panel always reads opaque against whatever is behind it.
+const C = {
+  bg:           'var(--color-background-primary, #ffffff)',
+  bgSecondary:  'var(--color-background-secondary, #f7f7f5)',
+  bgTertiary:   'var(--color-background-tertiary, #efefec)',
+  text:         'var(--color-text-primary, #1a1a1a)',
+  textSecond:   'var(--color-text-secondary, #6b6b6b)',
+  textTertiary: 'var(--color-text-tertiary, #9a9a9a)',
+  border:       'var(--color-border-secondary, #e2e2dd)',
+  borderLight:  'var(--color-border-tertiary, #ececea)',
+  danger:       'var(--color-text-danger, #b91c1c)',
+  font:         'var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif)',
+};
+
 // ── Inline searchable manager selector ────────────────────────────────────
 
 const SLOT_CONFIG = [
   { key: 'direct_manager_id',    label: 'Direct Manager',    color: '#0369a1', bg: '#e0f2fe' },
   { key: 'reviewing_manager_id', label: 'Reviewing Manager', color: '#6d28d9', bg: '#ede9fe' },
-  { key: 'hod_id',               label: 'HOD',              color: '#92400e', bg: '#fef3c7' },
+  { key: 'hod_id',               label: 'HOD',               color: '#92400e', bg: '#fef3c7' },
 ] as const;
 
 type SlotKey = typeof SLOT_CONFIG[number]['key'];
@@ -86,24 +102,25 @@ function ManagerSlot({
 
   return (
     <div style={{ marginBottom: 0 }}>
-      <div style={{ fontSize: 11, color: 'var(--color-text-secondary)',
-        marginBottom: 5 }}>{slot.label}</div>
+      <div style={{ fontSize: 11, color: C.textSecond, marginBottom: 5 }}>
+        {slot.label}
+      </div>
 
       {/* Assigned pill or empty state */}
       {!isOpen && (
         assignedUser ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8,
             padding: '8px 10px', borderRadius: 8,
-            border: '0.5px solid var(--color-border-tertiary)',
-            background: slot.bg + '30' }}>
+            border: `1px solid ${slot.color}33`,
+            background: slot.bg }}>
             <Avatar name={assignedUser.full_name} size={26} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 500,
+              <div style={{ fontSize: 12, fontWeight: 600,
                 color: slot.color,
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {assignedUser.full_name}
               </div>
-              <div style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>
+              <div style={{ fontSize: 10, color: C.textSecond }}>
                 {assignedUser.employee_id}
                 {assignedUser.job_grade ? ` · ${assignedUser.job_grade}` : ''}
               </div>
@@ -111,23 +128,23 @@ function ManagerSlot({
             <button onClick={handleOpen} title="Change"
               style={{ border: 'none', background: 'transparent',
                 cursor: 'pointer', fontSize: 12,
-                color: 'var(--color-text-secondary)', padding: '2px 4px' }}>
+                color: C.textSecond, padding: '2px 4px' }}>
               ✎
             </button>
             <button onClick={onClear} title="Remove"
               style={{ border: 'none', background: 'transparent',
                 cursor: 'pointer', fontSize: 13,
-                color: 'var(--color-text-tertiary)', padding: '2px 4px' }}>
+                color: C.textTertiary, padding: '2px 4px' }}>
               ✕
             </button>
           </div>
         ) : (
           <button onClick={handleOpen}
             style={{ width: '100%', padding: '8px 10px', borderRadius: 8,
-              border: '0.5px dashed var(--color-border-secondary)',
-              background: 'transparent', cursor: 'pointer', textAlign: 'left',
-              fontSize: 12, color: 'var(--color-text-tertiary)',
-              fontFamily: 'var(--font-sans)' }}>
+              border: `1px dashed ${C.border}`,
+              background: C.bg, cursor: 'pointer', textAlign: 'left',
+              fontSize: 12, color: C.textTertiary,
+              fontFamily: C.font }}>
             + Assign {slot.label}
           </button>
         )
@@ -136,33 +153,34 @@ function ManagerSlot({
       {/* Expanded search */}
       {isOpen && (
         <div>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
             <input
               autoFocus
-              style={{ flex: 1, padding: '7px 10px',
+              style={{ flex: 1, padding: '8px 10px',
                 border: `1px solid ${slot.color}`,
                 borderRadius: 8, fontSize: 12,
-                background: 'var(--color-background-primary)',
-                color: 'var(--color-text-primary)',
-                fontFamily: 'var(--font-sans)', outline: 'none' }}
+                background: C.bg,
+                color: C.text,
+                fontFamily: C.font, outline: 'none' }}
               placeholder={`Search for ${slot.label.toLowerCase()}...`}
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
             <button onClick={() => { onClose(); setSearch(''); }}
-              style={{ padding: '6px 10px', border: '0.5px solid var(--color-border-secondary)',
-                borderRadius: 8, background: 'transparent', cursor: 'pointer',
-                fontSize: 12, color: 'var(--color-text-secondary)',
-                fontFamily: 'var(--font-sans)' }}>
+              style={{ padding: '6px 10px',
+                border: `1px solid ${C.border}`,
+                borderRadius: 8, background: C.bg, cursor: 'pointer',
+                fontSize: 12, color: C.textSecond,
+                fontFamily: C.font }}>
               Cancel
             </button>
           </div>
 
           {/* Results */}
           {results.length > 0 && (
-            <div style={{ border: '0.5px solid var(--color-border-tertiary)',
+            <div style={{ border: `1px solid ${C.borderLight}`,
               borderRadius: 8, overflow: 'hidden',
-              background: 'var(--color-background-primary)',
+              background: C.bg,
               maxHeight: 220, overflowY: 'auto' }}>
               {results.map((m: any, i: number) => (
                 <div key={m.id}
@@ -170,19 +188,19 @@ function ManagerSlot({
                   style={{ display: 'flex', alignItems: 'center', gap: 8,
                     padding: '8px 10px', cursor: 'pointer',
                     borderBottom: i < results.length - 1
-                      ? '0.5px solid var(--color-border-tertiary)' : 'none',
-                    background: 'var(--color-background-primary)' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-background-secondary)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'var(--color-background-primary)')}>
+                      ? `1px solid ${C.borderLight}` : 'none',
+                    background: C.bg }}
+                  onMouseEnter={e => (e.currentTarget.style.background = C.bgSecondary)}
+                  onMouseLeave={e => (e.currentTarget.style.background = C.bg)}>
                   <Avatar name={m.full_name} size={26} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 500,
-                      color: 'var(--color-text-primary)',
+                      color: C.text,
                       overflow: 'hidden', textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap' }}>
                       {m.full_name}
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>
+                    <div style={{ fontSize: 10, color: C.textSecond }}>
                       {m.employee_id}
                       {m.position_title ? ` · ${m.position_title}` : ''}
                       {m.job_grade ? ` · ${m.job_grade}` : ''}
@@ -190,7 +208,7 @@ function ManagerSlot({
                     </div>
                   </div>
                   <span style={{ fontSize: 10, color: slot.color,
-                    fontWeight: 500, flexShrink: 0 }}>Select</span>
+                    fontWeight: 600, flexShrink: 0 }}>Select</span>
                 </div>
               ))}
             </div>
@@ -198,8 +216,9 @@ function ManagerSlot({
 
           {search.trim() && results.length === 0 && (
             <div style={{ padding: '10px 12px', fontSize: 12,
-              color: 'var(--color-text-tertiary)', textAlign: 'center',
-              border: '0.5px solid var(--color-border-tertiary)', borderRadius: 8 }}>
+              color: C.textTertiary, textAlign: 'center',
+              border: `1px solid ${C.borderLight}`, borderRadius: 8,
+              background: C.bg }}>
               No results for "{search}"
             </div>
           )}
@@ -270,21 +289,27 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
   }
 
   const managers = users.filter(u => u.id !== user.id);
-  const deptMap  = Object.fromEntries(depts.map((d: any) => [d.id, d.name]));
   const initials = user.full_name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop — opaque enough that the table behind doesn't bleed through */}
       <div style={{ position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,0.3)', zIndex: 1000 }}
+        background: 'rgba(15, 18, 22, 0.45)',
+        backdropFilter: 'blur(2px)',
+        WebkitBackdropFilter: 'blur(2px)',
+        zIndex: 1000 }}
         onClick={onClose} />
 
-      {/* Panel */}
+      {/* Panel — solid background with hard fallback so it can never be transparent */}
       <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 440,
-        background: 'var(--color-background-primary)',
+        background: '#ffffff',
+        backgroundColor: C.bg,
         overflowY: 'auto', zIndex: 1001,
-        boxShadow: '-4px 0 24px rgba(0,0,0,0.12)' }}
+        borderLeft: `1px solid ${C.borderLight}`,
+        boxShadow: '-12px 0 32px rgba(0,0,0,0.18)',
+        fontFamily: C.font,
+        color: C.text }}
         onClick={e => e.stopPropagation()}>
 
         <div style={{ padding: 24 }}>
@@ -293,16 +318,17 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
           <div style={{ display: 'flex', justifyContent: 'space-between',
             alignItems: 'center', marginBottom: 20 }}>
             <span style={{ fontWeight: 600, fontSize: 15,
-              color: 'var(--color-text-primary)' }}>Employee Profile</span>
+              color: C.text }}>Employee Profile</span>
             <button onClick={onClose}
               style={{ border: 'none', background: 'transparent',
                 cursor: 'pointer', fontSize: 20,
-                color: 'var(--color-text-secondary)' }}>✕</button>
+                color: C.textSecond, lineHeight: 1, padding: 4 }}>✕</button>
           </div>
 
           {/* Avatar + name card */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14,
-            padding: 16, background: 'var(--color-background-secondary)',
+            padding: 16, background: C.bgSecondary,
+            border: `1px solid ${C.borderLight}`,
             borderRadius: 12, marginBottom: 20 }}>
             <div style={{ width: 52, height: 52, borderRadius: '50%',
               background: '#e8f1fb', color: '#185fa5', flexShrink: 0,
@@ -312,15 +338,15 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
             </div>
             <div>
               <div style={{ fontWeight: 600, fontSize: 16,
-                color: 'var(--color-text-primary)' }}>{user.full_name}</div>
-              <div style={{ fontSize: 12, color: 'var(--color-text-secondary)',
+                color: C.text }}>{user.full_name}</div>
+              <div style={{ fontSize: 12, color: C.textSecond,
                 marginBottom: 2 }}>{user.email}</div>
               <RolePill role={user.role} />
             </div>
           </div>
 
           {isLoading && (
-            <div style={{ color: 'var(--color-text-secondary)', fontSize: 13,
+            <div style={{ color: C.textSecond, fontSize: 13,
               textAlign: 'center', padding: 32 }}>Loading...</div>
           )}
 
@@ -328,44 +354,52 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
             <>
               {/* Personal details */}
               <div style={S.sectionLabel}>Personal Details</div>
-              {[
-                ['Employee Code',   profile.employee_id],
-                ['Position',        profile.position_title  || '—'],
-                ['Grade',           profile.job_grade       || '—'],
-                ['Department',      profile.department_name || '—'],
-                ['Division',        profile.division        || '—'],
-                ['Section',         profile.section         || '—'],
-                ['Employment Unit', profile.employment_unit || '—'],
-                ['Category',        profile.category        || '—'],
-                ['Employee Type',   profile.employee_type   || '—'],
-                ['Country',         profile.country         || '—'],
-                ['Work Location',   profile.work_location   || '—'],
-                ['Gender',          profile.gender          || '—'],
-                ['Hire Date',       profile.hire_date       || '—'],
-                ['Status',          profile.is_active ? 'Active' : 'Inactive'],
-              ].map(([label, value]) => (
-                <div key={label} style={S.row}>
-                  <span style={{ color: 'var(--color-text-secondary)',
-                    fontSize: 13, flexShrink: 0 }}>{label}</span>
-                  <span style={{ fontWeight: 500, fontSize: 13,
-                    color: 'var(--color-text-primary)',
-                    textAlign: 'right', maxWidth: 240,
-                    wordBreak: 'break-word' }}>{value}</span>
-                </div>
-              ))}
+              <div style={{ background: C.bg,
+                border: `1px solid ${C.borderLight}`,
+                borderRadius: 12, padding: '0 14px', marginBottom: 4 }}>
+                {[
+                  ['Employee Code',   profile.employee_id],
+                  ['Position',        profile.position_title  || '—'],
+                  ['Grade',           profile.job_grade       || '—'],
+                  ['Department',      profile.department_name || '—'],
+                  ['Division',        profile.division        || '—'],
+                  ['Section',         profile.section         || '—'],
+                  ['Employment Unit', profile.employment_unit || '—'],
+                  ['Category',        profile.category        || '—'],
+                  ['Employee Type',   profile.employee_type   || '—'],
+                  ['Country',         profile.country         || '—'],
+                  ['Work Location',   profile.work_location   || '—'],
+                  ['Gender',          profile.gender          || '—'],
+                  ['Hire Date',       profile.hire_date       || '—'],
+                  ['Status',          profile.is_active ? 'Active' : 'Inactive'],
+                ].map(([label, value], i, arr) => (
+                  <div key={label} style={{
+                    ...S.row,
+                    borderBottom: i < arr.length - 1
+                      ? `1px solid ${C.borderLight}` : 'none',
+                  }}>
+                    <span style={{ color: C.textSecond,
+                      fontSize: 13, flexShrink: 0 }}>{label}</span>
+                    <span style={{ fontWeight: 500, fontSize: 13,
+                      color: C.text,
+                      textAlign: 'right', maxWidth: 240,
+                      wordBreak: 'break-word' }}>{value}</span>
+                  </div>
+                ))}
+              </div>
 
               {/* Reporting chain */}
-              <div style={{ ...S.sectionLabel, marginTop: 20,
+              <div style={{ ...S.sectionLabel, marginTop: 24,
                 display: 'flex', justifyContent: 'space-between',
                 alignItems: 'center' }}>
                 <span>Reporting Chain</span>
                 {!editing && (
                   <button onClick={startEditing}
-                    style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6,
-                      border: '0.5px solid var(--color-border-secondary)',
-                      background: 'transparent', cursor: 'pointer',
-                      color: 'var(--color-text-secondary)',
-                      fontFamily: 'var(--font-sans)', fontWeight: 400,
+                    style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6,
+                      border: `1px solid ${C.border}`,
+                      background: C.bg, cursor: 'pointer',
+                      color: C.textSecond,
+                      fontFamily: C.font, fontWeight: 500,
                       textTransform: 'none', letterSpacing: 0 }}>
                     Edit
                   </button>
@@ -375,43 +409,50 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
               {/* View mode */}
               {!editing && (
                 <>
-                  {[
-                    ['Direct Manager',    profile.direct_manager,    '#0369a1'],
-                    ['Reviewing Manager', profile.reviewing_manager,  '#6d28d9'],
-                    ['HOD',              profile.hod,               '#92400e'],
-                  ].map(([label, mgr, color]: any) => (
-                    <div key={label} style={S.row}>
-                      <span style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>
-                        {label}
-                      </span>
-                      {mgr ? (
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontWeight: 500, fontSize: 13, color }}>
-                            {mgr.name}
+                  <div style={{ background: C.bg,
+                    border: `1px solid ${C.borderLight}`,
+                    borderRadius: 12, padding: '0 14px' }}>
+                    {[
+                      ['Direct Manager',    profile.direct_manager,    '#0369a1'],
+                      ['Reviewing Manager', profile.reviewing_manager, '#6d28d9'],
+                      ['HOD',               profile.hod,               '#92400e'],
+                      ['Approval Levels',   null,                      null],
+                    ].map(([label, mgr, color]: any, i, arr) => (
+                      <div key={label} style={{
+                        ...S.row,
+                        borderBottom: i < arr.length - 1
+                          ? `1px solid ${C.borderLight}` : 'none',
+                      }}>
+                        <span style={{ color: C.textSecond, fontSize: 13 }}>
+                          {label}
+                        </span>
+                        {label === 'Approval Levels' ? (
+                          <span style={{ fontWeight: 500, fontSize: 13,
+                            color: C.text }}>
+                            {profile.approval_levels || 3} level(s)
+                          </span>
+                        ) : mgr ? (
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontWeight: 500, fontSize: 13, color }}>
+                              {mgr.name}
+                            </div>
+                            <div style={{ fontSize: 11,
+                              color: C.textTertiary }}>
+                              {mgr.employee_id}
+                            </div>
                           </div>
-                          <div style={{ fontSize: 11,
-                            color: 'var(--color-text-tertiary)' }}>
-                            {mgr.employee_id}
-                          </div>
-                        </div>
-                      ) : (
-                        <span style={{ color: 'var(--color-text-tertiary)',
-                          fontSize: 13 }}>Not assigned</span>
-                      )}
-                    </div>
-                  ))}
-                  <div style={S.row}>
-                    <span style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>
-                      Approval Levels
-                    </span>
-                    <span style={{ fontWeight: 500, fontSize: 13,
-                      color: 'var(--color-text-primary)' }}>
-                      {profile.approval_levels || 3} level(s)
-                    </span>
+                        ) : (
+                          <span style={{ color: C.textTertiary,
+                            fontSize: 13 }}>Not assigned</span>
+                        )}
+                      </div>
+                    ))}
                   </div>
                   {saveOk && (
-                    <div style={{ marginTop: 10, padding: '8px 12px',
-                      background: '#dcfce7', borderRadius: 8,
+                    <div style={{ marginTop: 12, padding: '8px 12px',
+                      background: '#dcfce7',
+                      border: '1px solid #86efac',
+                      borderRadius: 8,
                       fontSize: 12, color: '#166534', textAlign: 'center' }}>
                       ✓ Reporting chain saved
                     </div>
@@ -421,7 +462,9 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
 
               {/* Edit mode — inline slots */}
               {editing && (
-                <div>
+                <div style={{ background: C.bg,
+                  border: `1px solid ${C.borderLight}`,
+                  borderRadius: 12, padding: 14 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14,
                     marginBottom: 16 }}>
                     {SLOT_CONFIG.map(slot => (
@@ -441,7 +484,7 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
 
                   {/* Approval levels */}
                   <div style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 11, color: 'var(--color-text-secondary)',
+                    <div style={{ fontSize: 11, color: C.textSecond,
                       marginBottom: 6 }}>Approval Levels</div>
                     <div style={{ display: 'flex', gap: 6 }}>
                       {[
@@ -451,15 +494,15 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
                       ].map(opt => (
                         <button key={opt.v} onClick={() => setLevels(opt.v)}
                           style={{ flex: 1, padding: '8px 6px', borderRadius: 8,
-                            cursor: 'pointer', fontFamily: 'var(--font-sans)',
-                            border: `0.5px solid ${levels === opt.v
-                              ? 'var(--color-text-primary)'
-                              : 'var(--color-border-secondary)'}`,
+                            cursor: 'pointer', fontFamily: C.font,
+                            border: `1px solid ${levels === opt.v
+                              ? C.text
+                              : C.border}`,
                             background: levels === opt.v
-                              ? 'var(--color-text-primary)' : 'transparent',
+                              ? C.text : C.bg,
                             color: levels === opt.v
-                              ? 'var(--color-background-primary)'
-                              : 'var(--color-text-secondary)',
+                              ? '#ffffff'
+                              : C.textSecond,
                             textAlign: 'center' }}>
                           <div style={{ fontSize: 12, fontWeight: 500 }}>{opt.label}</div>
                           <div style={{ fontSize: 10, marginTop: 1, opacity: 0.7 }}>
@@ -474,29 +517,29 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={handleSave}
                       disabled={updateMutation.isPending}
-                      style={{ flex: 1, padding: '9px', border: 'none',
+                      style={{ flex: 1, padding: '10px', border: 'none',
                         borderRadius: 8,
-                        background: 'var(--color-text-primary)',
-                        color: 'var(--color-background-primary)',
-                        fontSize: 13, cursor: 'pointer',
-                        fontFamily: 'var(--font-sans)',
+                        background: C.text,
+                        color: '#ffffff',
+                        fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                        fontFamily: C.font,
                         opacity: updateMutation.isPending ? 0.7 : 1 }}>
                       {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
                     </button>
                     <button onClick={cancelEditing}
-                      style={{ padding: '9px 16px',
-                        border: '0.5px solid var(--color-border-secondary)',
-                        borderRadius: 8, background: 'transparent',
+                      style={{ padding: '10px 16px',
+                        border: `1px solid ${C.border}`,
+                        borderRadius: 8, background: C.bg,
                         fontSize: 13, cursor: 'pointer',
-                        fontFamily: 'var(--font-sans)',
-                        color: 'var(--color-text-secondary)' }}>
+                        fontFamily: C.font,
+                        color: C.textSecond }}>
                       Cancel
                     </button>
                   </div>
 
                   {updateMutation.isError && (
                     <div style={{ marginTop: 8, fontSize: 12,
-                      color: 'var(--color-text-danger)', textAlign: 'center' }}>
+                      color: C.danger, textAlign: 'center' }}>
                       Failed to save. Please try again.
                     </div>
                   )}
@@ -512,16 +555,15 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
 
 const S: Record<string, any> = {
   sectionLabel: {
-    fontSize: 11, fontWeight: 500,
-    color: 'var(--color-text-secondary)',
+    fontSize: 11, fontWeight: 600,
+    color: C.textSecond,
     textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    marginBottom: 8,
+    letterSpacing: '0.06em',
+    marginBottom: 10,
   },
   row: {
     display: 'flex', justifyContent: 'space-between',
     alignItems: 'flex-start',
-    padding: '9px 0',
-    borderBottom: '0.5px solid var(--color-border-tertiary)',
+    padding: '11px 0',
   },
 };
