@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from app.models.user import (
     Scorecard, IncrementBand, BellCurveTarget,
-    User, Notification, IncrementStatus
+    User, Notification
 )
 
 
@@ -78,7 +78,7 @@ class BellCurveService:
 
                 # Assign increment from score-based bands
                 sc.increment_pct    = self._assign_increment(sc.final_score, bands)
-                sc.increment_status = IncrementStatus.FLAGGED
+                sc.increment_status = "FLAGGED"
 
                 updated += 1
 
@@ -127,7 +127,7 @@ class BellCurveService:
             from fastapi import HTTPException
             raise HTTPException(404, "Scorecard not found")
 
-        sc.increment_status        = IncrementStatus.CONFIRMED
+        sc.increment_status = "CONFIRMED"
         sc.increment_confirmed_by  = confirmed_by_id
         sc.increment_confirmed_at  = datetime.utcnow()
 
