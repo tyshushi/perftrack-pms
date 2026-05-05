@@ -27,7 +27,7 @@ function RolePill({ role }: { role: string }) {
 }
 
 function Avatar({ name, size = 32 }: { name: string; size?: number }) {
-  const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const initials = (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   return (
     <div style={{ width: size, height: size, borderRadius: '50%',
       background: '#e8f1fb', color: '#185fa5', flexShrink: 0,
@@ -194,7 +194,7 @@ function ManagerSlot({
                     background: C.bg }}
                   onMouseEnter={e => (e.currentTarget.style.background = C.bgSecondary)}
                   onMouseLeave={e => (e.currentTarget.style.background = C.bg)}>
-                  <Avatar name={m.full_name} size={26} />
+                  <Avatar name={m.full_name || '?'} size={26} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 500,
                       color: C.text,
@@ -291,7 +291,7 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
   }
 
   const managers = users.filter(u => u.id !== user.id);
-  const initials = user.full_name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+  const initials = (user.full_name || '?').split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
     <>
