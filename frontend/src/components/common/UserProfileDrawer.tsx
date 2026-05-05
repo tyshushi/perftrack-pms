@@ -38,20 +38,22 @@ function Avatar({ name, size = 32 }: { name: string; size?: number }) {
   );
 }
 
-// ── Solid color tokens (fallbacks so the drawer is never transparent) ─────
-// These resolve to var(...) when defined, but fall back to concrete colors
-// so the panel always reads opaque against whatever is behind it.
+// ── Solid color tokens ────────────────────────────────────────────────────
+// We deliberately do NOT use CSS variables for backgrounds here. The host
+// app's --color-background-primary appears to resolve to a transparent
+// value in this context, which made the drawer see-through. Hard hex
+// values guarantee the drawer is always opaque.
 const C = {
-  bg:           'var(--color-background-primary, #ffffff)',
-  bgSecondary:  'var(--color-background-secondary, #f7f7f5)',
-  bgTertiary:   'var(--color-background-tertiary, #efefec)',
-  text:         'var(--color-text-primary, #1a1a1a)',
-  textSecond:   'var(--color-text-secondary, #6b6b6b)',
-  textTertiary: 'var(--color-text-tertiary, #9a9a9a)',
-  border:       'var(--color-border-secondary, #e2e2dd)',
-  borderLight:  'var(--color-border-tertiary, #ececea)',
-  danger:       'var(--color-text-danger, #b91c1c)',
-  font:         'var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif)',
+  bg:           '#ffffff',
+  bgSecondary:  '#f7f7f5',
+  bgTertiary:   '#efefec',
+  text:         '#1a1a1a',
+  textSecond:   '#6b6b6b',
+  textTertiary: '#9a9a9a',
+  border:       '#e2e2dd',
+  borderLight:  '#ececea',
+  danger:       '#b91c1c',
+  font:         '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
 };
 
 // ── Inline searchable manager selector ────────────────────────────────────
@@ -301,15 +303,17 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
         zIndex: 1000 }}
         onClick={onClose} />
 
-      {/* Panel — solid background with hard fallback so it can never be transparent */}
+      {/* Panel — hard white background. Do NOT use CSS vars here — if the
+          host app's --color-background-primary is unset or transparent, the
+          drawer becomes see-through. White is the safe choice in both themes
+          since this drawer is always shown on a light surface. */}
       <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 440,
         background: '#ffffff',
-        backgroundColor: C.bg,
         overflowY: 'auto', zIndex: 1001,
-        borderLeft: `1px solid ${C.borderLight}`,
+        borderLeft: '1px solid #ececea',
         boxShadow: '-12px 0 32px rgba(0,0,0,0.18)',
         fontFamily: C.font,
-        color: C.text }}
+        color: '#1a1a1a' }}
         onClick={e => e.stopPropagation()}>
 
         <div style={{ padding: 24 }}>
