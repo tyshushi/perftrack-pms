@@ -593,3 +593,115 @@ async def import_confirm(
         "skipped":     skipped,
         "message":     "Import complete. New users get temporary password: Welcome@1234",
     }
+
+@router.post("/import/reporting-lines")
+async def import_reporting_lines(
+    file:         UploadFile   = File(...),
+    db:           AsyncSession = Depends(get_db),
+    _:            User         = Depends(require_hr_admin),
+):
+    """
+    Upload a CSV with reporting line assignments only.
+    Columns: Employee Code, Name, Direct Manager Code,
+             Reviewing Manager Code, HOD Code
+    Blank manager codes = keep existing assignment.
+    """
+    content = await file.read()
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = content.decode("latin-1")
+
+    reader = csv.DictReader(io.StringIO(text))
+
+    if not reader.fieldnames:
+        raise HTTPException(400, "CSV file is empty or unreadable")
+
+    required = {"Employee Code", "Name",
+                "Direct Manager Code", "Reviewing Manager Code", "HOD Code"}
+    missing  = required - set(reader.fieldnames)
+    if missing:
+        raise HTTPException(400, f"Missing columns: {', '.join(sorted(missing))}")
+
+    rows = list(reader)
+    if not rows:
+        raise HTTPException(400, "CSV has no data rows")
+
+    # Build lookup maps
+    result     = await db.execute(select(User).where(User.is_active == True))
+    all_users  = result.scalars().all()
+    by_code    = {u.employee_id: u for u in all_users}
+    code_to_id = {u.employee_id: u.id for u in all_users}
+
+    from datetime import datetime as dt
+
+    updated      = 0
+    not_found    = []
+    name_mismatch = []
+    warnings     = []
+    skipped      = 0
+
+    for i, row in enumerate(rows, start=2):
+        emp_code = row.get("Employee Code", "").strip()
+        name     = row.get("Name", "").strip()
+        dm_code  = row.get("Direct Manager Code", "").strip()
+        rm_code  = row.get("Reviewing Manager Code", "").strip()
+        hod_code = row.get("HOD Code", "").strip()
+
+        if not emp_code:
+            skipped += 1
+            continue
+
+        user = by_code.get(emp_code)
+        if not user:
+            not_found.append(emp_code)
+            continue
+
+        # Name verification — warn but don't block
+        if name and user.full_name.strip().lower() != name.lower():
+            name_mismatch.append({
+                "code":     emp_code,
+                "expected": user.full_name,
+                "got":      name,
+            })
+
+        # Resolve manager IDs — only update if code is provided
+        changed = False
+        if dm_code:
+            dm_id = code_to_id.get(dm_code)
+            if dm_id:
+                user.direct_manager_id = dm_id
+                changed = True
+            else:
+                warnings.append(f"Row {i}: Direct Manager code '{dm_code}' not found — skipped")
+
+        if rm_code:
+            rm_id = code_to_id.get(rm_code)
+            if rm_id:
+                user.reviewing_manager_id = rm_id
+                changed = True
+            else:
+                warnings.append(f"Row {i}: Reviewing Manager code '{rm_code}' not found — skipped")
+
+        if hod_code:
+            hod_id = code_to_id.get(hod_code)
+            if hod_id:
+                user.hod_id = hod_id
+                changed = True
+            else:
+                warnings.append(f"Row {i}: HOD code '{hod_code}' not found — skipped")
+
+        if changed:
+            user.updated_at = dt.utcnow()
+            updated += 1
+
+    await db.flush()
+
+    return {
+        "updated":        updated,
+        "skipped":        skipped,
+        "not_found":      not_found,
+        "name_mismatches": name_mismatch,
+        "warnings":       warnings,
+        "message":        f"Reporting lines updated for {updated} employee(s).",
+    }
