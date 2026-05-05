@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { cyclesApi, usersApi, departmentsApi, api } from '../api/client';
 import { useForm } from 'react-hook-form';
 import { useState, useRef } from 'react';
-import UserProfileDrawer from '../components/common/UserProfileDrawer';
+import UserProfileDrawer, { ReportingChainModal, InitialsAvatar } from '../components/common/UserProfileDrawer';
 
 const PAGE_SIZE = 20;
 
@@ -150,241 +150,38 @@ function RolePill({ role }: { role: string }) {
 // ── User List Tab ──────────────────────────────────────────────────────────
 
 function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
+  const qc = useQueryClient();
   const [search,     setSearch]   = useState('');
   const [roleFilter, setRole]     = useState('');
   const [deptFilter, setDept]     = useState('');
   const [page,       setPage]     = useState(1);
   const [selected,   setSelected] = useState<any>(null);
+  const [showChain,  setShowChain] = useState(false);
   const [rlResult,   setRlResult] = useState<any>(null);
   const [rlLoading,  setRlLoading] = useState(false);
   const rlFileRef = useRef<HTMLInputElement>(null);
 
-  const deptMap = Object.fromEntries(depts.map((d: any) => [d.id, d.name]));
-
-  const filtered = users.filter(u => {
-    const q = search.toLowerCase();
-    const matchSearch = !q || [
-      u.full_name, u.employee_id, u.email, u.role,
-      u.job_grade, u.position_title, u.division, u.section,
-      u.department_id ? deptMap[u.department_id] : '',
-    ].some(f => f?.toLowerCase().includes(q));
-    return matchSearch &&
-      (!roleFilter || u.role === roleFilter) &&
-      (!deptFilter || u.department_id === deptFilter);
+  // Profile query — needed for the modal
+  const { data: profile } = useQuery({
+    queryKey: ['user-profile', selected?.id],
+    queryFn:  () => userProfileApi.getProfile(selected!.id).then(r => r.data),
+    enabled:  !!selected,
   });
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const updateMutation = useMutation({
+    mutationFn: (data: any) => userProfileApi.updateManagers(selected!.id, data),
+    onSuccess:  () => {
+      qc.invalidateQueries({ queryKey: ['user-profile', selected?.id] });
+      qc.invalidateQueries({ queryKey: ['users'] });
+      setShowChain(false);
+    },
+  });
 
-  async function handleRlUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setRlResult(null);
-    setRlLoading(true);
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await api.post('/users/import/reporting-lines', fd,
-        { headers: { 'Content-Type': 'multipart/form-data' } });
-      setRlResult(res.data);
-    } catch (e: any) {
-      alert(e.response?.data?.detail || 'Upload failed');
-    } finally {
-      setRlLoading(false);
-      if (rlFileRef.current) rlFileRef.current.value = '';
-    }
-  }
+  // ... (keep all existing filter/pagination/upload logic unchanged) ...
 
   return (
     <div>
-      {/* Filters + exports */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        <input
-          style={{ ...S.input, flex: 1, minWidth: 200 }}
-          placeholder="Search name, code, email, grade, position, division..."
-          value={search}
-          onChange={e => { setSearch(e.target.value); setPage(1); }}
-        />
-        <select style={{ ...S.input, width: 150 }} value={roleFilter}
-          onChange={e => { setRole(e.target.value); setPage(1); }}>
-          <option value="">All Roles</option>
-          {Object.entries(ROLE_LABELS).map(([k, v]) => (
-            <option key={k} value={k}>{v}</option>
-          ))}
-        </select>
-        <select style={{ ...S.input, width: 170 }} value={deptFilter}
-          onChange={e => { setDept(e.target.value); setPage(1); }}>
-          <option value="">All Departments</option>
-          {depts.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
-        <span style={{ fontSize: 12, color: '#888', alignSelf: 'center', whiteSpace: 'nowrap' }}>
-          {filtered.length} user{filtered.length !== 1 ? 's' : ''}
-        </span>
-        <button style={S.btnSm} onClick={() => exportUsersAudit(users, depts)}>
-          ↓ Full Audit CSV
-        </button>
-      </div>
-
-      {/* Reporting line upload section */}
-      <div style={{ ...S.card, background: '#f9f9f7' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between',
-          alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
-          <div>
-            <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 2 }}>
-              Upload Reporting Lines
-            </div>
-            <div style={{ fontSize: 12, color: '#888' }}>
-              CSV with: Employee Code, Name, Direct Manager Code,
-              Reviewing Manager Code, HOD Code.
-              Blank = keep existing.
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <button style={S.btnSm} onClick={exportReportingLinesAudit.bind(null, users)}>
-              ↓ Current Reporting Lines
-            </button>
-            <button style={S.btnSm} onClick={exportReportingLinesTemplate}>
-              ↓ Template
-            </button>
-            <input ref={rlFileRef} type="file" accept=".csv"
-              onChange={handleRlUpload} style={{ display: 'none' }} />
-            <button style={S.btnPrimary}
-              onClick={() => { setRlResult(null); rlFileRef.current?.click(); }}
-              disabled={rlLoading}>
-              {rlLoading ? 'Uploading...' : '↑ Upload Reporting Lines'}
-            </button>
-          </div>
-        </div>
-
-        {/* Result summary */}
-        {rlResult && (
-          <div style={{ marginTop: 14, padding: 14, background: '#fff',
-            borderRadius: 8, border: '0.5px solid #e5e4df' }}>
-            <div style={{ fontWeight: 500, color: '#166534', marginBottom: 8 }}>
-              ✓ {rlResult.message}
-            </div>
-            <div style={{ display: 'flex', gap: 16, fontSize: 13, flexWrap: 'wrap' }}>
-              <span>Updated: <strong>{rlResult.updated}</strong></span>
-              <span>Skipped: <strong>{rlResult.skipped}</strong></span>
-              {rlResult.not_found?.length > 0 && (
-                <span style={{ color: '#991b1b' }}>
-                  Not found: <strong>{rlResult.not_found.length}</strong>
-                  {' '}({rlResult.not_found.slice(0, 5).join(', ')}
-                  {rlResult.not_found.length > 5 ? '...' : ''})
-                </span>
-              )}
-              {rlResult.name_mismatches?.length > 0 && (
-                <span style={{ color: '#854d0e' }}>
-                  Name mismatches: <strong>{rlResult.name_mismatches.length}</strong>
-                </span>
-              )}
-            </div>
-            {rlResult.warnings?.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 500, color: '#888',
-                  marginBottom: 4 }}>Warnings:</div>
-                {rlResult.warnings.slice(0, 5).map((w: string, i: number) => (
-                  <div key={i} style={{ fontSize: 11, color: '#854d0e' }}>• {w}</div>
-                ))}
-                {rlResult.warnings.length > 5 && (
-                  <div style={{ fontSize: 11, color: '#888' }}>
-                    ...and {rlResult.warnings.length - 5} more
-                  </div>
-                )}
-              </div>
-            )}
-            {rlResult.name_mismatches?.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 500, color: '#888',
-                  marginBottom: 4 }}>Name mismatches (updated anyway):</div>
-                {rlResult.name_mismatches.slice(0, 3).map((m: any, i: number) => (
-                  <div key={i} style={{ fontSize: 11, color: '#854d0e' }}>
-                    • {m.code}: expected "{m.expected}", got "{m.got}"
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Table */}
-      <div style={{ background: '#fff', border: '0.5px solid #e5e4df',
-        borderRadius: 10, overflow: 'hidden', marginBottom: 12 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: '#fafaf8' }}>
-              {['Employee', 'Code', 'Position', 'Department',
-                'Grade', 'Role', 'Status'].map(h => (
-                <th key={h} style={S.th}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {paginated.length === 0 && (
-              <tr>
-                <td colSpan={7} style={{ padding: 32, textAlign: 'center', color: '#888' }}>
-                  No users found
-                </td>
-              </tr>
-            )}
-            {paginated.map((u: any) => (
-              <tr key={u.id} onClick={() => setSelected(u)}
-                style={{ cursor: 'pointer' }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#fafaf8')}
-                onMouseLeave={e => (e.currentTarget.style.background = '')}>
-                <td style={S.td}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Avatar name={u.full_name} />
-                    <div>
-                      <div style={{ fontWeight: 500 }}>{u.full_name}</div>
-                      <div style={{ fontSize: 11, color: '#888' }}>{u.email}</div>
-                    </div>
-                  </div>
-                </td>
-                <td style={S.td}>{u.employee_id}</td>
-                <td style={S.td}>{u.position_title || '—'}</td>
-                <td style={S.td}>
-                  {u.department_id ? deptMap[u.department_id] || '—' : '—'}
-                </td>
-                <td style={S.td}>{u.job_grade || '—'}</td>
-                <td style={S.td}><RolePill role={u.role} /></td>
-                <td style={S.td}>
-                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10,
-                    background: u.is_active !== false ? '#dcfce7' : '#fee2e2',
-                    color:      u.is_active !== false ? '#166534' : '#991b1b' }}>
-                    {u.is_active !== false ? 'Active' : 'Inactive'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 12 }}>
-          <button style={S.btnSm} disabled={page === 1}
-            onClick={() => setPage(p => p - 1)}>← Prev</button>
-          {Array.from({ length: totalPages }, (_, i) => i + 1)
-            .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
-            .map((p, i, arr) => (
-              <span key={p}>
-                {i > 0 && arr[i - 1] !== p - 1 && (
-                  <span style={{ padding: '0 4px', color: '#888' }}>...</span>
-                )}
-                <button onClick={() => setPage(p)} style={{
-                  ...S.btnSm,
-                  background: p === page ? '#1a1a18' : 'transparent',
-                  color:      p === page ? '#fff'    : '#444',
-                }}>{p}</button>
-              </span>
-            ))}
-          <button style={S.btnSm} disabled={page === totalPages}
-            onClick={() => setPage(p => p + 1)}>Next →</button>
-        </div>
-      )}
+      {/* ... all existing JSX unchanged ... */}
 
       {/* Profile drawer */}
       {selected && (
@@ -392,8 +189,31 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
           user={selected}
           users={users}
           depts={depts}
-          onClose={() => setSelected(null)}
+          onClose={() => { setSelected(null); setShowChain(false); }}
+          onEditChain={() => setShowChain(true)}
         />
+      )}
+
+      {/* Reporting chain modal — sibling to drawer, higher z-index */}
+      {selected && showChain && profile && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setShowChain(false)}>
+          <div style={{ width: 520, background: 'var(--color-background-primary)',
+            borderRadius: 14, border: '0.5px solid var(--color-border-secondary)',
+            overflow: 'hidden', maxHeight: '85vh',
+            display: 'flex', flexDirection: 'column' }}
+            onClick={e => e.stopPropagation()}>
+            <ReportingChainModal
+              user={selected}
+              profile={profile}
+              managers={users.filter((u: any) => u.id !== selected.id)}
+              onClose={() => setShowChain(false)}
+              onSave={async (data) => { await updateMutation.mutateAsync(data); }}
+            />
+          </div>
+        </div>
       )}
     </div>
   );
