@@ -1,16 +1,84 @@
-'Division', 'Section', 'Position Title', 'Grade', 'Category',
-'Country', 'Work Location', 'Employee Type', 'Hire Date',
-'Gender', 'ROLE',
-    'Direct Manager Code', 'Reviewing Manager Code', 'HOD Code',
-];
-const example = [
-'EMP001', 'Ahmad bin Ali', 'Corporate', 'Finance',
-'Financial Control', 'Reporting', 'Finance Executive', 'G3', 'Permanent',
-'Malaysia', 'Kuala Lumpur HQ', 'Full Time', '01/01/2020',
-    'Male', 'STAFF', 'EMP010', 'EMP020', 'EMP030',
-    'Male', 'STAFF',
-];
-downloadCsv('employee_import_template.csv', [headers, example]);
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { cyclesApi, usersApi, departmentsApi, api, userProfileApi } from '../api/client';
+import { useForm } from 'react-hook-form';
+import { useState, useRef } from 'react';
+import UserProfileDrawer from '../components/common/UserProfileDrawer';
+
+const PAGE_SIZE = 20;
+
+const ROLE_LABELS: Record<string, string> = {
+  STAFF: 'Staff', MANAGER: 'Manager', MGR2: "Mgr's Manager",
+  HOD: 'HOD/CxO', HR_ADMIN: 'HR Admin', SUPER_ADMIN: 'Super Admin',
+};
+
+const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+  NEW:       { bg: '#dcfce7', color: '#166534', label: 'New' },
+  DUPLICATE: { bg: '#fef9c3', color: '#854d0e', label: 'Duplicate' },
+  MISSING:   { bg: '#fee2e2', color: '#991b1b', label: 'Missing' },
+  ERROR:     { bg: '#fce7f3', color: '#9d174d', label: 'Error' },
+};
+
+// ── CSV utilities ──────────────────────────────────────────────────────────
+
+function downloadCsv(filename: string, rows: string[][]) {
+  const content = rows
+    .map(r => r.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportUsersAudit(users: any[], depts: any[]) {
+  const deptMap = Object.fromEntries(depts.map((d: any) => [d.id, d.name]));
+  const userMap = Object.fromEntries(users.map((u: any) => [u.id, u]));
+  const headers = [
+    'Employee Code', 'Name', 'Email', 'Role', 'Grade',
+    'Employment Unit', 'Department', 'Division', 'Section',
+    'Position Title', 'Category', 'Country', 'Work Location',
+    'Employee Type', 'Hire Date', 'Gender', 'Status',
+    'Direct Manager Code', 'Direct Manager Name',
+    'Reviewing Manager Code', 'Reviewing Manager Name',
+    'HOD Code', 'HOD Name', 'Approval Levels',
+  ];
+  const rows = users.map((u: any) => {
+    const dm  = userMap[u.direct_manager_id];
+    const rm  = userMap[u.reviewing_manager_id];
+    const hod = userMap[u.hod_id];
+    return [
+      u.employee_id, u.full_name, u.email, u.role, u.job_grade || '',
+      u.employment_unit || '',
+      u.department_id ? deptMap[u.department_id] || '' : '',
+      u.division || '', u.section || '', u.position_title || '',
+      u.category || '', u.country || '', u.work_location || '',
+      u.employee_type || '', u.hire_date || '', u.gender || '',
+      u.is_active !== false ? 'Active' : 'Inactive',
+      dm  ? dm.employee_id  : '', dm  ? dm.full_name  : '',
+      rm  ? rm.employee_id  : '', rm  ? rm.full_name  : '',
+      hod ? hod.employee_id : '', hod ? hod.full_name : '',
+      String(u.approval_levels || 3),
+    ];
+  });
+  downloadCsv(
+    `users_audit_${new Date().toISOString().slice(0, 10)}.csv`,
+    [headers, ...rows]
+  );
+}
+
+function exportCsvTemplate() {
+  const headers = [
+    'Employee Code', 'Name', 'Employment Unit', 'Department',
+    'Division', 'Section', 'Position Title', 'Grade', 'Category',
+    'Country', 'Work Location', 'Employee Type', 'Hire Date', 'Gender', 'ROLE',
+  ];
+  const example = [
+    'EMP001', 'Ahmad bin Ali', 'Corporate', 'Finance',
+    'Financial Control', 'Reporting', 'Finance Executive', 'G3', 'Permanent',
+    'Malaysia', 'Kuala Lumpur HQ', 'Full Time', '01/01/2020', 'Male', 'STAFF',
+  ];
+  downloadCsv('employee_import_template.csv', [headers, example]);
 }
 
 function exportReportingLinesTemplate() {
@@ -28,8 +96,7 @@ function exportReportingLinesAudit(users: any[]) {
     'Employee Code', 'Name',
     'Direct Manager Code', 'Direct Manager Name',
     'Reviewing Manager Code', 'Reviewing Manager Name',
-    'HOD Code', 'HOD Name',
-    'Approval Levels',
+    'HOD Code', 'HOD Name', 'Approval Levels',
   ];
   const rows = users.map((u: any) => {
     const dm  = userMap[u.direct_manager_id];
@@ -43,38 +110,85 @@ function exportReportingLinesAudit(users: any[]) {
       String(u.approval_levels || 3),
     ];
   });
-  downloadCsv(`reporting_lines_audit_${new Date().toISOString().slice(0, 10)}.csv`,
-    [headers, ...rows]);
+  downloadCsv(
+    `reporting_lines_${new Date().toISOString().slice(0, 10)}.csv`,
+    [headers, ...rows]
+  );
 }
 
-// ── Shared components ──────────────────────────────────────────────────────
+// ── Shared UI ──────────────────────────────────────────────────────────────
 
 function Avatar({ name }: { name: string }) {
-@@ -122,6 +155,9 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
-const [deptFilter, setDept]     = useState('');
-const [page,       setPage]     = useState(1);
-const [selected,   setSelected] = useState<any>(null);
+  const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  return (
+    <div style={{ width: 30, height: 30, borderRadius: '50%',
+      background: '#e8f1fb', color: '#185fa5',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
+      {initials}
+    </div>
+  );
+}
+
+function RolePill({ role }: { role: string }) {
+  const colors: Record<string, { bg: string; color: string }> = {
+    STAFF:       { bg: '#f5f5f3', color: '#555' },
+    MANAGER:     { bg: '#e0f2fe', color: '#0369a1' },
+    MGR2:        { bg: '#ede9fe', color: '#6d28d9' },
+    HOD:         { bg: '#fef3c7', color: '#92400e' },
+    HR_ADMIN:    { bg: '#dcfce7', color: '#166534' },
+    SUPER_ADMIN: { bg: '#fee2e2', color: '#991b1b' },
+  };
+  const c = colors[role] || colors.STAFF;
+  return (
+    <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px',
+      borderRadius: 10, background: c.bg, color: c.color }}>
+      {ROLE_LABELS[role] || role}
+    </span>
+  );
+}
+
+// ── User List Tab ──────────────────────────────────────────────────────────
+
+function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
+  const [search,     setSearch]   = useState('');
+  const [roleFilter, setRole]     = useState('');
+  const [deptFilter, setDept]     = useState('');
+  const [page,       setPage]     = useState(1);
+  const [selected,   setSelected] = useState<any>(null);
   const [rlResult,   setRlResult] = useState<any>(null);
   const [rlLoading,  setRlLoading] = useState(false);
   const rlFileRef = useRef<HTMLInputElement>(null);
+  const qc = useQueryClient();
 
-const deptMap = Object.fromEntries(depts.map((d: any) => [d.id, d.name]));
+  const deptMap = Object.fromEntries(depts.map((d: any) => [d.id, d.name]));
 
-@@ -140,9 +176,28 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
-const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const filtered = users.filter(u => {
+    const q = search.toLowerCase();
+    const match = !q || [
+      u.full_name, u.employee_id, u.email, u.role,
+      u.job_grade, u.position_title, u.division, u.section,
+      u.department_id ? deptMap[u.department_id] : '',
+    ].some(f => f?.toLowerCase().includes(q));
+    return match &&
+      (!roleFilter || u.role === roleFilter) &&
+      (!deptFilter || u.department_id === deptFilter);
+  });
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   async function handleRlUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setRlResult(null);
-    setRlLoading(true);
+    setRlResult(null); setRlLoading(true);
     try {
       const fd = new FormData();
       fd.append('file', file);
       const res = await api.post('/users/import/reporting-lines', fd,
         { headers: { 'Content-Type': 'multipart/form-data' } });
       setRlResult(res.data);
+      qc.invalidateQueries({ queryKey: ['users'] });
     } catch (e: any) {
       alert(e.response?.data?.detail || 'Upload failed');
     } finally {
@@ -83,50 +197,58 @@ const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
     }
   }
 
-return (
-<div>
-      {/* Filters + export */}
-      {/* Filters + exports */}
-<div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-<input
-style={{ ...S.input, flex: 1, minWidth: 200 }}
-@@ -153,7 +208,9 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
-<select style={{ ...S.input, width: 150 }} value={roleFilter}
-onChange={e => { setRole(e.target.value); setPage(1); }}>
-<option value="">All Roles</option>
-          {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+  return (
+    <div>
+      {/* Search + filters */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <input
+          style={{ ...S.input, flex: 1, minWidth: 200 }}
+          placeholder="Search name, code, email, grade, position..."
+          value={search}
+          onChange={e => { setSearch(e.target.value); setPage(1); }}
+        />
+        <select style={{ ...S.input, width: 148 }} value={roleFilter}
+          onChange={e => { setRole(e.target.value); setPage(1); }}>
+          <option value="">All Roles</option>
           {Object.entries(ROLE_LABELS).map(([k, v]) => (
             <option key={k} value={k}>{v}</option>
           ))}
-</select>
-<select style={{ ...S.input, width: 170 }} value={deptFilter}
-onChange={e => { setDept(e.target.value); setPage(1); }}>
-@@ -164,17 +221,101 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
-{filtered.length} user{filtered.length !== 1 ? 's' : ''}
-</span>
-<button style={S.btnSm} onClick={() => exportUsersAudit(users, depts)}>
-          ↓ Export Audit CSV
+        </select>
+        <select style={{ ...S.input, width: 168 }} value={deptFilter}
+          onChange={e => { setDept(e.target.value); setPage(1); }}>
+          <option value="">All Departments</option>
+          {depts.map((d: any) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+        <span style={{ fontSize: 12, color: 'var(--color-text-secondary)',
+          alignSelf: 'center', whiteSpace: 'nowrap' }}>
+          {filtered.length} user{filtered.length !== 1 ? 's' : ''}
+        </span>
+        <button style={S.btnSm} onClick={() => exportUsersAudit(users, depts)}>
           ↓ Full Audit CSV
-</button>
-</div>
+        </button>
+      </div>
 
-      {/* Reporting line upload section */}
-      <div style={{ ...S.card, background: '#f9f9f7' }}>
+      {/* Reporting lines upload bar */}
+      <div style={{ ...S.card, background: 'var(--color-background-secondary)',
+        marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between',
-          alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
+          alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div>
-            <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 2 }}>
+            <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 2,
+              color: 'var(--color-text-primary)' }}>
               Upload Reporting Lines
             </div>
-            <div style={{ fontSize: 12, color: '#888' }}>
-              CSV with: Employee Code, Name, Direct Manager Code,
-              Reviewing Manager Code, HOD Code.
-              Blank = keep existing.
+            <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+              CSV: Employee Code, Name, Direct Manager Code,
+              Reviewing Manager Code, HOD Code. Blank = keep existing.
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <button style={S.btnSm} onClick={exportReportingLinesAudit.bind(null, users)}>
-              ↓ Current Reporting Lines
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
+            <button style={S.btnSm}
+              onClick={() => exportReportingLinesAudit(users)}>
+              ↓ Current Lines
             </button>
             <button style={S.btnSm} onClick={exportReportingLinesTemplate}>
               ↓ Template
@@ -136,26 +258,27 @@ onChange={e => { setDept(e.target.value); setPage(1); }}>
             <button style={S.btnPrimary}
               onClick={() => { setRlResult(null); rlFileRef.current?.click(); }}
               disabled={rlLoading}>
-              {rlLoading ? 'Uploading...' : '↑ Upload Reporting Lines'}
+              {rlLoading ? 'Uploading...' : '↑ Upload'}
             </button>
           </div>
         </div>
 
-        {/* Result summary */}
         {rlResult && (
-          <div style={{ marginTop: 14, padding: 14, background: '#fff',
-            borderRadius: 8, border: '0.5px solid #e5e4df' }}>
-            <div style={{ fontWeight: 500, color: '#166534', marginBottom: 8 }}>
+          <div style={{ marginTop: 12, padding: 12,
+            background: 'var(--color-background-primary)',
+            borderRadius: 8, border: '0.5px solid var(--color-border-tertiary)' }}>
+            <div style={{ fontWeight: 500, color: '#166534', marginBottom: 4 }}>
               ✓ {rlResult.message}
             </div>
-            <div style={{ display: 'flex', gap: 16, fontSize: 13, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 14, fontSize: 13,
+              flexWrap: 'wrap', color: 'var(--color-text-secondary)' }}>
               <span>Updated: <strong>{rlResult.updated}</strong></span>
               <span>Skipped: <strong>{rlResult.skipped}</strong></span>
               {rlResult.not_found?.length > 0 && (
                 <span style={{ color: '#991b1b' }}>
                   Not found: <strong>{rlResult.not_found.length}</strong>
-                  {' '}({rlResult.not_found.slice(0, 5).join(', ')}
-                  {rlResult.not_found.length > 5 ? '...' : ''})
+                  {' '}({rlResult.not_found.slice(0, 3).join(', ')}
+                  {rlResult.not_found.length > 3 ? '...' : ''})
                 </span>
               )}
               {rlResult.name_mismatches?.length > 0 && (
@@ -164,89 +287,735 @@ onChange={e => { setDept(e.target.value); setPage(1); }}>
                 </span>
               )}
             </div>
-            {rlResult.warnings?.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 500, color: '#888',
-                  marginBottom: 4 }}>Warnings:</div>
-                {rlResult.warnings.slice(0, 5).map((w: string, i: number) => (
-                  <div key={i} style={{ fontSize: 11, color: '#854d0e' }}>• {w}</div>
-                ))}
-                {rlResult.warnings.length > 5 && (
-                  <div style={{ fontSize: 11, color: '#888' }}>
-                    ...and {rlResult.warnings.length - 5} more
-                  </div>
-                )}
+            {rlResult.warnings?.slice(0, 3).map((w: string, i: number) => (
+              <div key={i} style={{ fontSize: 11, color: '#854d0e', marginTop: 4 }}>
+                • {w}
               </div>
-            )}
-            {rlResult.name_mismatches?.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 500, color: '#888',
-                  marginBottom: 4 }}>Name mismatches (updated anyway):</div>
-                {rlResult.name_mismatches.slice(0, 3).map((m: any, i: number) => (
-                  <div key={i} style={{ fontSize: 11, color: '#854d0e' }}>
-                    • {m.code}: expected "{m.expected}", got "{m.got}"
-                  </div>
-                ))}
-              </div>
-            )}
+            ))}
           </div>
         )}
       </div>
 
-{/* Table */}
-<div style={{ background: '#fff', border: '0.5px solid #e5e4df',
-borderRadius: 10, overflow: 'hidden', marginBottom: 12 }}>
-<table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-<thead>
-<tr style={{ background: '#fafaf8' }}>
-              {['Employee', 'Code', 'Position', 'Department', 'Grade', 'Role', 'Status'].map(h => (
+      {/* User table */}
+      <div style={{ background: 'var(--color-background-primary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 10, overflow: 'hidden', marginBottom: 12 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: 'var(--color-background-secondary)' }}>
               {['Employee', 'Code', 'Position', 'Department',
                 'Grade', 'Role', 'Status'].map(h => (
-<th key={h} style={S.th}>{h}</th>
-))}
-</tr>
-@@ -188,7 +329,8 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
-</tr>
-)}
-{paginated.map((u: any) => (
-              <tr key={u.id} onClick={() => setSelected(u)} style={{ cursor: 'pointer' }}
-              <tr key={u.id} onClick={() => setSelected(u)}
+                <th key={h} style={S.th}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {paginated.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ padding: 32, textAlign: 'center',
+                  color: 'var(--color-text-secondary)' }}>
+                  No users found
+                </td>
+              </tr>
+            )}
+            {paginated.map((u: any) => (
+              <tr key={u.id}
+                onClick={() => setSelected(u)}
                 style={{ cursor: 'pointer' }}
-onMouseEnter={e => (e.currentTarget.style.background = '#fafaf8')}
-onMouseLeave={e => (e.currentTarget.style.background = '')}>
-<td style={S.td}>
-@@ -202,7 +344,9 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
-</td>
-<td style={S.td}>{u.employee_id}</td>
-<td style={S.td}>{u.position_title || '—'}</td>
-                <td style={S.td}>{u.department_id ? deptMap[u.department_id] || '—' : '—'}</td>
+                onMouseEnter={e => (e.currentTarget.style.background =
+                  'var(--color-background-secondary)')}
+                onMouseLeave={e => (e.currentTarget.style.background = '')}>
+                <td style={S.td}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Avatar name={u.full_name} />
+                    <div>
+                      <div style={{ fontWeight: 500,
+                        color: 'var(--color-text-primary)' }}>
+                        {u.full_name}
+                      </div>
+                      <div style={{ fontSize: 11,
+                        color: 'var(--color-text-secondary)' }}>
+                        {u.email}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td style={S.td}>{u.employee_id}</td>
+                <td style={S.td}>{u.position_title || '—'}</td>
                 <td style={S.td}>
                   {u.department_id ? deptMap[u.department_id] || '—' : '—'}
                 </td>
-<td style={S.td}>{u.job_grade || '—'}</td>
-<td style={S.td}><RolePill role={u.role} /></td>
-<td style={S.td}>
-@@ -221,7 +365,8 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
-{/* Pagination */}
-{totalPages > 1 && (
-<div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 12 }}>
-          <button style={S.btnSm} disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
+                <td style={S.td}>{u.job_grade || '—'}</td>
+                <td style={S.td}><RolePill role={u.role} /></td>
+                <td style={S.td}>
+                  <span style={{ fontSize: 11, padding: '2px 7px',
+                    borderRadius: 10,
+                    background: u.is_active !== false ? '#dcfce7' : '#fee2e2',
+                    color:      u.is_active !== false ? '#166534' : '#991b1b' }}>
+                    {u.is_active !== false ? 'Active' : 'Inactive'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center',
+          gap: 6, marginBottom: 12 }}>
           <button style={S.btnSm} disabled={page === 1}
             onClick={() => setPage(p => p - 1)}>← Prev</button>
-{Array.from({ length: totalPages }, (_, i) => i + 1)
-.filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
-.map((p, i, arr) => (
-@@ -236,10 +381,12 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
-}}>{p}</button>
-</span>
-))}
-          <button style={S.btnSm} disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next →</button>
+          {Array.from({ length: totalPages }, (_, i) => i + 1)
+            .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
+            .map((p, i, arr) => (
+              <span key={p}>
+                {i > 0 && arr[i - 1] !== p - 1 && (
+                  <span style={{ padding: '0 4px',
+                    color: 'var(--color-text-secondary)' }}>...</span>
+                )}
+                <button onClick={() => setPage(p)} style={{
+                  ...S.btnSm,
+                  background: p === page
+                    ? 'var(--color-text-primary)' : 'transparent',
+                  color: p === page
+                    ? 'var(--color-background-primary)'
+                    : 'var(--color-text-secondary)',
+                }}>{p}</button>
+              </span>
+            ))}
           <button style={S.btnSm} disabled={page === totalPages}
             onClick={() => setPage(p => p + 1)}>Next →</button>
-</div>
-)}
+        </div>
+      )}
 
       {/* Profile drawer */}
-{selected && (
-<UserProfileDrawer
-user={selected}
+      {selected && (
+        <UserProfileDrawer
+          user={selected}
+          users={users}
+          depts={depts}
+          onClose={() => setSelected(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── CSV Import Tab ─────────────────────────────────────────────────────────
+
+function CsvImportTab() {
+  const qc = useQueryClient();
+  const fileRef                     = useRef<HTMLInputElement>(null);
+  const [preview,   setPreview]     = useState<any[]>([]);
+  const [summary,   setSummary]     = useState<any>(null);
+  const [importing, setImporting]   = useState(false);
+  const [result,    setResult]      = useState<any>(null);
+  const [selected,  setSelected]    = useState<Record<string, string>>({});
+  const [filter,    setFilter]      = useState('');
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPreview([]); setSummary(null); setResult(null); setSelected({});
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await api.post('/users/import/preview', fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } });
+      setPreview(res.data.rows);
+      setSummary(res.data.summary);
+      const auto: Record<string, string> = {};
+      res.data.rows.forEach((r: any) => {
+        if (r.status === 'NEW') auto[r.employee_code] = 'create';
+      });
+      setSelected(auto);
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Failed to parse CSV');
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
+
+  async function handleConfirm() {
+    const rows = preview
+      .filter(r => selected[r.employee_code])
+      .map(r => ({ ...r, action: selected[r.employee_code] }));
+    if (!rows.length) { alert('No rows selected'); return; }
+    setImporting(true);
+    try {
+      const res = await api.post('/users/import/confirm', { rows });
+      setResult(res.data);
+      qc.invalidateQueries({ queryKey: ['users'] });
+      setPreview([]); setSummary(null); setSelected({});
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function toggle(code: string, action: string) {
+    setSelected(p => {
+      if (p[code] === action) { const n = { ...p }; delete n[code]; return n; }
+      return { ...p, [code]: action };
+    });
+  }
+
+  function selectAll(status: string, action: string) {
+    const b = { ...selected };
+    preview.filter(r => r.status === status)
+      .forEach(r => { b[r.employee_code] = action; });
+    setSelected(b);
+  }
+
+  const filtered = filter ? preview.filter(r => r.status === filter) : preview;
+
+  return (
+    <div>
+      <div style={S.card}>
+        <div style={{ fontWeight: 500, marginBottom: 6,
+          color: 'var(--color-text-primary)' }}>
+          Upload Employee CSV
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--color-text-secondary)',
+          marginBottom: 14 }}>
+          Required columns: <code>Employee Code, Name, Employment Unit,
+          Department, Division, Section, Position Title, Grade, Category,
+          Country, Work Location, Employee Type, Hire Date, Gender, ROLE</code>
+        </p>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center',
+          flexWrap: 'wrap' }}>
+          <input ref={fileRef} type="file" accept=".csv"
+            onChange={handleFile} style={{ display: 'none' }} />
+          <button style={S.btnPrimary}
+            onClick={() => fileRef.current?.click()} disabled={importing}>
+            {importing ? 'Analysing...' : '↑ Upload CSV'}
+          </button>
+          <button style={S.btnSm} onClick={exportCsvTemplate}>
+            ↓ Download Template
+          </button>
+          {summary && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {[
+                { label: `New: ${summary.new}`,
+                  bg: '#dcfce7', color: '#166534', f: 'NEW' },
+                { label: `Duplicate: ${summary.duplicates}`,
+                  bg: '#fef9c3', color: '#854d0e', f: 'DUPLICATE' },
+                { label: `Missing: ${summary.missing}`,
+                  bg: '#fee2e2', color: '#991b1b', f: 'MISSING' },
+                ...(summary.errors > 0 ? [{
+                  label: `Errors: ${summary.errors}`,
+                  bg: '#fce7f3', color: '#9d174d', f: 'ERROR',
+                }] : []),
+              ].map(s => (
+                <button key={s.f}
+                  onClick={() => setFilter(filter === s.f ? '' : s.f)}
+                  style={{ fontSize: 12, padding: '3px 10px', borderRadius: 10,
+                    background: s.bg, color: s.color, cursor: 'pointer',
+                    border: filter === s.f
+                      ? `1.5px solid ${s.color}`
+                      : '1.5px solid transparent' }}>
+                  {s.label}
+                </button>
+              ))}
+              {filter && (
+                <button onClick={() => setFilter('')}
+                  style={{ fontSize: 12, color: 'var(--color-text-secondary)',
+                    background: 'transparent', border: 'none',
+                    cursor: 'pointer' }}>
+                  Clear ✕
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {result && (
+        <div style={{ ...S.card, background: '#dcfce7',
+          border: '0.5px solid #86efac' }}>
+          <div style={{ fontWeight: 500, color: '#166534', marginBottom: 6 }}>
+            Import Complete ✓
+          </div>
+          <div style={{ fontSize: 13, color: '#166534' }}>
+            Created: {result.created} · Updated: {result.updated} ·
+            Deactivated: {result.deactivated} · Skipped: {result.skipped}
+          </div>
+          <div style={{ fontSize: 12, color: '#166534', marginTop: 4 }}>
+            {result.message}
+          </div>
+        </div>
+      )}
+
+      {preview.length > 0 && (
+        <div style={S.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between',
+            alignItems: 'center', marginBottom: 12 }}>
+            <div>
+              <div style={{ fontWeight: 500,
+                color: 'var(--color-text-primary)' }}>
+                Preview — {filtered.length} of {preview.length} rows
+              </div>
+              <div style={{ fontSize: 12,
+                color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                {Object.keys(selected).length} selected
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button style={S.btnSm}
+                onClick={() => selectAll('NEW', 'create')}>All new</button>
+              <button style={S.btnSm}
+                onClick={() => selectAll('DUPLICATE', 'update')}>All updates</button>
+              <button style={{ ...S.btnSm, color: '#991b1b',
+                borderColor: '#fca5a5' }}
+                onClick={() => selectAll('MISSING', 'deactivate')}>
+                All missing
+              </button>
+              <button style={S.btnSm}
+                onClick={() => setSelected({})}>Clear</button>
+              <button onClick={handleConfirm}
+                disabled={importing || Object.keys(selected).length === 0}
+                style={S.btnPrimary}>
+                {importing
+                  ? 'Importing...'
+                  : `Confirm (${Object.keys(selected).length})`}
+              </button>
+            </div>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse',
+              fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: 'var(--color-background-secondary)' }}>
+                  {['', 'Status', 'Code', 'Name', 'Email',
+                    'Dept', 'Grade', 'Role', 'Notes'].map(h => (
+                    <th key={h} style={{ ...S.th, fontSize: 11 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((row: any, i: number) => {
+                  const ss   = STATUS_STYLE[row.status] || STATUS_STYLE.ERROR;
+                  const code = row.employee_code;
+                  return (
+                    <tr key={i} style={{
+                      background: selected[code]
+                        ? '#f0fdf4'
+                        : i % 2 === 0
+                          ? 'var(--color-background-primary)'
+                          : 'var(--color-background-secondary)',
+                    }}>
+                      <td style={{ ...S.td, width: 32 }}>
+                        {row.status === 'NEW' && (
+                          <input type="checkbox"
+                            checked={selected[code] === 'create'}
+                            onChange={() => toggle(code, 'create')} />
+                        )}
+                        {row.status === 'DUPLICATE' && (
+                          <input type="checkbox"
+                            checked={selected[code] === 'update'}
+                            onChange={() => toggle(code, 'update')} />
+                        )}
+                        {row.status === 'MISSING' && (
+                          <input type="checkbox"
+                            checked={selected[code] === 'deactivate'}
+                            onChange={() => toggle(code, 'deactivate')} />
+                        )}
+                      </td>
+                      <td style={S.td}>
+                        <span style={{ fontSize: 10, padding: '2px 7px',
+                          borderRadius: 10, background: ss.bg,
+                          color: ss.color, fontWeight: 500,
+                          whiteSpace: 'nowrap' }}>
+                          {ss.label}
+                        </span>
+                      </td>
+                      <td style={S.td}>{code}</td>
+                      <td style={{ ...S.td, fontWeight: 500 }}>{row.name}</td>
+                      <td style={S.td}>{row.email}</td>
+                      <td style={S.td}>{row.department || '—'}</td>
+                      <td style={S.td}>{row.grade || '—'}</td>
+                      <td style={S.td}>{row.role || '—'}</td>
+                      <td style={{ ...S.td, maxWidth: 180,
+                        color: 'var(--color-text-secondary)', fontSize: 11 }}>
+                        {row.status === 'DUPLICATE' && row.changes &&
+                          Object.keys(row.changes).length > 0
+                          ? `Changes: ${Object.keys(row.changes).join(', ')}`
+                          : row.message || ''}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Reporting Lines Tab ────────────────────────────────────────────────────
+
+function ReportingLinesTab({ users }: { users: any[] }) {
+  const [search, setSearch] = useState('');
+
+  function getReports(id: string) {
+    return users.filter((u: any) => u.direct_manager_id === id);
+  }
+
+  function matchesSearch(u: any) {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return [u.full_name, u.employee_id, u.role, u.position_title]
+      .some(f => f?.toLowerCase().includes(q));
+  }
+
+  function hasMatch(u: any): boolean {
+    return matchesSearch(u) || getReports(u.id).some(r => hasMatch(r));
+  }
+
+  function TreeNode({ user, depth }: { user: any; depth: number }) {
+    const [open, setOpen] = useState(depth < 2);
+    const reports = getReports(user.id).filter(r => hasMatch(r));
+    const isMatch = matchesSearch(user);
+
+    return (
+      <div style={{ marginLeft: depth * 20 }}>
+        <div
+          onClick={() => reports.length > 0 && setOpen(!open)}
+          style={{ display: 'flex', alignItems: 'center', gap: 8,
+            padding: '7px 10px', borderRadius: 8, marginBottom: 2,
+            cursor: reports.length > 0 ? 'pointer' : 'default',
+            background: isMatch && search
+              ? 'var(--color-background-warning)' : 'transparent' }}
+          onMouseEnter={e => {
+            if (!isMatch || !search)
+              e.currentTarget.style.background = 'var(--color-background-secondary)';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = isMatch && search
+              ? 'var(--color-background-warning)' : 'transparent';
+          }}>
+          <span style={{ fontSize: 10,
+            color: 'var(--color-text-secondary)', width: 12, flexShrink: 0 }}>
+            {reports.length > 0 ? (open ? '▼' : '▶') : ''}
+          </span>
+          <div style={{ width: 28, height: 28, borderRadius: '50%',
+            background: '#e8f1fb', color: '#185fa5', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 10, fontWeight: 600 }}>
+            {user.full_name.split(' ').map((w: string) => w[0]).join('').slice(0, 2)}
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 500,
+              color: 'var(--color-text-primary)' }}>
+              {user.full_name}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
+              {user.employee_id} · {ROLE_LABELS[user.role] || user.role}
+              {user.position_title ? ` · ${user.position_title}` : ''}
+            </div>
+          </div>
+          {reports.length > 0 && (
+            <span style={{ fontSize: 11,
+              color: 'var(--color-text-secondary)', flexShrink: 0 }}>
+              {reports.length} report{reports.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+        {open && reports.map((r: any) => (
+          <TreeNode key={r.id} user={r} depth={depth + 1} />
+        ))}
+      </div>
+    );
+  }
+
+  const roots = users
+    .filter((u: any) => !u.direct_manager_id)
+    .filter(r => hasMatch(r));
+
+  return (
+    <div>
+      <div style={{ marginBottom: 12 }}>
+        <input
+          style={{ ...S.input, maxWidth: 340 }}
+          placeholder="Search by name, code, role, or position..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      </div>
+      <div style={{ background: 'var(--color-background-primary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 10, padding: 16 }}>
+        {roots.length === 0 && (
+          <div style={{ textAlign: 'center', padding: 32,
+            color: 'var(--color-text-secondary)', fontSize: 13 }}>
+            {search
+              ? 'No matches found'
+              : 'No root employees — everyone has a direct manager assigned'}
+          </div>
+        )}
+        {roots.map((u: any) => <TreeNode key={u.id} user={u} depth={0} />)}
+      </div>
+    </div>
+  );
+}
+
+// ── Main Admin Page ────────────────────────────────────────────────────────
+
+export default function AdminPage() {
+  const qc = useQueryClient();
+  const [tab,     setTab]     = useState<'cycles' | 'users' | 'depts'>('cycles');
+  const [userTab, setUserTab] = useState<'list' | 'import' | 'reporting'>('list');
+  const { register: rc, handleSubmit: hc, reset: resetC } = useForm();
+
+  const { data: cycles = [] } = useQuery({
+    queryKey: ['cycles'],
+    queryFn:  () => cyclesApi.list().then(r => r.data),
+  });
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn:  () => usersApi.list().then(r => r.data),
+  });
+  const { data: depts = [] } = useQuery({
+    queryKey: ['depts'],
+    queryFn:  () => departmentsApi.list().then(r => r.data),
+  });
+
+  const createCycle = useMutation({
+    mutationFn: (d: any) => cyclesApi.create(d),
+    onSuccess:  () => { qc.invalidateQueries({ queryKey: ['cycles'] }); resetC(); },
+  });
+
+  const MAIN_TABS = [
+    ['cycles', 'Cycles'],
+    ['users',  'User Management'],
+    ['depts',  'Departments'],
+  ] as const;
+
+  const USER_TABS = [
+    ['list',      'User List'],
+    ['import',    'CSV Import'],
+    ['reporting', 'Reporting Lines'],
+  ] as const;
+
+  return (
+    <div>
+      <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 4,
+        color: 'var(--color-text-primary)' }}>HR Admin</h1>
+      <p style={{ fontSize: 13, color: 'var(--color-text-secondary)',
+        marginBottom: 20 }}>
+        Manage cycles, users, and system configuration
+      </p>
+
+      {/* Main tabs */}
+      <div style={{ display: 'flex', gap: 2,
+        borderBottom: '0.5px solid var(--color-border-tertiary)',
+        marginBottom: 20 }}>
+        {MAIN_TABS.map(([t, l]) => (
+          <button key={t} onClick={() => setTab(t as any)}
+            style={{ padding: '8px 16px', border: 'none',
+              background: 'transparent', cursor: 'pointer', fontSize: 13,
+              color: tab === t
+                ? 'var(--color-text-primary)'
+                : 'var(--color-text-secondary)',
+              fontWeight: tab === t ? 500 : 400,
+              borderBottom: tab === t
+                ? '2px solid var(--color-text-primary)'
+                : '2px solid transparent',
+              marginBottom: -0.5 }}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Cycles ── */}
+      {tab === 'cycles' && (
+        <div>
+          <div style={S.card}>
+            <div style={{ fontWeight: 500, marginBottom: 14,
+              color: 'var(--color-text-primary)' }}>
+              Create Performance Cycle
+            </div>
+            <form onSubmit={hc(d => createCycle.mutate(d))}>
+              <div style={S.grid2}>
+                <div style={S.fg}>
+                  <label style={S.label}>Cycle Name</label>
+                  <input style={S.input}
+                    {...rc('name', { required: true })}
+                    placeholder="FY2026 Annual" />
+                </div>
+                <div style={S.fg}>
+                  <label style={S.label}>Year</label>
+                  <input style={S.input} type="number"
+                    {...rc('year', { required: true })} placeholder="2026" />
+                </div>
+                <div style={S.fg}>
+                  <label style={S.label}>KPI Setting Start</label>
+                  <input style={S.input} type="date"
+                    {...rc('kpi_setting_start', { required: true })} />
+                </div>
+                <div style={S.fg}>
+                  <label style={S.label}>KPI Setting End</label>
+                  <input style={S.input} type="date"
+                    {...rc('kpi_setting_end', { required: true })} />
+                </div>
+                <div style={S.fg}>
+                  <label style={S.label}>Self Eval Start</label>
+                  <input style={S.input} type="date"
+                    {...rc('self_eval_start', { required: true })} />
+                </div>
+                <div style={S.fg}>
+                  <label style={S.label}>Self Eval End</label>
+                  <input style={S.input} type="date"
+                    {...rc('self_eval_end', { required: true })} />
+                </div>
+                <div style={S.fg}>
+                  <label style={S.label}>Manager Eval Start</label>
+                  <input style={S.input} type="date"
+                    {...rc('mgr_eval_start', { required: true })} />
+                </div>
+                <div style={S.fg}>
+                  <label style={S.label}>Manager Eval End</label>
+                  <input style={S.input} type="date"
+                    {...rc('mgr_eval_end', { required: true })} />
+                </div>
+              </div>
+              <button type="submit" style={S.btnPrimary}>
+                {createCycle.isPending ? 'Creating...' : 'Create Cycle'}
+              </button>
+            </form>
+          </div>
+
+          <div style={S.card}>
+            <div style={{ fontWeight: 500, marginBottom: 12,
+              color: 'var(--color-text-primary)' }}>
+              Existing Cycles
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse',
+              fontSize: 13 }}>
+              <thead>
+                <tr>
+                  {['Name', 'Year', 'Status', 'KPI Window'].map(h => (
+                    <th key={h} style={S.th}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(cycles as any[]).length === 0 && (
+                  <tr>
+                    <td colSpan={4} style={{ padding: 24, textAlign: 'center',
+                      color: 'var(--color-text-secondary)' }}>
+                      No cycles yet
+                    </td>
+                  </tr>
+                )}
+                {(cycles as any[]).map((c: any) => (
+                  <tr key={c.id}>
+                    <td style={S.td}>{c.name}</td>
+                    <td style={S.td}>{c.year}</td>
+                    <td style={S.td}>
+                      <span style={{ fontSize: 11, padding: '2px 8px',
+                        borderRadius: 10,
+                        background: 'var(--color-background-info)',
+                        color: 'var(--color-text-info)' }}>
+                        {c.status}
+                      </span>
+                    </td>
+                    <td style={S.td}>
+                      {c.kpi_setting_start} → {c.kpi_setting_end}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── User Management ── */}
+      {tab === 'users' && (
+        <div>
+          <div style={{ fontSize: 13, color: 'var(--color-text-secondary)',
+            marginBottom: 12 }}>
+            {(users as any[]).length} active users
+          </div>
+          <div style={{ display: 'flex', gap: 2,
+            borderBottom: '0.5px solid var(--color-border-tertiary)',
+            marginBottom: 16 }}>
+            {USER_TABS.map(([t, l]) => (
+              <button key={t} onClick={() => setUserTab(t as any)}
+                style={{ padding: '7px 14px', border: 'none',
+                  background: 'transparent', cursor: 'pointer', fontSize: 12,
+                  color: userTab === t
+                    ? 'var(--color-text-primary)'
+                    : 'var(--color-text-secondary)',
+                  fontWeight: userTab === t ? 500 : 400,
+                  borderBottom: userTab === t
+                    ? '2px solid var(--color-text-primary)'
+                    : '2px solid transparent',
+                  marginBottom: -0.5 }}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {userTab === 'list' && (
+            <UserListTab users={users as any[]} depts={depts as any[]} />
+          )}
+          {userTab === 'import' && <CsvImportTab />}
+          {userTab === 'reporting' && (
+            <ReportingLinesTab users={users as any[]} />
+          )}
+        </div>
+      )}
+
+      {/* ── Departments ── */}
+      {tab === 'depts' && (
+        <div style={S.card}>
+          <div style={{ fontWeight: 500, marginBottom: 12,
+            color: 'var(--color-text-primary)' }}>
+            Departments ({(depts as any[]).length})
+          </div>
+          {(depts as any[]).map((d: any) => (
+            <div key={d.id} style={{ padding: '8px 0',
+              borderBottom: '0.5px solid var(--color-border-tertiary)',
+              fontSize: 13, display: 'flex', gap: 10 }}>
+              <span style={{ fontWeight: 500,
+                color: 'var(--color-text-primary)' }}>{d.name}</span>
+              <span style={{ color: 'var(--color-text-secondary)' }}>
+                {d.code}
+              </span>
+            </div>
+          ))}
+          {(depts as any[]).length === 0 && (
+            <div style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>
+              No departments found.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const S: Record<string, any> = {
+  card: {
+    background: 'var(--color-background-primary)',
+    border: '0.5px solid var(--color-border-tertiary)',
+    borderRadius: 10, padding: 16, marginBottom: 12,
+  },
+  grid2:  { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 },
+  fg:     { marginBottom: 10 },
+  label:  { fontSize: 12, fontWeight: 500, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 },
+  input:  { width: '100%', padding: '7px 10px', border: '0.5px solid var(--color-border-secondary)', borderRadius: 8, fontSize: 13, background: 'var(--color-background-primary)', color: 'var(--color-text-primary)', fontFamily: 'var(--font-sans)', outline: 'none' },
+  btnPrimary: { padding: '7px 16px', border: 'none', borderRadius: 8, background: 'var(--color-text-primary)', color: 'var(--color-background-primary)', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-sans)' },
+  btnSm:  { padding: '5px 10px', border: '0.5px solid var(--color-border-secondary)', borderRadius: 8, background: 'transparent', color: 'var(--color-text-secondary)', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-sans)' },
+  th:     { textAlign: 'left', padding: '8px 10px', borderBottom: '0.5px solid var(--color-border-tertiary)', fontSize: 11, color: 'var(--color-text-secondary)', fontWeight: 500 },
+  td:     { padding: '10px', borderBottom: '0.5px solid var(--color-border-tertiary)', fontSize: 13, color: 'var(--color-text-primary)' },
+};
