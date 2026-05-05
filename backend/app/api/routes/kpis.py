@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from app.db.session import get_db
 from app.core.security import get_current_user
-from app.models.user import Kpi, KpiStatus, KpiType, User
+from app.models.user import Kpi, User
 from app.services.kpi_workflow import KpiWorkflowService
 
 router = APIRouter()
