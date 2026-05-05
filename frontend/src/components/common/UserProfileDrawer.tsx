@@ -32,25 +32,23 @@ function InitialsAvatar({ name, size = 44 }: { name: string; size?: number }) {
     <div style={{ width: size, height: size, borderRadius: '50%',
       background: '#e8f1fb', color: '#185fa5', flexShrink: 0,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: size * 0.3, fontWeight: 600 }}>
+      fontSize: Math.round(size * 0.3), fontWeight: 600 }}>
       {initials}
     </div>
   );
 }
 
-// ── Reporting Chain Modal ──────────────────────────────────────────────────
+// ── Slot config ────────────────────────────────────────────────────────────
 
-interface ManagerSlot {
-  key:   'direct_manager_id' | 'reviewing_manager_id' | 'hod_id';
-  label: string;
-  color: string;
-}
-
-const SLOTS: ManagerSlot[] = [
+const SLOTS = [
   { key: 'direct_manager_id',    label: 'Direct Manager',    color: '#0369a1' },
   { key: 'reviewing_manager_id', label: 'Reviewing Manager', color: '#6d28d9' },
   { key: 'hod_id',               label: 'HOD',              color: '#92400e' },
-];
+] as const;
+
+type SlotKey = typeof SLOTS[number]['key'];
+
+// ── Reporting chain modal content ──────────────────────────────────────────
 
 function ReportingChainModal({
   user, profile, managers, onSave, onClose,
@@ -58,30 +56,25 @@ function ReportingChainModal({
   user:     any;
   profile:  any;
   managers: any[];
-  onSave:   (data: any) => void;
+  onSave:   (data: any) => Promise<void>;
   onClose:  () => void;
 }) {
   const [search,  setSearch]  = useState('');
   const [levels,  setLevels]  = useState<number>(profile?.approval_levels || 3);
   const [saving,  setSaving]  = useState(false);
-  const [activeSlot, setActiveSlot] = useState<ManagerSlot['key'] | null>(null);
-
-  // Assignment state — keyed by slot, value is user id or null
   const [assignments, setAssignments] = useState<Record<string, string | null>>({
     direct_manager_id:    profile?.direct_manager?.id    || null,
     reviewing_manager_id: profile?.reviewing_manager?.id || null,
     hod_id:               profile?.hod?.id               || null,
   });
 
-  // Manager lookup map
   const managerMap = useMemo(
     () => Object.fromEntries(managers.map((m: any) => [m.id, m])),
     [managers]
   );
 
-  // Search results
   const searchResults = useMemo(() => {
-    const q = search.toLowerCase();
+    const q = search.toLowerCase().trim();
     if (!q) return [];
     return managers
       .filter(m =>
@@ -90,243 +83,258 @@ function ReportingChainModal({
         (m.position_title || '').toLowerCase().includes(q) ||
         (m.job_grade || '').toLowerCase().includes(q)
       )
-      .slice(0, 8);
+      .slice(0, 7);
   }, [search, managers]);
 
-  function assign(slotKey: ManagerSlot['key'], userId: string) {
+  function assign(slotKey: SlotKey, userId: string) {
     setAssignments(p => ({ ...p, [slotKey]: userId }));
-    setSearch('');
-    setActiveSlot(null);
   }
 
-  function clear(slotKey: ManagerSlot['key']) {
+  function clear(slotKey: SlotKey) {
     setAssignments(p => ({ ...p, [slotKey]: null }));
   }
 
   async function handleSave() {
     setSaving(true);
-    await onSave({
-      direct_manager_id:    assignments.direct_manager_id    || null,
-      reviewing_manager_id: assignments.reviewing_manager_id || null,
-      hod_id:               assignments.hod_id               || null,
-      approval_levels:      levels,
-    });
-    setSaving(false);
+    try {
+      await onSave({
+        direct_manager_id:    assignments.direct_manager_id    || null,
+        reviewing_manager_id: assignments.reviewing_manager_id || null,
+        hod_id:               assignments.hod_id               || null,
+        approval_levels:      levels,
+      });
+    } finally {
+      setSaving(false);
+    }
   }
 
-  // Close on Escape
   useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
   return (
-    <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
-        zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-      onClick={onClose}>
-      <div
-        style={{ width: 560, background: 'var(--color-background-primary)',
-          borderRadius: 16, border: '0.5px solid var(--color-border-secondary)',
-          overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
-        onClick={e => e.stopPropagation()}>
+    <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '100%' }}>
 
-        {/* Modal header */}
-        <div style={{ padding: '16px 20px', borderBottom: '0.5px solid var(--color-border-tertiary)',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          background: 'var(--color-background-secondary)' }}>
-          <div>
-            <div style={{ fontWeight: 500, fontSize: 14 }}>Edit Reporting Chain</div>
-            <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2 }}>
-              {user.full_name} · {user.employee_id}
-            </div>
+      {/* Modal header */}
+      <div style={{ padding: '14px 18px',
+        borderBottom: '0.5px solid var(--color-border-tertiary)',
+        background: 'var(--color-background-secondary)',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        flexShrink: 0 }}>
+        <div>
+          <div style={{ fontWeight: 500, fontSize: 14,
+            color: 'var(--color-text-primary)' }}>Edit Reporting Chain</div>
+          <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 1 }}>
+            {user.full_name} · {user.employee_id}
           </div>
-          <button onClick={onClose}
-            style={{ border: 'none', background: 'transparent',
-              cursor: 'pointer', fontSize: 18, color: 'var(--color-text-secondary)',
-              lineHeight: 1, padding: '4px 8px' }}>✕</button>
         </div>
+        <button onClick={onClose}
+          style={{ border: 'none', background: 'transparent', cursor: 'pointer',
+            fontSize: 18, color: 'var(--color-text-secondary)', lineHeight: 1,
+            padding: '2px 6px' }}>✕</button>
+      </div>
 
-        <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+      {/* Modal body */}
+      <div style={{ padding: '16px 18px', overflowY: 'auto', flex: 1 }}>
 
-          {/* Search bar */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 500,
-              color: 'var(--color-text-secondary)', marginBottom: 6 }}>
-              Search employees
-            </div>
-            <input
-              autoFocus
-              style={{ width: '100%', padding: '9px 12px',
-                border: '0.5px solid var(--color-border-secondary)',
-                borderRadius: 8, fontSize: 13,
-                background: 'var(--color-background-primary)',
-                color: 'var(--color-text-primary)',
-                fontFamily: 'var(--font-sans)', outline: 'none',
-                boxSizing: 'border-box' }}
-              placeholder="Type name, employee code, or position..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
+        {/* Search */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 500, marginBottom: 5,
+            color: 'var(--color-text-secondary)',
+            textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Search employees
+          </div>
+          <input
+            autoFocus
+            style={{ width: '100%', padding: '8px 11px',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 8, fontSize: 13,
+              background: 'var(--color-background-primary)',
+              color: 'var(--color-text-primary)',
+              fontFamily: 'var(--font-sans)', outline: 'none',
+              boxSizing: 'border-box' }}
+            placeholder="Name, employee code, or position..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
 
-            {/* Search results */}
-            {searchResults.length > 0 && (
-              <div style={{ marginTop: 6, border: '0.5px solid var(--color-border-tertiary)',
-                borderRadius: 8, overflow: 'hidden',
-                background: 'var(--color-background-primary)' }}>
-                {searchResults.map((m: any, i: number) => (
-                  <div key={m.id}
-                    style={{ padding: '10px 14px',
-                      borderBottom: i < searchResults.length - 1
-                        ? '0.5px solid var(--color-border-tertiary)' : 'none',
-                      background: 'var(--color-background-primary)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center',
-                      gap: 10, marginBottom: 6 }}>
-                      <InitialsAvatar name={m.full_name} size={28} />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 500,
-                          color: 'var(--color-text-primary)' }}>{m.full_name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
-                          {m.employee_id}
-                          {m.position_title ? ` · ${m.position_title}` : ''}
-                          {m.job_grade ? ` · ${m.job_grade}` : ''}
-                        </div>
+          {/* Results */}
+          {searchResults.length > 0 && (
+            <div style={{ marginTop: 4,
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 8, overflow: 'hidden',
+              background: 'var(--color-background-primary)' }}>
+              {searchResults.map((m: any, i: number) => (
+                <div key={m.id}
+                  style={{ padding: '9px 12px',
+                    borderBottom: i < searchResults.length - 1
+                      ? '0.5px solid var(--color-border-tertiary)' : 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center',
+                    gap: 8, marginBottom: 6 }}>
+                    <InitialsAvatar name={m.full_name} size={26} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500,
+                        color: 'var(--color-text-primary)',
+                        overflow: 'hidden', textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap' }}>
+                        {m.full_name}
+                      </div>
+                      <div style={{ fontSize: 11,
+                        color: 'var(--color-text-secondary)' }}>
+                        {m.employee_id}
+                        {m.position_title ? ` · ${m.position_title}` : ''}
+                        {m.job_grade ? ` · ${m.job_grade}` : ''}
                       </div>
                     </div>
-                    {/* Assign buttons for each slot */}
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {SLOTS.map(slot => {
-                        const isAssigned = assignments[slot.key] === m.id;
-                        return (
-                          <button key={slot.key}
-                            onClick={() => isAssigned ? clear(slot.key) : assign(slot.key, m.id)}
-                            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 8,
-                              cursor: 'pointer', fontFamily: 'var(--font-sans)',
-                              border: `0.5px solid ${isAssigned ? slot.color : 'var(--color-border-secondary)'}`,
-                              background: isAssigned ? slot.color + '18' : 'transparent',
-                              color: isAssigned ? slot.color : 'var(--color-text-secondary)',
-                              fontWeight: isAssigned ? 500 : 400 }}>
-                            {isAssigned ? '✓ ' : '+ '}{slot.label}
-                          </button>
-                        );
-                      })}
-                    </div>
                   </div>
-                ))}
-              </div>
-            )}
-
-            {search.length > 0 && searchResults.length === 0 && (
-              <div style={{ marginTop: 6, padding: '12px 14px', fontSize: 13,
-                color: 'var(--color-text-tertiary)', textAlign: 'center',
-                border: '0.5px solid var(--color-border-tertiary)', borderRadius: 8 }}>
-                No results for "{search}"
-              </div>
-            )}
-          </div>
-
-          {/* Three assignment slots */}
-          <div style={{ fontSize: 12, fontWeight: 500,
-            color: 'var(--color-text-secondary)', marginBottom: 10 }}>
-            Current assignments
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 20 }}>
-            {SLOTS.map(slot => {
-              const assignedId = assignments[slot.key];
-              const assignedUser = assignedId ? managerMap[assignedId] : null;
-              return (
-                <div key={slot.key}
-                  style={{ padding: 12, borderRadius: 10,
-                    border: `0.5px solid ${assignedUser ? slot.color + '40' : 'var(--color-border-tertiary)'}`,
-                    background: assignedUser ? slot.color + '08' : 'var(--color-background-secondary)',
-                    minHeight: 80 }}>
-                  <div style={{ fontSize: 10, fontWeight: 500, marginBottom: 8,
-                    color: assignedUser ? slot.color : 'var(--color-text-tertiary)',
-                    textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    {slot.label}
+                  {/* Assign buttons */}
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    {SLOTS.map(slot => {
+                      const isAssigned = assignments[slot.key] === m.id;
+                      return (
+                        <button key={slot.key}
+                          onClick={() => isAssigned ? clear(slot.key) : assign(slot.key, m.id)}
+                          style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6,
+                            cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                            border: `0.5px solid ${isAssigned ? slot.color : 'var(--color-border-secondary)'}`,
+                            background: isAssigned ? slot.color + '18' : 'transparent',
+                            color: isAssigned ? slot.color : 'var(--color-text-secondary)',
+                            fontWeight: isAssigned ? 500 : 400 }}>
+                          {isAssigned ? '✓ ' : '+ '}{slot.label}
+                        </button>
+                      );
+                    })}
                   </div>
-                  {assignedUser ? (
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center',
-                        justifyContent: 'space-between', gap: 4 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
-                          <InitialsAvatar name={assignedUser.full_name} size={24} />
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 12, fontWeight: 500,
-                              color: 'var(--color-text-primary)',
-                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {assignedUser.full_name}
-                            </div>
-                            <div style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>
-                              {assignedUser.employee_id}
-                            </div>
-                          </div>
-                        </div>
-                        <button onClick={() => clear(slot.key)}
-                          style={{ border: 'none', background: 'transparent',
-                            cursor: 'pointer', fontSize: 14,
-                            color: 'var(--color-text-tertiary)', flexShrink: 0,
-                            padding: '0 2px', lineHeight: 1 }}>✕</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)',
-                      fontStyle: 'italic' }}>
-                      Search above to assign
-                    </div>
-                  )}
                 </div>
-              );
-            })}
-          </div>
-
-          {/* Approval levels */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 500,
-              color: 'var(--color-text-secondary)', marginBottom: 6 }}>
-              Approval levels
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {[
-                { v: 1, label: '1 level', sub: 'Direct only' },
-                { v: 2, label: '2 levels', sub: 'Direct + HOD' },
-                { v: 3, label: '3 levels', sub: 'All three' },
-              ].map(opt => (
-                <button key={opt.v} onClick={() => setLevels(opt.v)}
-                  style={{ flex: 1, padding: '10px 8px', borderRadius: 8, cursor: 'pointer',
-                    border: `0.5px solid ${levels === opt.v ? '#1a1a18' : 'var(--color-border-secondary)'}`,
-                    background: levels === opt.v ? '#1a1a18' : 'transparent',
-                    color: levels === opt.v ? '#fff' : 'var(--color-text-secondary)',
-                    fontFamily: 'var(--font-sans)', textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
-                  <div style={{ fontSize: 10, marginTop: 2, opacity: 0.7 }}>{opt.sub}</div>
-                </button>
               ))}
             </div>
-          </div>
+          )}
+
+          {search.trim().length > 0 && searchResults.length === 0 && (
+            <div style={{ marginTop: 4, padding: '10px 12px', fontSize: 12,
+              color: 'var(--color-text-tertiary)', textAlign: 'center',
+              border: '0.5px solid var(--color-border-tertiary)', borderRadius: 8 }}>
+              No results for "{search}"
+            </div>
+          )}
         </div>
 
-        {/* Footer */}
-        <div style={{ padding: '14px 20px',
-          borderTop: '0.5px solid var(--color-border-tertiary)',
-          display: 'flex', justifyContent: 'flex-end', gap: 8,
-          background: 'var(--color-background-secondary)' }}>
-          <button onClick={onClose}
-            style={{ padding: '8px 16px', border: '0.5px solid var(--color-border-secondary)',
-              borderRadius: 8, background: 'transparent', fontSize: 13,
-              cursor: 'pointer', fontFamily: 'var(--font-sans)',
-              color: 'var(--color-text-secondary)' }}>
-            Cancel
-          </button>
-          <button onClick={handleSave} disabled={saving}
-            style={{ padding: '8px 20px', border: 'none', borderRadius: 8,
-              background: '#1a1a18', color: '#fff', fontSize: 13,
-              cursor: saving ? 'not-allowed' : 'pointer',
-              fontFamily: 'var(--font-sans)', opacity: saving ? 0.7 : 1 }}>
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
+        {/* Current assignment slots */}
+        <div style={{ fontSize: 11, fontWeight: 500, marginBottom: 8,
+          color: 'var(--color-text-secondary)',
+          textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          Current assignments
         </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
+          gap: 8, marginBottom: 16 }}>
+          {SLOTS.map(slot => {
+            const assignedId   = assignments[slot.key];
+            const assignedUser = assignedId ? managerMap[assignedId] : null;
+            return (
+              <div key={slot.key}
+                style={{ padding: 10, borderRadius: 8,
+                  border: `0.5px solid ${assignedUser
+                    ? slot.color + '50'
+                    : 'var(--color-border-tertiary)'}`,
+                  background: assignedUser
+                    ? slot.color + '0a'
+                    : 'var(--color-background-secondary)',
+                  minHeight: 72 }}>
+                <div style={{ fontSize: 9, fontWeight: 500, marginBottom: 6,
+                  color: assignedUser ? slot.color : 'var(--color-text-tertiary)',
+                  textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  {slot.label}
+                </div>
+                {assignedUser ? (
+                  <div style={{ display: 'flex', alignItems: 'flex-start',
+                    justifyContent: 'space-between', gap: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center',
+                      gap: 5, flex: 1, minWidth: 0 }}>
+                      <InitialsAvatar name={assignedUser.full_name} size={22} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 11, fontWeight: 500,
+                          color: 'var(--color-text-primary)',
+                          overflow: 'hidden', textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap' }}>
+                          {assignedUser.full_name}
+                        </div>
+                        <div style={{ fontSize: 10,
+                          color: 'var(--color-text-secondary)' }}>
+                          {assignedUser.employee_id}
+                        </div>
+                      </div>
+                    </div>
+                    <button onClick={() => clear(slot.key)}
+                      style={{ border: 'none', background: 'transparent',
+                        cursor: 'pointer', fontSize: 12, lineHeight: 1,
+                        color: 'var(--color-text-tertiary)',
+                        flexShrink: 0, padding: '0 1px' }}>✕</button>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11,
+                    color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+                    Not assigned
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Approval levels */}
+        <div style={{ fontSize: 11, fontWeight: 500, marginBottom: 8,
+          color: 'var(--color-text-secondary)',
+          textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          Approval levels
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+          {[
+            { v: 1, label: '1 level',  sub: 'Direct only' },
+            { v: 2, label: '2 levels', sub: 'Direct + HOD' },
+            { v: 3, label: '3 levels', sub: 'All three' },
+          ].map(opt => (
+            <button key={opt.v} onClick={() => setLevels(opt.v)}
+              style={{ padding: '9px 6px', borderRadius: 8, cursor: 'pointer',
+                border: `0.5px solid ${levels === opt.v
+                  ? 'var(--color-text-primary)'
+                  : 'var(--color-border-secondary)'}`,
+                background: levels === opt.v
+                  ? 'var(--color-text-primary)'
+                  : 'transparent',
+                color: levels === opt.v
+                  ? 'var(--color-background-primary)'
+                  : 'var(--color-text-secondary)',
+                fontFamily: 'var(--font-sans)', textAlign: 'center' }}>
+              <div style={{ fontSize: 12, fontWeight: 500 }}>{opt.label}</div>
+              <div style={{ fontSize: 10, marginTop: 2, opacity: 0.7 }}>{opt.sub}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Modal footer */}
+      <div style={{ padding: '12px 18px',
+        borderTop: '0.5px solid var(--color-border-tertiary)',
+        background: 'var(--color-background-secondary)',
+        display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
+        <button onClick={onClose}
+          style={{ padding: '7px 14px',
+            border: '0.5px solid var(--color-border-secondary)',
+            borderRadius: 8, background: 'transparent', fontSize: 13,
+            cursor: 'pointer', fontFamily: 'var(--font-sans)',
+            color: 'var(--color-text-secondary)' }}>
+          Cancel
+        </button>
+        <button onClick={handleSave} disabled={saving}
+          style={{ padding: '7px 18px', border: 'none', borderRadius: 8,
+            background: 'var(--color-text-primary)',
+            color: 'var(--color-background-primary)',
+            fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer',
+            fontFamily: 'var(--font-sans)', opacity: saving ? 0.7 : 1 }}>
+          {saving ? 'Saving...' : 'Save Changes'}
+        </button>
       </div>
     </div>
   );
@@ -361,22 +369,57 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
 
   const deptMap  = Object.fromEntries(depts.map((d: any) => [d.id, d.name]));
   const managers = users.filter((u: any) => u.id !== user.id);
-
   const initials = user.full_name
     .split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
-    <>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 100 }}>
+
+      {/* Page backdrop */}
+      <div
+        style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)' }}
+        onClick={onClose}
+      />
+
       {/* Side panel */}
       <div
-        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)',
-          zIndex: 100, display: 'flex', justifyContent: 'flex-end' }}
-        onClick={onClose}>
-        <div
-          style={{ width: 440, background: 'var(--color-background-primary)',
-            height: '100%', overflowY: 'auto', padding: 24,
-            boxShadow: '-4px 0 24px rgba(0,0,0,0.1)' }}
-          onClick={e => e.stopPropagation()}>
+        style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 440,
+          background: 'var(--color-background-primary)',
+          overflowY: showModal ? 'hidden' : 'auto',
+          boxShadow: '-4px 0 24px rgba(0,0,0,0.1)' }}
+        onClick={e => e.stopPropagation()}>
+
+        {/* ── Modal overlay (sits on top of panel) ── */}
+        {showModal && profile && (
+          <div
+            style={{ position: 'absolute', inset: 0, zIndex: 10,
+              background: 'rgba(0,0,0,0.4)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 16 }}
+            onClick={() => setShowModal(false)}>
+            <div
+              style={{ width: '100%', maxWidth: 420,
+                background: 'var(--color-background-primary)',
+                borderRadius: 14,
+                border: '0.5px solid var(--color-border-secondary)',
+                overflow: 'hidden', maxHeight: '90%',
+                display: 'flex', flexDirection: 'column' }}
+              onClick={e => e.stopPropagation()}>
+              <ReportingChainModal
+                user={user}
+                profile={profile}
+                managers={managers}
+                onClose={() => setShowModal(false)}
+                onSave={async (data) => {
+                  await updateMutation.mutateAsync(data);
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ── Panel content ── */}
+        <div style={{ padding: 24 }}>
 
           {/* Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between',
@@ -415,7 +458,7 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
 
           {profile && (
             <>
-              {/* ── Personal details ── */}
+              {/* Personal details */}
               <div style={S.sectionLabel}>Personal Details</div>
               {[
                 ['Employee Code',   profile.employee_id],
@@ -438,57 +481,51 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
                     fontSize: 13, flexShrink: 0 }}>{label}</span>
                   <span style={{ fontWeight: 500, fontSize: 13,
                     color: 'var(--color-text-primary)',
-                    textAlign: 'right', maxWidth: 240, wordBreak: 'break-word' }}>
+                    textAlign: 'right', maxWidth: 240,
+                    wordBreak: 'break-word' }}>
                     {value}
                   </span>
                 </div>
               ))}
 
-              {/* ── Reporting chain summary ── */}
+              {/* Reporting chain summary */}
               <div style={{ ...S.sectionLabel, marginTop: 20 }}>Reporting Chain</div>
-
               {[
                 ['Direct Manager',    profile.direct_manager,    '#0369a1'],
                 ['Reviewing Manager', profile.reviewing_manager,  '#6d28d9'],
                 ['HOD',              profile.hod,               '#92400e'],
-                ['Approval Levels',  null,                      null],
-              ].map(([label, mgr, color]: any) => {
-                if (label === 'Approval Levels') {
-                  return (
-                    <div key={label} style={S.row}>
-                      <span style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>
-                        {label}
-                      </span>
-                      <span style={{ fontWeight: 500, fontSize: 13,
-                        color: 'var(--color-text-primary)' }}>
-                        {profile.approval_levels || 3} level(s)
-                      </span>
-                    </div>
-                  );
-                }
-                return (
-                  <div key={label} style={S.row}>
-                    <span style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>
-                      {label}
-                    </span>
-                    {mgr ? (
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontWeight: 500, fontSize: 13, color }}>
-                          {mgr.name}
-                        </div>
-                        <div style={{ fontSize: 11,
-                          color: 'var(--color-text-tertiary)' }}>
-                          {mgr.employee_id}
-                        </div>
+              ].map(([label, mgr, color]: any) => (
+                <div key={label} style={S.row}>
+                  <span style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>
+                    {label}
+                  </span>
+                  {mgr ? (
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: 500, fontSize: 13, color }}>
+                        {mgr.name}
                       </div>
-                    ) : (
-                      <span style={{ color: 'var(--color-text-tertiary)', fontSize: 13 }}>
-                        Not assigned
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+                      <div style={{ fontSize: 11,
+                        color: 'var(--color-text-tertiary)' }}>
+                        {mgr.employee_id}
+                      </div>
+                    </div>
+                  ) : (
+                    <span style={{ color: 'var(--color-text-tertiary)', fontSize: 13 }}>
+                      Not assigned
+                    </span>
+                  )}
+                </div>
+              ))}
+
+              <div style={S.row}>
+                <span style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>
+                  Approval Levels
+                </span>
+                <span style={{ fontWeight: 500, fontSize: 13,
+                  color: 'var(--color-text-primary)' }}>
+                  {profile.approval_levels || 3} level(s)
+                </span>
+              </div>
 
               {/* Edit button */}
               <button
@@ -505,20 +542,7 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
           )}
         </div>
       </div>
-
-      {/* Reporting chain modal */}
-      {showModal && profile && (
-        <ReportingChainModal
-          user={user}
-          profile={profile}
-          managers={managers}
-          onClose={() => setShowModal(false)}
-          onSave={async (data) => {
-            await updateMutation.mutateAsync(data);
-          }}
-        />
-      )}
-    </>
+    </div>
   );
 }
 
@@ -526,10 +550,15 @@ const S: Record<string, any> = {
   sectionLabel: {
     fontSize: 11, fontWeight: 500,
     color: 'var(--color-text-secondary)',
-    textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    marginBottom: 8,
   },
   row: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-    padding: '9px 0', borderBottom: '0.5px solid var(--color-border-tertiary)',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    padding: '9px 0',
+    borderBottom: '0.5px solid var(--color-border-tertiary)',
   },
 };
