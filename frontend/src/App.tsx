@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuthStore } from './store/auth';
 import LoginPage from './pages/LoginPage';
 import Layout from './components/common/Layout';
-import KpiPage from './pages/KpiPage';
+import KpiSettingPage from './pages/KpiSettingPage';
 import SelfEvalPage from './pages/SelfEvalPage';
 import ManagerEvalPage from './pages/ManagerEvalPage';
 import DashboardPage from './pages/DashboardPage';
