@@ -26,7 +26,7 @@ function RolePill({ role }: { role: string }) {
   );
 }
 
-function InitialsAvatar({ name, size = 44 }: { name: string; size?: number }) {
+export function InitialsAvatar({ name, size = 44 }: { name: string; size?: number }) {
   const initials = name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
   return (
     <div style={{ width: size, height: size, borderRadius: '50%',
@@ -38,8 +38,6 @@ function InitialsAvatar({ name, size = 44 }: { name: string; size?: number }) {
   );
 }
 
-// ── Slot config ────────────────────────────────────────────────────────────
-
 const SLOTS = [
   { key: 'direct_manager_id',    label: 'Direct Manager',    color: '#0369a1' },
   { key: 'reviewing_manager_id', label: 'Reviewing Manager', color: '#6d28d9' },
@@ -48,9 +46,9 @@ const SLOTS = [
 
 type SlotKey = typeof SLOTS[number]['key'];
 
-// ── Reporting chain modal content ──────────────────────────────────────────
+// ── Reporting Chain Modal ──────────────────────────────────────────────────
 
-function ReportingChainModal({
+export function ReportingChainModal({
   user, profile, managers, onSave, onClose,
 }: {
   user:     any;
@@ -115,9 +113,8 @@ function ReportingChainModal({
   }, [onClose]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '100%' }}>
-
-      {/* Modal header */}
+    <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+      {/* Header */}
       <div style={{ padding: '14px 18px',
         borderBottom: '0.5px solid var(--color-border-tertiary)',
         background: 'var(--color-background-secondary)',
@@ -136,7 +133,7 @@ function ReportingChainModal({
             padding: '2px 6px' }}>✕</button>
       </div>
 
-      {/* Modal body */}
+      {/* Body */}
       <div style={{ padding: '16px 18px', overflowY: 'auto', flex: 1 }}>
 
         {/* Search */}
@@ -160,17 +157,15 @@ function ReportingChainModal({
             onChange={e => setSearch(e.target.value)}
           />
 
-          {/* Results */}
           {searchResults.length > 0 && (
             <div style={{ marginTop: 4,
               border: '0.5px solid var(--color-border-tertiary)',
               borderRadius: 8, overflow: 'hidden',
               background: 'var(--color-background-primary)' }}>
               {searchResults.map((m: any, i: number) => (
-                <div key={m.id}
-                  style={{ padding: '9px 12px',
-                    borderBottom: i < searchResults.length - 1
-                      ? '0.5px solid var(--color-border-tertiary)' : 'none' }}>
+                <div key={m.id} style={{ padding: '9px 12px',
+                  borderBottom: i < searchResults.length - 1
+                    ? '0.5px solid var(--color-border-tertiary)' : 'none' }}>
                   <div style={{ display: 'flex', alignItems: 'center',
                     gap: 8, marginBottom: 6 }}>
                     <InitialsAvatar name={m.full_name} size={26} />
@@ -178,18 +173,14 @@ function ReportingChainModal({
                       <div style={{ fontSize: 13, fontWeight: 500,
                         color: 'var(--color-text-primary)',
                         overflow: 'hidden', textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap' }}>
-                        {m.full_name}
-                      </div>
-                      <div style={{ fontSize: 11,
-                        color: 'var(--color-text-secondary)' }}>
+                        whiteSpace: 'nowrap' }}>{m.full_name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
                         {m.employee_id}
                         {m.position_title ? ` · ${m.position_title}` : ''}
                         {m.job_grade ? ` · ${m.job_grade}` : ''}
                       </div>
                     </div>
                   </div>
-                  {/* Assign buttons */}
                   <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                     {SLOTS.map(slot => {
                       const isAssigned = assignments[slot.key] === m.id;
@@ -221,7 +212,7 @@ function ReportingChainModal({
           )}
         </div>
 
-        {/* Current assignment slots */}
+        {/* Slots */}
         <div style={{ fontSize: 11, fontWeight: 500, marginBottom: 8,
           color: 'var(--color-text-secondary)',
           textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -230,18 +221,17 @@ function ReportingChainModal({
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
           gap: 8, marginBottom: 16 }}>
           {SLOTS.map(slot => {
-            const assignedId   = assignments[slot.key];
-            const assignedUser = assignedId ? managerMap[assignedId] : null;
+            const assignedUser = assignments[slot.key]
+              ? managerMap[assignments[slot.key]!] : null;
             return (
               <div key={slot.key}
-                style={{ padding: 10, borderRadius: 8,
+                style={{ padding: 10, borderRadius: 8, minHeight: 72,
                   border: `0.5px solid ${assignedUser
                     ? slot.color + '50'
                     : 'var(--color-border-tertiary)'}`,
                   background: assignedUser
                     ? slot.color + '0a'
-                    : 'var(--color-background-secondary)',
-                  minHeight: 72 }}>
+                    : 'var(--color-background-secondary)' }}>
                 <div style={{ fontSize: 9, fontWeight: 500, marginBottom: 6,
                   color: assignedUser ? slot.color : 'var(--color-text-tertiary)',
                   textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -301,8 +291,7 @@ function ReportingChainModal({
                   ? 'var(--color-text-primary)'
                   : 'var(--color-border-secondary)'}`,
                 background: levels === opt.v
-                  ? 'var(--color-text-primary)'
-                  : 'transparent',
+                  ? 'var(--color-text-primary)' : 'transparent',
                 color: levels === opt.v
                   ? 'var(--color-background-primary)'
                   : 'var(--color-text-secondary)',
@@ -314,7 +303,7 @@ function ReportingChainModal({
         </div>
       </div>
 
-      {/* Modal footer */}
+      {/* Footer */}
       <div style={{ padding: '12px 18px',
         borderTop: '0.5px solid var(--color-border-tertiary)',
         background: 'var(--color-background-secondary)',
@@ -340,87 +329,42 @@ function ReportingChainModal({
   );
 }
 
-// ── Main drawer ────────────────────────────────────────────────────────────
+// ── Main Drawer ────────────────────────────────────────────────────────────
 
 interface Props {
-  user:    any;
-  users:   any[];
-  depts:   any[];
-  onClose: () => void;
+  user:          any;
+  users:         any[];
+  depts:         any[];
+  onClose:       () => void;
+  onEditChain:   () => void;
 }
 
-export default function UserProfileDrawer({ user, users, depts, onClose }: Props) {
-  const qc = useQueryClient();
-  const [showModal, setShowModal] = useState(false);
-
+export default function UserProfileDrawer({
+  user, users, depts, onClose, onEditChain,
+}: Props) {
   const { data: profile, isLoading } = useQuery({
     queryKey: ['user-profile', user.id],
     queryFn:  () => userProfileApi.getProfile(user.id).then(r => r.data),
   });
 
-  const updateMutation = useMutation({
-    mutationFn: (data: any) => userProfileApi.updateManagers(user.id, data),
-    onSuccess:  () => {
-      qc.invalidateQueries({ queryKey: ['user-profile', user.id] });
-      qc.invalidateQueries({ queryKey: ['users'] });
-      setShowModal(false);
-    },
-  });
-
-  const deptMap  = Object.fromEntries(depts.map((d: any) => [d.id, d.name]));
-  const managers = users.filter((u: any) => u.id !== user.id);
+  const deptMap = Object.fromEntries(depts.map((d: any) => [d.id, d.name]));
   const initials = user.full_name
     .split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 100 }}>
+    <>
+      {/* Backdrop */}
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)',
+        zIndex: 100 }} onClick={onClose} />
 
-      {/* Page backdrop */}
-      <div
-        style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)' }}
-        onClick={onClose}
-      />
-
-      {/* Side panel */}
-      <div
-        style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 440,
-          background: 'var(--color-background-primary)',
-          overflowY: showModal ? 'hidden' : 'auto',
-          boxShadow: '-4px 0 24px rgba(0,0,0,0.1)' }}
+      {/* Panel */}
+      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 440,
+        background: 'var(--color-background-primary)',
+        overflowY: 'auto', zIndex: 101,
+        boxShadow: '-4px 0 24px rgba(0,0,0,0.12)' }}
         onClick={e => e.stopPropagation()}>
 
-        {/* ── Modal overlay (sits on top of panel) ── */}
-        {showModal && profile && (
-          <div
-            style={{ position: 'absolute', inset: 0, zIndex: 10,
-              background: 'rgba(0,0,0,0.4)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              padding: 16 }}
-            onClick={() => setShowModal(false)}>
-            <div
-              style={{ width: '100%', maxWidth: 420,
-                background: 'var(--color-background-primary)',
-                borderRadius: 14,
-                border: '0.5px solid var(--color-border-secondary)',
-                overflow: 'hidden', maxHeight: '90%',
-                display: 'flex', flexDirection: 'column' }}
-              onClick={e => e.stopPropagation()}>
-              <ReportingChainModal
-                user={user}
-                profile={profile}
-                managers={managers}
-                onClose={() => setShowModal(false)}
-                onSave={async (data) => {
-                  await updateMutation.mutateAsync(data);
-                }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* ── Panel content ── */}
         <div style={{ padding: 24 }}>
-
           {/* Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between',
             alignItems: 'center', marginBottom: 20 }}>
@@ -432,7 +376,7 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
                 color: 'var(--color-text-secondary)' }}>✕</button>
           </div>
 
-          {/* Avatar + name */}
+          {/* Avatar */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14,
             padding: 16, background: 'var(--color-background-secondary)',
             borderRadius: 12, marginBottom: 20 }}>
@@ -482,13 +426,11 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
                   <span style={{ fontWeight: 500, fontSize: 13,
                     color: 'var(--color-text-primary)',
                     textAlign: 'right', maxWidth: 240,
-                    wordBreak: 'break-word' }}>
-                    {value}
-                  </span>
+                    wordBreak: 'break-word' }}>{value}</span>
                 </div>
               ))}
 
-              {/* Reporting chain summary */}
+              {/* Reporting chain */}
               <div style={{ ...S.sectionLabel, marginTop: 20 }}>Reporting Chain</div>
               {[
                 ['Direct Manager',    profile.direct_manager,    '#0369a1'],
@@ -516,7 +458,6 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
                   )}
                 </div>
               ))}
-
               <div style={S.row}>
                 <span style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>
                   Approval Levels
@@ -528,8 +469,7 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
               </div>
 
               {/* Edit button */}
-              <button
-                onClick={() => setShowModal(true)}
+              <button onClick={onEditChain}
                 style={{ width: '100%', marginTop: 16, padding: '10px',
                   border: '0.5px solid var(--color-border-secondary)',
                   borderRadius: 8, background: 'transparent',
@@ -542,7 +482,7 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
           )}
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -555,10 +495,7 @@ const S: Record<string, any> = {
     marginBottom: 8,
   },
   row: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    padding: '9px 0',
-    borderBottom: '0.5px solid var(--color-border-tertiary)',
+    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+    padding: '9px 0', borderBottom: '0.5px solid var(--color-border-tertiary)',
   },
 };
