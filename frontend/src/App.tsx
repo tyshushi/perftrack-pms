@@ -38,7 +38,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
             <Route index element={<Navigate to="/kpis" replace />} />
-            <Route path="kpis"          element={<KpiPage />} />
+            <Route path="/kpis" element={<KpiSettingPage />} />
             <Route path="self-eval"     element={<SelfEvalPage />} />
             <Route path="mgr-eval"      element={<ManagerEvalPage />} />
             <Route path="dashboard"     element={<DashboardPage />} />
