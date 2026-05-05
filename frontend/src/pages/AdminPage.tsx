@@ -18,6 +18,8 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
   ERROR:     { bg: '#fce7f3', color: '#9d174d', label: 'Error' },
 };
 
+// ── CSV utilities ──────────────────────────────────────────────────────────
+
 function downloadCsv(filename: string, rows: string[][]) {
   const content = rows
     .map(r => r.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(','))
@@ -64,13 +66,6 @@ function exportUsersAudit(users: any[], depts: any[]) {
     [headers, ...rows]
   );
 }
-
-function exportCsvTemplate() {
-  const headers = [
-    'Employee Code', 'Name', 'Employment Unit', 'Department',
-    'Division', 'Section', 'Position Title', 'Grade', 'Category',
-    'Country', 'Work Location', 'Employee Type', 'Hire Date', 'Gender', 'ROLE',
-  ];
 
 function exportCsvTemplate() {
   const headers = [
