@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { cyclesApi, usersApi, departmentsApi, api } from '../api/client';
+import { cyclesApi, usersApi, departmentsApi, api, userProfileApi } from '../api/client';
 import { useForm } from 'react-hook-form';
 import { useState, useRef } from 'react';
-import UserProfileDrawer, { ReportingChainModal, InitialsAvatar } from '../components/common/UserProfileDrawer';
+import UserProfileDrawer, { ReportingChainModal } from '../components/common/UserProfileDrawer';
 
 const PAGE_SIZE = 20;
 
@@ -27,9 +27,7 @@ function downloadCsv(filename: string, rows: string[][]) {
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  a.href     = url;
-  a.download = filename;
-  a.click();
+  a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 }
 
@@ -70,23 +68,18 @@ function exportCsvTemplate() {
   const headers = [
     'Employee Code', 'Name', 'Employment Unit', 'Department',
     'Division', 'Section', 'Position Title', 'Grade', 'Category',
-    'Country', 'Work Location', 'Employee Type', 'Hire Date',
-    'Gender', 'ROLE',
+    'Country', 'Work Location', 'Employee Type', 'Hire Date', 'Gender', 'ROLE',
   ];
   const example = [
     'EMP001', 'Ahmad bin Ali', 'Corporate', 'Finance',
     'Financial Control', 'Reporting', 'Finance Executive', 'G3', 'Permanent',
-    'Malaysia', 'Kuala Lumpur HQ', 'Full Time', '01/01/2020',
-    'Male', 'STAFF',
+    'Malaysia', 'Kuala Lumpur HQ', 'Full Time', '01/01/2020', 'Male', 'STAFF',
   ];
   downloadCsv('employee_import_template.csv', [headers, example]);
 }
 
 function exportReportingLinesTemplate() {
-  const headers = [
-    'Employee Code', 'Name',
-    'Direct Manager Code', 'Reviewing Manager Code', 'HOD Code',
-  ];
+  const headers = ['Employee Code', 'Name', 'Direct Manager Code', 'Reviewing Manager Code', 'HOD Code'];
   const example = ['EMP005', 'Aisha Rahman', 'EMP004', 'EMP003', 'EMP002'];
   downloadCsv('reporting_lines_template.csv', [headers, example]);
 }
@@ -97,8 +90,7 @@ function exportReportingLinesAudit(users: any[]) {
     'Employee Code', 'Name',
     'Direct Manager Code', 'Direct Manager Name',
     'Reviewing Manager Code', 'Reviewing Manager Name',
-    'HOD Code', 'HOD Name',
-    'Approval Levels',
+    'HOD Code', 'HOD Name', 'Approval Levels',
   ];
   const rows = users.map((u: any) => {
     const dm  = userMap[u.direct_manager_id];
@@ -112,8 +104,7 @@ function exportReportingLinesAudit(users: any[]) {
       String(u.approval_levels || 3),
     ];
   });
-  downloadCsv(`reporting_lines_audit_${new Date().toISOString().slice(0, 10)}.csv`,
-    [headers, ...rows]);
+  downloadCsv(`reporting_lines_${new Date().toISOString().slice(0, 10)}.csv`, [headers, ...rows]);
 }
 
 // ── Shared components ──────────────────────────────────────────────────────
@@ -151,17 +142,16 @@ function RolePill({ role }: { role: string }) {
 
 function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
   const qc = useQueryClient();
-  const [search,     setSearch]   = useState('');
-  const [roleFilter, setRole]     = useState('');
-  const [deptFilter, setDept]     = useState('');
-  const [page,       setPage]     = useState(1);
-  const [selected,   setSelected] = useState<any>(null);
+  const [search,     setSearch]    = useState('');
+  const [roleFilter, setRole]      = useState('');
+  const [deptFilter, setDept]      = useState('');
+  const [page,       setPage]      = useState(1);
+  const [selected,   setSelected]  = useState<any>(null);
   const [showChain,  setShowChain] = useState(false);
-  const [rlResult,   setRlResult] = useState<any>(null);
+  const [rlResult,   setRlResult]  = useState<any>(null);
   const [rlLoading,  setRlLoading] = useState(false);
   const rlFileRef = useRef<HTMLInputElement>(null);
 
-  // Profile query — needed for the modal
   const { data: profile } = useQuery({
     queryKey: ['user-profile', selected?.id],
     queryFn:  () => userProfileApi.getProfile(selected!.id).then(r => r.data),
@@ -177,11 +167,209 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
     },
   });
 
-  // ... (keep all existing filter/pagination/upload logic unchanged) ...
+  const deptMap = Object.fromEntries(depts.map((d: any) => [d.id, d.name]));
+
+  const filtered = users.filter(u => {
+    const q = search.toLowerCase();
+    const matchSearch = !q || [
+      u.full_name, u.employee_id, u.email, u.role,
+      u.job_grade, u.position_title, u.division, u.section,
+      u.department_id ? deptMap[u.department_id] : '',
+    ].some(f => f?.toLowerCase().includes(q));
+    return matchSearch &&
+      (!roleFilter || u.role === roleFilter) &&
+      (!deptFilter || u.department_id === deptFilter);
+  });
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  async function handleRlUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setRlResult(null); setRlLoading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await api.post('/users/import/reporting-lines', fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } });
+      setRlResult(res.data);
+      qc.invalidateQueries({ queryKey: ['users'] });
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Upload failed');
+    } finally {
+      setRlLoading(false);
+      if (rlFileRef.current) rlFileRef.current.value = '';
+    }
+  }
 
   return (
     <div>
-      {/* ... all existing JSX unchanged ... */}
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <input style={{ ...S.input, flex: 1, minWidth: 200 }}
+          placeholder="Search name, code, email, grade, position, division..."
+          value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+        <select style={{ ...S.input, width: 150 }} value={roleFilter}
+          onChange={e => { setRole(e.target.value); setPage(1); }}>
+          <option value="">All Roles</option>
+          {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select style={{ ...S.input, width: 170 }} value={deptFilter}
+          onChange={e => { setDept(e.target.value); setPage(1); }}>
+          <option value="">All Departments</option>
+          {depts.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+        <span style={{ fontSize: 12, color: 'var(--color-text-secondary)',
+          alignSelf: 'center', whiteSpace: 'nowrap' }}>
+          {filtered.length} user{filtered.length !== 1 ? 's' : ''}
+        </span>
+        <button style={S.btnSm} onClick={() => exportUsersAudit(users, depts)}>
+          ↓ Full Audit CSV
+        </button>
+      </div>
+
+      {/* Reporting lines upload */}
+      <div style={{ ...S.card, background: 'var(--color-background-secondary)',
+        marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between',
+          alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 2,
+              color: 'var(--color-text-primary)' }}>Upload Reporting Lines</div>
+            <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+              CSV: Employee Code, Name, Direct Manager Code,
+              Reviewing Manager Code, HOD Code. Blank = keep existing.
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+            <button style={S.btnSm} onClick={() => exportReportingLinesAudit(users)}>
+              ↓ Current Lines
+            </button>
+            <button style={S.btnSm} onClick={exportReportingLinesTemplate}>
+              ↓ Template
+            </button>
+            <input ref={rlFileRef} type="file" accept=".csv"
+              onChange={handleRlUpload} style={{ display: 'none' }} />
+            <button style={S.btnPrimary}
+              onClick={() => { setRlResult(null); rlFileRef.current?.click(); }}
+              disabled={rlLoading}>
+              {rlLoading ? 'Uploading...' : '↑ Upload'}
+            </button>
+          </div>
+        </div>
+
+        {rlResult && (
+          <div style={{ marginTop: 12, padding: 12, background: 'var(--color-background-primary)',
+            borderRadius: 8, border: '0.5px solid var(--color-border-tertiary)' }}>
+            <div style={{ fontWeight: 500, color: '#166534', marginBottom: 6 }}>
+              ✓ {rlResult.message}
+            </div>
+            <div style={{ display: 'flex', gap: 16, fontSize: 13, flexWrap: 'wrap',
+              color: 'var(--color-text-secondary)' }}>
+              <span>Updated: <strong>{rlResult.updated}</strong></span>
+              <span>Skipped: <strong>{rlResult.skipped}</strong></span>
+              {rlResult.not_found?.length > 0 && (
+                <span style={{ color: '#991b1b' }}>
+                  Not found: <strong>{rlResult.not_found.length}</strong>
+                  {' '}({rlResult.not_found.slice(0, 3).join(', ')}
+                  {rlResult.not_found.length > 3 ? '...' : ''})
+                </span>
+              )}
+              {rlResult.name_mismatches?.length > 0 && (
+                <span style={{ color: '#854d0e' }}>
+                  Name mismatches: <strong>{rlResult.name_mismatches.length}</strong>
+                </span>
+              )}
+            </div>
+            {rlResult.warnings?.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                {rlResult.warnings.slice(0, 5).map((w: string, i: number) => (
+                  <div key={i} style={{ fontSize: 11, color: '#854d0e' }}>• {w}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Table */}
+      <div style={{ background: 'var(--color-background-primary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 10, overflow: 'hidden', marginBottom: 12 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: 'var(--color-background-secondary)' }}>
+              {['Employee', 'Code', 'Position', 'Department', 'Grade', 'Role', 'Status'].map(h => (
+                <th key={h} style={S.th}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {paginated.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ padding: 32, textAlign: 'center',
+                  color: 'var(--color-text-secondary)' }}>No users found</td>
+              </tr>
+            )}
+            {paginated.map((u: any) => (
+              <tr key={u.id} onClick={() => setSelected(u)}
+                style={{ cursor: 'pointer' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-background-secondary)')}
+                onMouseLeave={e => (e.currentTarget.style.background = '')}>
+                <td style={S.td}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Avatar name={u.full_name} />
+                    <div>
+                      <div style={{ fontWeight: 500,
+                        color: 'var(--color-text-primary)' }}>{u.full_name}</div>
+                      <div style={{ fontSize: 11,
+                        color: 'var(--color-text-secondary)' }}>{u.email}</div>
+                    </div>
+                  </div>
+                </td>
+                <td style={S.td}>{u.employee_id}</td>
+                <td style={S.td}>{u.position_title || '—'}</td>
+                <td style={S.td}>{u.department_id ? deptMap[u.department_id] || '—' : '—'}</td>
+                <td style={S.td}>{u.job_grade || '—'}</td>
+                <td style={S.td}><RolePill role={u.role} /></td>
+                <td style={S.td}>
+                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10,
+                    background: u.is_active !== false ? '#dcfce7' : '#fee2e2',
+                    color:      u.is_active !== false ? '#166534' : '#991b1b' }}>
+                    {u.is_active !== false ? 'Active' : 'Inactive'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 12 }}>
+          <button style={S.btnSm} disabled={page === 1}
+            onClick={() => setPage(p => p - 1)}>← Prev</button>
+          {Array.from({ length: totalPages }, (_, i) => i + 1)
+            .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
+            .map((p, i, arr) => (
+              <span key={p}>
+                {i > 0 && arr[i - 1] !== p - 1 && (
+                  <span style={{ padding: '0 4px',
+                    color: 'var(--color-text-secondary)' }}>...</span>
+                )}
+                <button onClick={() => setPage(p)} style={{
+                  ...S.btnSm,
+                  background: p === page ? 'var(--color-text-primary)' : 'transparent',
+                  color:      p === page ? 'var(--color-background-primary)' : 'var(--color-text-secondary)',
+                }}>{p}</button>
+              </span>
+            ))}
+          <button style={S.btnSm} disabled={page === totalPages}
+            onClick={() => setPage(p => p + 1)}>Next →</button>
+        </div>
+      )}
 
       {/* Profile drawer */}
       {selected && (
@@ -194,7 +382,7 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
         />
       )}
 
-      {/* Reporting chain modal — sibling to drawer, higher z-index */}
+      {/* Reporting chain modal — separate, higher z-index */}
       {selected && showChain && profile && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 200,
           background: 'rgba(0,0,0,0.5)',
@@ -223,13 +411,13 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
 
 function CsvImportTab() {
   const qc = useQueryClient();
-  const fileRef                         = useRef<HTMLInputElement>(null);
-  const [preview,   setPreview]         = useState<any[]>([]);
-  const [summary,   setSummary]         = useState<any>(null);
-  const [importing, setImporting]       = useState(false);
-  const [result,    setResult]          = useState<any>(null);
-  const [selected,  setSelected]        = useState<Record<string, string>>({});
-  const [filter,    setFilter]          = useState('');
+  const fileRef                       = useRef<HTMLInputElement>(null);
+  const [preview,   setPreview]       = useState<any[]>([]);
+  const [summary,   setSummary]       = useState<any>(null);
+  const [importing, setImporting]     = useState(false);
+  const [result,    setResult]        = useState<any>(null);
+  const [selected,  setSelected]      = useState<Record<string, string>>({});
+  const [filter,    setFilter]        = useState('');
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -292,17 +480,18 @@ function CsvImportTab() {
   return (
     <div>
       <div style={S.card}>
-        <div style={{ fontWeight: 500, marginBottom: 6 }}>Upload Employee CSV</div>
-        <p style={{ fontSize: 12, color: '#888', marginBottom: 14 }}>
-          Required columns: <code>Employee Code, Name, Employment Unit, Department, Division,
-          Section, Position Title, Grade, Category, Country, Work Location, Employee Type,
-          Hire Date, Gender, ROLE</code><br />
-          Optional: <code>Direct Manager Code, Reviewing Manager Code, HOD Code</code>
+        <div style={{ fontWeight: 500, marginBottom: 6,
+          color: 'var(--color-text-primary)' }}>Upload Employee CSV</div>
+        <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 14 }}>
+          Required: <code>Employee Code, Name, Employment Unit, Department, Division,
+          Section, Position Title, Grade, Category, Country, Work Location,
+          Employee Type, Hire Date, Gender, ROLE</code>
         </p>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input ref={fileRef} type="file" accept=".csv" onChange={handleFile}
-            style={{ display: 'none' }} />
-          <button style={S.btnPrimary} onClick={() => fileRef.current?.click()} disabled={importing}>
+          <input ref={fileRef} type="file" accept=".csv"
+            onChange={handleFile} style={{ display: 'none' }} />
+          <button style={S.btnPrimary}
+            onClick={() => fileRef.current?.click()} disabled={importing}>
             {importing ? 'Analysing...' : '↑ Upload CSV'}
           </button>
           <button style={S.btnSm} onClick={exportCsvTemplate}>
@@ -314,7 +503,9 @@ function CsvImportTab() {
                 { label: `New: ${summary.new}`,              bg: '#dcfce7', color: '#166534', f: 'NEW' },
                 { label: `Duplicate: ${summary.duplicates}`, bg: '#fef9c3', color: '#854d0e', f: 'DUPLICATE' },
                 { label: `Missing: ${summary.missing}`,      bg: '#fee2e2', color: '#991b1b', f: 'MISSING' },
-                ...(summary.errors > 0 ? [{ label: `Errors: ${summary.errors}`, bg: '#fce7f3', color: '#9d174d', f: 'ERROR' }] : []),
+                ...(summary.errors > 0 ? [{
+                  label: `Errors: ${summary.errors}`, bg: '#fce7f3', color: '#9d174d', f: 'ERROR'
+                }] : []),
               ].map(s => (
                 <button key={s.f}
                   onClick={() => setFilter(filter === s.f ? '' : s.f)}
@@ -325,8 +516,8 @@ function CsvImportTab() {
                 </button>
               ))}
               {filter && (
-                <button style={{ fontSize: 12, color: '#888', background: 'transparent',
-                  border: 'none', cursor: 'pointer' }}
+                <button style={{ fontSize: 12, color: 'var(--color-text-secondary)',
+                  background: 'transparent', border: 'none', cursor: 'pointer' }}
                   onClick={() => setFilter('')}>Clear ✕</button>
               )}
             </div>
@@ -336,12 +527,16 @@ function CsvImportTab() {
 
       {result && (
         <div style={{ ...S.card, background: '#dcfce7', border: '0.5px solid #86efac' }}>
-          <div style={{ fontWeight: 500, color: '#166534', marginBottom: 6 }}>Import Complete ✓</div>
+          <div style={{ fontWeight: 500, color: '#166534', marginBottom: 6 }}>
+            Import Complete ✓
+          </div>
           <div style={{ fontSize: 13, color: '#166534' }}>
             Created: {result.created} · Updated: {result.updated} ·
             Deactivated: {result.deactivated} · Skipped: {result.skipped}
           </div>
-          <div style={{ fontSize: 12, color: '#166534', marginTop: 4 }}>{result.message}</div>
+          <div style={{ fontSize: 12, color: '#166534', marginTop: 4 }}>
+            {result.message}
+          </div>
         </div>
       )}
 
@@ -350,10 +545,10 @@ function CsvImportTab() {
           <div style={{ display: 'flex', justifyContent: 'space-between',
             alignItems: 'center', marginBottom: 12 }}>
             <div>
-              <div style={{ fontWeight: 500 }}>
+              <div style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>
                 Preview — {filtered.length} of {preview.length} rows
               </div>
-              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+              <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2 }}>
                 {Object.keys(selected).length} selected
               </div>
             </div>
@@ -363,8 +558,7 @@ function CsvImportTab() {
               <button style={{ ...S.btnSm, color: '#991b1b', borderColor: '#fca5a5' }}
                 onClick={() => selectAll('MISSING', 'deactivate')}>All missing</button>
               <button style={S.btnSm} onClick={() => setSelected({})}>Clear</button>
-              <button
-                onClick={handleConfirm}
+              <button onClick={handleConfirm}
                 disabled={importing || Object.keys(selected).length === 0}
                 style={S.btnPrimary}>
                 {importing ? 'Importing...' : `Confirm (${Object.keys(selected).length})`}
@@ -375,9 +569,9 @@ function CsvImportTab() {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
-                <tr style={{ background: '#fafaf8' }}>
+                <tr style={{ background: 'var(--color-background-secondary)' }}>
                   {['', 'Status', 'Code', 'Name', 'Email', 'Dept',
-                    'Grade', 'Role', 'DM Code', 'Notes'].map(h => (
+                    'Grade', 'Role', 'Notes'].map(h => (
                     <th key={h} style={{ ...S.th, fontSize: 11 }}>{h}</th>
                   ))}
                 </tr>
@@ -388,8 +582,11 @@ function CsvImportTab() {
                   const code = row.employee_code;
                   return (
                     <tr key={i} style={{
-                      background: selected[code] ? '#f0fdf4' : i % 2 === 0 ? '#fff' : '#fafaf8'
-                    }}>
+                      background: selected[code]
+                        ? '#f0fdf4'
+                        : i % 2 === 0
+                          ? 'var(--color-background-primary)'
+                          : 'var(--color-background-secondary)' }}>
                       <td style={{ ...S.td, width: 32 }}>
                         {row.status === 'NEW'       && <input type="checkbox" checked={selected[code] === 'create'}     onChange={() => toggle(code, 'create')} />}
                         {row.status === 'DUPLICATE' && <input type="checkbox" checked={selected[code] === 'update'}     onChange={() => toggle(code, 'update')} />}
@@ -397,7 +594,8 @@ function CsvImportTab() {
                       </td>
                       <td style={S.td}>
                         <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10,
-                          background: ss.bg, color: ss.color, fontWeight: 500, whiteSpace: 'nowrap' }}>
+                          background: ss.bg, color: ss.color,
+                          fontWeight: 500, whiteSpace: 'nowrap' }}>
                           {ss.label}
                         </span>
                       </td>
@@ -407,9 +605,10 @@ function CsvImportTab() {
                       <td style={S.td}>{row.department || '—'}</td>
                       <td style={S.td}>{row.grade || '—'}</td>
                       <td style={S.td}>{row.role || '—'}</td>
-                      <td style={S.td}>{row.dm_code || '—'}</td>
-                      <td style={{ ...S.td, maxWidth: 180, color: '#888', fontSize: 11 }}>
-                        {row.status === 'DUPLICATE' && row.changes && Object.keys(row.changes).length > 0
+                      <td style={{ ...S.td, maxWidth: 180,
+                        color: 'var(--color-text-secondary)', fontSize: 11 }}>
+                        {row.status === 'DUPLICATE' && row.changes &&
+                          Object.keys(row.changes).length > 0
                           ? `Changes: ${Object.keys(row.changes).join(', ')}`
                           : row.message || ''}
                       </td>
@@ -452,13 +651,14 @@ function ReportingLinesTab({ users }: { users: any[] }) {
 
     return (
       <div style={{ marginLeft: depth * 20 }}>
-        <div
-          onClick={() => reports.length > 0 && setOpen(!open)}
+        <div onClick={() => reports.length > 0 && setOpen(!open)}
           style={{ display: 'flex', alignItems: 'center', gap: 8,
             padding: '8px 10px', borderRadius: 8, marginBottom: 2,
             cursor: reports.length > 0 ? 'pointer' : 'default',
-            background: isMatch && search ? '#fef9c3' : 'transparent' }}>
-          <span style={{ fontSize: 10, color: '#888', width: 12, flexShrink: 0 }}>
+            background: isMatch && search
+              ? 'var(--color-background-warning)' : 'transparent' }}>
+          <span style={{ fontSize: 10, color: 'var(--color-text-secondary)',
+            width: 12, flexShrink: 0 }}>
             {reports.length > 0 ? (open ? '▼' : '▶') : ''}
           </span>
           <div style={{ width: 30, height: 30, borderRadius: '50%',
@@ -468,15 +668,17 @@ function ReportingLinesTab({ users }: { users: any[] }) {
             {user.full_name.split(' ').map((w: string) => w[0]).join('').slice(0, 2)}
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 500 }}>{user.full_name}</div>
-            <div style={{ fontSize: 11, color: '#888' }}>
+            <div style={{ fontSize: 13, fontWeight: 500,
+              color: 'var(--color-text-primary)' }}>{user.full_name}</div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
               {user.employee_id} · {ROLE_LABELS[user.role] || user.role}
               {user.position_title ? ` · ${user.position_title}` : ''}
             </div>
           </div>
           {reports.length > 0 && (
-            <span style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>
-              {reports.length} direct report{reports.length !== 1 ? 's' : ''}
+            <span style={{ fontSize: 11, color: 'var(--color-text-secondary)',
+              flexShrink: 0 }}>
+              {reports.length} report{reports.length !== 1 ? 's' : ''}
             </span>
           )}
         </div>
@@ -494,18 +696,18 @@ function ReportingLinesTab({ users }: { users: any[] }) {
   return (
     <div>
       <div style={{ marginBottom: 12 }}>
-        <input
-          style={{ ...S.input, maxWidth: 340 }}
+        <input style={{ ...S.input, maxWidth: 340 }}
           placeholder="Search by name, code, role, or position..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
+          value={search} onChange={e => setSearch(e.target.value)} />
       </div>
-      <div style={{ background: '#fff', border: '0.5px solid #e5e4df',
+      <div style={{ background: 'var(--color-background-primary)',
+        border: '0.5px solid var(--color-border-tertiary)',
         borderRadius: 10, padding: 16 }}>
         {roots.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 32, color: '#888', fontSize: 13 }}>
-            {search ? 'No matches found' : 'No root employees — everyone has a direct manager assigned'}
+          <div style={{ textAlign: 'center', padding: 32,
+            color: 'var(--color-text-secondary)', fontSize: 13 }}>
+            {search ? 'No matches found'
+              : 'No root employees — everyone has a direct manager assigned'}
           </div>
         )}
         {roots.map((u: any) => <TreeNode key={u.id} user={u} depth={0} />)}
@@ -523,16 +725,13 @@ export default function AdminPage() {
   const { register: rc, handleSubmit: hc, reset: resetC } = useForm();
 
   const { data: cycles = [] } = useQuery({
-    queryKey: ['cycles'],
-    queryFn:  () => cyclesApi.list().then(r => r.data),
+    queryKey: ['cycles'], queryFn: () => cyclesApi.list().then(r => r.data),
   });
   const { data: users = [] } = useQuery({
-    queryKey: ['users'],
-    queryFn:  () => usersApi.list().then(r => r.data),
+    queryKey: ['users'], queryFn: () => usersApi.list().then(r => r.data),
   });
   const { data: depts = [] } = useQuery({
-    queryKey: ['depts'],
-    queryFn:  () => departmentsApi.list().then(r => r.data),
+    queryKey: ['depts'], queryFn: () => departmentsApi.list().then(r => r.data),
   });
 
   const createCycle = useMutation({
@@ -554,20 +753,24 @@ export default function AdminPage() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 4 }}>HR Admin</h1>
-      <p style={{ fontSize: 13, color: '#888', marginBottom: 20 }}>
+      <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 4,
+        color: 'var(--color-text-primary)' }}>HR Admin</h1>
+      <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 20 }}>
         Manage cycles, users, and system configuration
       </p>
 
       {/* Main tabs */}
-      <div style={{ display: 'flex', gap: 2, borderBottom: '0.5px solid #e5e4df', marginBottom: 20 }}>
+      <div style={{ display: 'flex', gap: 2,
+        borderBottom: '0.5px solid var(--color-border-tertiary)', marginBottom: 20 }}>
         {MAIN_TABS.map(([t, l]) => (
           <button key={t} onClick={() => setTab(t as any)}
             style={{ padding: '8px 16px', border: 'none', background: 'transparent',
               cursor: 'pointer', fontSize: 13,
-              color:      tab === t ? '#1a1a18' : '#888',
+              color:      tab === t ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
               fontWeight: tab === t ? 500 : 400,
-              borderBottom: tab === t ? '2px solid #1a1a18' : '2px solid transparent',
+              borderBottom: tab === t
+                ? '2px solid var(--color-text-primary)'
+                : '2px solid transparent',
               marginBottom: -0.5 }}>
             {l}
           </button>
@@ -578,25 +781,34 @@ export default function AdminPage() {
       {tab === 'cycles' && (
         <div>
           <div style={S.card}>
-            <div style={{ fontWeight: 500, marginBottom: 14 }}>Create Performance Cycle</div>
+            <div style={{ fontWeight: 500, marginBottom: 14,
+              color: 'var(--color-text-primary)' }}>Create Performance Cycle</div>
             <form onSubmit={hc(d => createCycle.mutate(d))}>
               <div style={S.grid2}>
                 <div style={S.fg}><label style={S.label}>Cycle Name</label>
-                  <input style={S.input} {...rc('name', { required: true })} placeholder="FY2026 Annual" /></div>
+                  <input style={S.input} {...rc('name', { required: true })}
+                    placeholder="FY2026 Annual" /></div>
                 <div style={S.fg}><label style={S.label}>Year</label>
-                  <input style={S.input} type="number" {...rc('year', { required: true })} placeholder="2026" /></div>
+                  <input style={S.input} type="number"
+                    {...rc('year', { required: true })} placeholder="2026" /></div>
                 <div style={S.fg}><label style={S.label}>KPI Setting Start</label>
-                  <input style={S.input} type="date" {...rc('kpi_setting_start', { required: true })} /></div>
+                  <input style={S.input} type="date"
+                    {...rc('kpi_setting_start', { required: true })} /></div>
                 <div style={S.fg}><label style={S.label}>KPI Setting End</label>
-                  <input style={S.input} type="date" {...rc('kpi_setting_end', { required: true })} /></div>
+                  <input style={S.input} type="date"
+                    {...rc('kpi_setting_end', { required: true })} /></div>
                 <div style={S.fg}><label style={S.label}>Self Eval Start</label>
-                  <input style={S.input} type="date" {...rc('self_eval_start', { required: true })} /></div>
+                  <input style={S.input} type="date"
+                    {...rc('self_eval_start', { required: true })} /></div>
                 <div style={S.fg}><label style={S.label}>Self Eval End</label>
-                  <input style={S.input} type="date" {...rc('self_eval_end', { required: true })} /></div>
+                  <input style={S.input} type="date"
+                    {...rc('self_eval_end', { required: true })} /></div>
                 <div style={S.fg}><label style={S.label}>Manager Eval Start</label>
-                  <input style={S.input} type="date" {...rc('mgr_eval_start', { required: true })} /></div>
+                  <input style={S.input} type="date"
+                    {...rc('mgr_eval_start', { required: true })} /></div>
                 <div style={S.fg}><label style={S.label}>Manager Eval End</label>
-                  <input style={S.input} type="date" {...rc('mgr_eval_end', { required: true })} /></div>
+                  <input style={S.input} type="date"
+                    {...rc('mgr_eval_end', { required: true })} /></div>
               </div>
               <button type="submit" style={S.btnPrimary}>
                 {createCycle.isPending ? 'Creating...' : 'Create Cycle'}
@@ -605,20 +817,18 @@ export default function AdminPage() {
           </div>
 
           <div style={S.card}>
-            <div style={{ fontWeight: 500, marginBottom: 12 }}>Existing Cycles</div>
+            <div style={{ fontWeight: 500, marginBottom: 12,
+              color: 'var(--color-text-primary)' }}>Existing Cycles</div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
-                <tr>
-                  {['Name', 'Year', 'Status', 'KPI Window'].map(h => (
-                    <th key={h} style={S.th}>{h}</th>
-                  ))}
-                </tr>
+                <tr>{['Name', 'Year', 'Status', 'KPI Window'].map(h => (
+                  <th key={h} style={S.th}>{h}</th>
+                ))}</tr>
               </thead>
               <tbody>
                 {(cycles as any[]).length === 0 && (
-                  <tr><td colSpan={4} style={{ padding: 24, textAlign: 'center', color: '#888' }}>
-                    No cycles yet
-                  </td></tr>
+                  <tr><td colSpan={4} style={{ padding: 24, textAlign: 'center',
+                    color: 'var(--color-text-secondary)' }}>No cycles yet</td></tr>
                 )}
                 {(cycles as any[]).map((c: any) => (
                   <tr key={c.id}>
@@ -626,7 +836,8 @@ export default function AdminPage() {
                     <td style={S.td}>{c.year}</td>
                     <td style={S.td}>
                       <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10,
-                        background: '#f0f9ff', color: '#0369a1' }}>{c.status}</span>
+                        background: 'var(--color-background-info)',
+                        color: 'var(--color-text-info)' }}>{c.status}</span>
                     </td>
                     <td style={S.td}>{c.kpi_setting_start} → {c.kpi_setting_end}</td>
                   </tr>
@@ -640,28 +851,25 @@ export default function AdminPage() {
       {/* ── User Management ── */}
       {tab === 'users' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between',
-            alignItems: 'center', marginBottom: 12 }}>
-            <span style={{ fontSize: 13, color: '#888' }}>
-              {(users as any[]).length} active users
-            </span>
+          <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 12 }}>
+            {(users as any[]).length} active users
           </div>
-
-          {/* User sub-tabs */}
-          <div style={{ display: 'flex', gap: 2, borderBottom: '0.5px solid #e5e4df', marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 2,
+            borderBottom: '0.5px solid var(--color-border-tertiary)', marginBottom: 16 }}>
             {USER_TABS.map(([t, l]) => (
               <button key={t} onClick={() => setUserTab(t as any)}
                 style={{ padding: '7px 14px', border: 'none', background: 'transparent',
                   cursor: 'pointer', fontSize: 12,
-                  color:      userTab === t ? '#1a1a18' : '#888',
+                  color:      userTab === t ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
                   fontWeight: userTab === t ? 500 : 400,
-                  borderBottom: userTab === t ? '2px solid #1a1a18' : '2px solid transparent',
+                  borderBottom: userTab === t
+                    ? '2px solid var(--color-text-primary)'
+                    : '2px solid transparent',
                   marginBottom: -0.5 }}>
                 {l}
               </button>
             ))}
           </div>
-
           {userTab === 'list'      && <UserListTab users={users as any[]} depts={depts as any[]} />}
           {userTab === 'import'    && <CsvImportTab />}
           {userTab === 'reporting' && <ReportingLinesTab users={users as any[]} />}
@@ -671,18 +879,23 @@ export default function AdminPage() {
       {/* ── Departments ── */}
       {tab === 'depts' && (
         <div style={S.card}>
-          <div style={{ fontWeight: 500, marginBottom: 12 }}>
+          <div style={{ fontWeight: 500, marginBottom: 12,
+            color: 'var(--color-text-primary)' }}>
             Departments ({(depts as any[]).length})
           </div>
           {(depts as any[]).map((d: any) => (
-            <div key={d.id} style={{ padding: '8px 0', borderBottom: '0.5px solid #f0f0ee',
+            <div key={d.id} style={{ padding: '8px 0',
+              borderBottom: '0.5px solid var(--color-border-tertiary)',
               fontSize: 13, display: 'flex', gap: 10 }}>
-              <span style={{ fontWeight: 500 }}>{d.name}</span>
-              <span style={{ color: '#888' }}>{d.code}</span>
+              <span style={{ fontWeight: 500,
+                color: 'var(--color-text-primary)' }}>{d.name}</span>
+              <span style={{ color: 'var(--color-text-secondary)' }}>{d.code}</span>
             </div>
           ))}
           {(depts as any[]).length === 0 && (
-            <div style={{ color: '#888', fontSize: 13 }}>No departments found.</div>
+            <div style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>
+              No departments found.
+            </div>
           )}
         </div>
       )}
@@ -691,13 +904,13 @@ export default function AdminPage() {
 }
 
 const S: Record<string, any> = {
-  card:      { background: '#fff', border: '0.5px solid #e5e4df', borderRadius: 10, padding: 16, marginBottom: 12 },
+  card:      { background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 10, padding: 16, marginBottom: 12 },
   grid2:     { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 },
   fg:        { marginBottom: 10 },
-  label:     { fontSize: 12, fontWeight: 500, color: '#666', display: 'block', marginBottom: 4 },
-  input:     { width: '100%', padding: '7px 10px', border: '0.5px solid #d0d0cc', borderRadius: 8, fontSize: 13, background: '#fff', color: '#1a1a18', fontFamily: 'inherit', outline: 'none' },
-  btnPrimary:{ padding: '7px 16px', border: 'none', borderRadius: 8, background: '#1a1a18', color: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' },
-  btnSm:     { padding: '5px 10px', border: '0.5px solid #d0d0cc', borderRadius: 8, background: 'transparent', color: '#444', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' },
-  th:        { textAlign: 'left', padding: '8px 10px', borderBottom: '0.5px solid #e5e4df', fontSize: 11, color: '#888', fontWeight: 500 },
-  td:        { padding: '10px', borderBottom: '0.5px solid #f0f0ee', fontSize: 13 },
+  label:     { fontSize: 12, fontWeight: 500, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 },
+  input:     { width: '100%', padding: '7px 10px', border: '0.5px solid var(--color-border-secondary)', borderRadius: 8, fontSize: 13, background: 'var(--color-background-primary)', color: 'var(--color-text-primary)', fontFamily: 'var(--font-sans)', outline: 'none' },
+  btnPrimary:{ padding: '7px 16px', border: 'none', borderRadius: 8, background: 'var(--color-text-primary)', color: 'var(--color-background-primary)', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-sans)' },
+  btnSm:     { padding: '5px 10px', border: '0.5px solid var(--color-border-secondary)', borderRadius: 8, background: 'transparent', color: 'var(--color-text-secondary)', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-sans)' },
+  th:        { textAlign: 'left', padding: '8px 10px', borderBottom: '0.5px solid var(--color-border-tertiary)', fontSize: 11, color: 'var(--color-text-secondary)', fontWeight: 500 },
+  td:        { padding: '10px', borderBottom: '0.5px solid var(--color-border-tertiary)', fontSize: 13, color: 'var(--color-text-primary)' },
 };
