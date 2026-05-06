@@ -89,6 +89,25 @@ def kpi_to_dict(k: Kpi) -> dict:
         "cascaded_by":   str(k.cascaded_by) if k.cascaded_by else None,
     }
 
+def rule_to_dict(r: WeightRule) -> dict:
+    return {
+        "id":            str(r.id),
+        "cycle_id":      str(r.cycle_id),
+        "label":         r.label or "Everyone",
+        "group_id":      str(r.group_id)      if r.group_id      else None,
+        "hierarchy":     r.hierarchy,
+        "user_category": r.user_category,
+        "department_id": str(r.department_id) if r.department_id else None,
+        "job_grade":     r.job_grade,
+        "priority":      r.priority or 0,
+        "dimensions": {
+            "Financials":           {"min": r.fin_min  or 0, "max": r.fin_max  or 100},
+            "Customer":             {"min": r.cust_min or 0, "max": r.cust_max or 100},
+            "Internal Process":     {"min": r.ip_min   or 0, "max": r.ip_max   or 100},
+            "Learning & Growth":    {"min": r.lg_min   or 0, "max": r.lg_max   or 100},
+            "Leadership & Culture": {"min": r.lc_min   or 0, "max": r.lc_max   or 100},
+        },
+    }
 
 # ── Static routes ──────────────────────────────────────────────────────────
 
@@ -230,23 +249,9 @@ async def get_weight_rules(
 ):
     result = await db.execute(
         select(WeightRule).where(WeightRule.cycle_id == cycle_id)
+        .order_by(WeightRule.priority.desc())
     )
-    return [
-        {
-            "id":            str(r.id),
-            "cycle_id":      str(r.cycle_id),
-            "category":      r.category,
-            "min_weight":    r.min_weight,
-            "max_weight":    r.max_weight,
-            "fixed_weight":  r.fixed_weight,
-            "department_id": str(r.department_id) if r.department_id else None,
-            "job_grade":     r.job_grade,
-            "hierarchy":     r.hierarchy     if hasattr(r, 'hierarchy')     else None,
-            "user_category": r.user_category if hasattr(r, 'user_category') else None,
-            "group_id":      str(r.group_id) if hasattr(r, 'group_id') and r.group_id else None,
-        }
-        for r in result.scalars().all()
-    ]
+    return [rule_to_dict(r) for r in result.scalars().all()]
 
 
 @router.post("/weight-rules/{cycle_id}")
@@ -263,14 +268,26 @@ async def set_weight_rules(
         await db.delete(rule)
 
     for r in body:
+        dims = r.get("dimensions", {})
         db.add(WeightRule(
             cycle_id      = cycle_id,
-            category      = r["category"],
-            min_weight    = r.get("min_weight", 0),
-            max_weight    = r.get("max_weight", 100),
-            fixed_weight  = r.get("fixed_weight"),
+            label         = r.get("label", "Everyone"),
+            group_id      = r.get("group_id"),
+            hierarchy     = r.get("hierarchy"),
+            user_category = r.get("user_category"),
             department_id = r.get("department_id"),
             job_grade     = r.get("job_grade"),
+            priority      = r.get("priority", 0),
+            fin_min  = dims.get("Financials",           {}).get("min", 0),
+            fin_max  = dims.get("Financials",           {}).get("max", 100),
+            cust_min = dims.get("Customer",             {}).get("min", 0),
+            cust_max = dims.get("Customer",             {}).get("max", 100),
+            ip_min   = dims.get("Internal Process",     {}).get("min", 0),
+            ip_max   = dims.get("Internal Process",     {}).get("max", 100),
+            lg_min   = dims.get("Learning & Growth",    {}).get("min", 0),
+            lg_max   = dims.get("Learning & Growth",    {}).get("max", 100),
+            lc_min   = dims.get("Leadership & Culture", {}).get("min", 0),
+            lc_max   = dims.get("Leadership & Culture", {}).get("max", 100),
         ))
 
     await db.flush()
