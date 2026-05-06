@@ -63,6 +63,8 @@ MIGRATIONS = """
     EXCEPTION WHEN others THEN NULL; END $$;
     DO $$ BEGIN ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(20) USING role::text;
     EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE kpis ADD COLUMN cascaded_by UUID REFERENCES users(id);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 """
 
 
