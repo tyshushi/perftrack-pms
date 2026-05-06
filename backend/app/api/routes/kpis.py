@@ -271,6 +271,7 @@ async def set_weight_rules(
         dims = r.get("dimensions", {})
         db.add(WeightRule(
             cycle_id      = cycle_id,
+            category      = r.get("label", "General"),  # satisfy NOT NULL constraint
             label         = r.get("label", "Everyone"),
             group_id      = r.get("group_id"),
             hierarchy     = r.get("hierarchy"),
