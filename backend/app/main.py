@@ -15,6 +15,7 @@ from app.api.routes.scorecards import router as scorecards_router
 from app.api.routes.increments import router as increments_router
 from app.api.routes.notifications import router as notifications_router
 from app.api.routes.admin import router as admin_router
+from app.api.routes.groups import router as groups_router
 
 MIGRATIONS = """
     DO $$ BEGIN ALTER TABLE users ADD COLUMN employment_unit VARCHAR(100);
@@ -194,6 +195,7 @@ app.include_router(scorecards_router,    prefix="/api/v1/scorecards",    tags=["
 app.include_router(increments_router,    prefix="/api/v1/increments",    tags=["Increments"])
 app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["Notifications"])
 app.include_router(admin_router,         prefix="/api/v1/admin",         tags=["Admin"])
+app.include_router(groups_router,        prefix="/api/v1/groups",        tags=["Groups"])
 
 
 @app.get("/health")
