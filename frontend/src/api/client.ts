@@ -90,3 +90,16 @@ export const userProfileApi = {
   getProfile:     (id: string)           => api.get(`/users/${id}/profile`),
   updateManagers: (id: string, data: any) => api.patch(`/users/${id}/managers`, data),
 };
+
+export const groupsApi = {
+  list:          (cycleId?: string) =>
+    api.get('/groups/', { params: cycleId ? { cycle_id: cycleId } : {} }),
+  create:        (data: any)        => api.post('/groups/', data),
+  update:        (id: string, data: any) => api.patch(`/groups/${id}`, data),
+  delete:        (id: string)       => api.delete(`/groups/${id}`),
+  getMembers:    (id: string)       => api.get(`/groups/${id}/members`),
+  addMembers:    (id: string, userIds: string[]) =>
+    api.post(`/groups/${id}/members`, { user_ids: userIds }),
+  removeMember:  (groupId: string, userId: string) =>
+    api.delete(`/groups/${groupId}/members/${userId}`),
+};
