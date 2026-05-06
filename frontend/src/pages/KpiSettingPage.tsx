@@ -46,93 +46,344 @@ function StatusPill({ status }: { status: string }) {
 
 // ── Weight Rules Panel ─────────────────────────────────────────────────────
 
-function WeightRulesPanel({ cycleId }: { cycleId: string }) {
+function WeightRulesPanel({
+  cycleId,
+  cycles,
+  groups,
+  depts,
+}: {
+  cycleId: string;
+  cycles:  any[];
+  groups:  any[];
+  depts:   any[];
+}) {
   const qc = useQueryClient();
-  const [rules, setRules] = useState<Record<string, { min: number; max: number }>>({});
-  const [saved, setSaved] = useState(false);
+  const [rules,    setRules]   = useState<any[]>([]);
+  const [conflicts, setConflicts] = useState<any[]>([]);
+  const [copyFrom, setCopyFrom] = useState('');
+  const [saved,    setSaved]   = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [copying,  setCopying] = useState(false);
 
-  const { data: existingRules = [] } = useQuery({
+  useQuery({
     queryKey: ['weight-rules', cycleId],
     queryFn:  () => kpisApi.getWeightRules(cycleId).then(r => r.data),
-    onSuccess: (data: any[]) => {
-      const map: Record<string, { min: number; max: number }> = {};
-      data.forEach(r => { map[r.kpi_dimension] = { min: r.min_weight, max: r.max_weight }; });
-      setRules(map);
-    },
-    enabled: !!cycleId,
+    enabled:  !!cycleId,
+    onSuccess: (data: any[]) => setRules(data),
   });
 
   const saveMutation = useMutation({
-    mutationFn: () => kpisApi.setWeightRules(cycleId,
-      Object.entries(rules).map(([kpi_dimension, r]) => ({
-        kpi_dimension,
-        min_weight: r.min,
-        max_weight: r.max,
-      }))
-    ),
-    onSuccess: () => {
+    mutationFn: () => kpisApi.setWeightRules(cycleId, rules),
+    onSuccess:  () => {
       qc.invalidateQueries({ queryKey: ['weight-rules', cycleId] });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     },
   });
 
-  function update(kpi_dimension: string, field: 'min' | 'max', value: number) {
-    setRules(p => ({ ...p, [kpi_dimension]: { ...p[kpi_dimension], [field]: value } }));
+  async function handleCopy() {
+    if (!copyFrom) return;
+    setCopying(true);
+    try {
+      await kpisApi.copyWeightRules(cycleId, copyFrom);
+      const res = await kpisApi.getWeightRules(cycleId);
+      setRules(res.data);
+      qc.invalidateQueries({ queryKey: ['weight-rules', cycleId] });
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Copy failed');
+    } finally {
+      setCopying(false);
+    }
   }
 
+  async function handleCheckConflicts() {
+    setChecking(true);
+    try {
+      const res = await kpisApi.checkConflicts(cycleId);
+      setConflicts(res.data.conflicts);
+    } catch {
+      alert('Failed to check conflicts');
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  function addRule() {
+    setRules(p => [...p, {
+      label:         'New Rule',
+      group_id:      null,
+      hierarchy:     null,
+      user_category: null,
+      department_id: null,
+      job_grade:     null,
+      priority:      0,
+      dimensions: {
+        'Financials':           { min: 0, max: 100 },
+        'Customer':             { min: 0, max: 100 },
+        'Internal Process':     { min: 0, max: 100 },
+        'Learning & Growth':    { min: 0, max: 100 },
+        'Leadership & Culture': { min: 0, max: 100 },
+      },
+    }]);
+  }
+
+  function removeRule(i: number) {
+    setRules(p => p.filter((_, j) => j !== i));
+  }
+
+  function updateRule(i: number, field: string, value: any) {
+    setRules(p => p.map((r, j) => j === i ? { ...r, [field]: value } : r));
+  }
+
+  function updateDim(ruleIdx: number, dim: string, field: 'min' | 'max', value: number) {
+    setRules(p => p.map((r, j) => j === ruleIdx ? {
+      ...r,
+      dimensions: { ...r.dimensions, [dim]: { ...r.dimensions[dim], [field]: value } },
+    } : r));
+  }
+
+  function getTargetType(rule: any): string {
+    if (rule.group_id)      return 'group';
+    if (rule.hierarchy)     return 'hierarchy';
+    if (rule.user_category) return 'category';
+    if (rule.job_grade)     return 'grade';
+    return 'everyone';
+  }
+
+  function setTargetType(i: number, type: string) {
+    setRules(p => p.map((r, j) => j !== i ? r : {
+      ...r,
+      group_id: null, hierarchy: null, user_category: null,
+      department_id: null, job_grade: null,
+    }));
+  }
+
+  const DIMENSIONS = [
+    'Financials', 'Customer', 'Internal Process',
+    'Learning & Growth', 'Leadership & Culture',
+  ];
+
+  const TARGET_TYPES = [
+    { value: 'everyone',  label: 'Everyone' },
+    { value: 'group',     label: 'Custom Group' },
+    { value: 'hierarchy', label: 'Hierarchy' },
+    { value: 'category',  label: 'Employee Category' },
+    { value: 'grade',     label: 'Job Grade' },
+  ];
+
+  const otherCycles = cycles.filter(c => c.id !== cycleId);
+
   return (
-    <div style={S.card}>
-      <div style={{ fontWeight: 500, marginBottom: 4,
-        color: C.text }}>
-        KPI Weight Rules
-      </div>
-      <div style={{ fontSize: 12, color: C.textSecond,
-        marginBottom: 14 }}>
-        Set min and max weight % per KPI kpi_dimension. Total weights across
-        all categories should add up to 100%.
-      </div>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-        <thead>
-          <tr style={{ background: C.bgSecondary }}>
-            {['kpi_dimension', 'Min Weight %', 'Max Weight %'].map(h => (
-              <th key={h} style={S.th}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {CATEGORIES.map(cat => (
-            <tr key={cat}>
-              <td style={S.td}>{cat}</td>
-              <td style={S.td}>
-                <input
-                  type="number" min={0} max={100}
-                  style={{ ...S.input, width: 80 }}
-                  value={rules[cat]?.min ?? 0}
-                  onChange={e => update(cat, 'min', Number(e.target.value))}
-                />
-              </td>
-              <td style={S.td}>
-                <input
-                  type="number" min={0} max={100}
-                  style={{ ...S.input, width: 80 }}
-                  value={rules[cat]?.max ?? 100}
-                  onChange={e => update(cat, 'max', Number(e.target.value))}
-                />
-              </td>
-            </tr>
+    <div style={{ fontFamily: C.font }}>
+
+      {/* Copy from previous cycle */}
+      <div style={{ background: C.bg, border: `1px solid ${C.borderLight}`,
+        borderRadius: 10, padding: 16, marginBottom: 12,
+        display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ fontWeight: 600, fontSize: 13, color: C.text, flexShrink: 0 }}>
+          Copy rules from:
+        </div>
+        <select style={{ ...S.input, flex: 1, minWidth: 200 }}
+          value={copyFrom} onChange={e => setCopyFrom(e.target.value)}>
+          <option value="">Select a previous cycle...</option>
+          {otherCycles.map((c: any) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
           ))}
-        </tbody>
-      </table>
-      <div style={{ display: 'flex', gap: 8, marginTop: 12,
-        alignItems: 'center' }}>
-        <button onClick={() => saveMutation.mutate()} style={S.btnPrimary}
-          disabled={saveMutation.isPending}>
-          {saveMutation.isPending ? 'Saving...' : 'Save Weight Rules'}
+        </select>
+        <button onClick={handleCopy} disabled={!copyFrom || copying}
+          style={{ ...S.btnPrimary, opacity: !copyFrom ? 0.5 : 1 }}>
+          {copying ? 'Copying...' : 'Copy Rules'}
         </button>
-        {saved && (
-          <span style={{ fontSize: 12, color: '#166534' }}>✓ Saved</span>
+      </div>
+
+      {/* Rules */}
+      {rules.map((rule: any, i: number) => {
+        const targetType = getTargetType(rule);
+        const totalMin = DIMENSIONS.reduce((s, d) => s + (rule.dimensions?.[d]?.min || 0), 0);
+        const totalMax = DIMENSIONS.reduce((s, d) => s + (rule.dimensions?.[d]?.max || 0), 0);
+        const validMin = totalMin <= 100;
+        const validMax = totalMax >= 100;
+
+        return (
+          <div key={i} style={{ background: C.bg, border: `1px solid ${C.borderLight}`,
+            borderRadius: 10, padding: 16, marginBottom: 12 }}>
+
+            {/* Rule header */}
+            <div style={{ display: 'flex', gap: 10, marginBottom: 14,
+              alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <label style={S.label}>Rule Label</label>
+                <input style={S.input} value={rule.label || ''}
+                  onChange={e => updateRule(i, 'label', e.target.value)}
+                  placeholder="e.g. Corporate Staff" />
+              </div>
+              <div style={{ width: 160 }}>
+                <label style={S.label}>Applies To</label>
+                <select style={S.input} value={targetType}
+                  onChange={e => setTargetType(i, e.target.value)}>
+                  {TARGET_TYPES.map(t => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              {targetType === 'group' && (
+                <div style={{ width: 180 }}>
+                  <label style={S.label}>Group</label>
+                  <select style={S.input} value={rule.group_id || ''}
+                    onChange={e => updateRule(i, 'group_id', e.target.value || null)}>
+                    <option value="">Select group...</option>
+                    {groups.map((g: any) => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {targetType === 'hierarchy' && (
+                <div style={{ width: 140 }}>
+                  <label style={S.label}>Hierarchy</label>
+                  <input style={S.input} value={rule.hierarchy || ''}
+                    onChange={e => updateRule(i, 'hierarchy', e.target.value)}
+                    placeholder="e.g. Apex-1" />
+                </div>
+              )}
+              {targetType === 'category' && (
+                <div style={{ width: 160 }}>
+                  <label style={S.label}>Employee Category</label>
+                  <input style={S.input} value={rule.user_category || ''}
+                    onChange={e => updateRule(i, 'user_category', e.target.value)}
+                    placeholder="e.g. Corporate Staff" />
+                </div>
+              )}
+              {targetType === 'grade' && (
+                <div style={{ width: 100 }}>
+                  <label style={S.label}>Job Grade</label>
+                  <input style={S.input} value={rule.job_grade || ''}
+                    onChange={e => updateRule(i, 'job_grade', e.target.value)}
+                    placeholder="e.g. G2" />
+                </div>
+              )}
+              <div style={{ width: 70 }}>
+                <label style={S.label}>Priority</label>
+                <input style={S.input} type="number" min={0}
+                  value={rule.priority || 0}
+                  onChange={e => updateRule(i, 'priority', Number(e.target.value))} />
+              </div>
+              <button onClick={() => removeRule(i)}
+                style={{ border: 'none', background: 'transparent',
+                  cursor: 'pointer', fontSize: 18, color: C.textTertiary,
+                  padding: '0 4px', marginBottom: 2 }}>✕</button>
+            </div>
+
+            {/* Dimension table */}
+            <div style={{ border: `1px solid ${C.borderLight}`, borderRadius: 8, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: C.bgSecondary }}>
+                    <th style={S.th}>KPI Dimension</th>
+                    <th style={{ ...S.th, width: 120 }}>Min %</th>
+                    <th style={{ ...S.th, width: 120 }}>Max %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {DIMENSIONS.map((dim, di, arr) => (
+                    <tr key={dim} style={{ background: C.bg }}>
+                      <td style={{ ...S.td, fontWeight: 500,
+                        borderBottom: di < arr.length - 1 ? `1px solid ${C.borderLight}` : 'none' }}>
+                        {dim}
+                      </td>
+                      <td style={{ ...S.td,
+                        borderBottom: di < arr.length - 1 ? `1px solid ${C.borderLight}` : 'none' }}>
+                        <input type="number" min={0} max={100}
+                          style={{ ...S.input, width: 80 }}
+                          value={rule.dimensions?.[dim]?.min ?? 0}
+                          onChange={e => updateDim(i, dim, 'min', Number(e.target.value))} />
+                      </td>
+                      <td style={{ ...S.td,
+                        borderBottom: di < arr.length - 1 ? `1px solid ${C.borderLight}` : 'none' }}>
+                        <input type="number" min={0} max={100}
+                          style={{ ...S.input, width: 80 }}
+                          value={rule.dimensions?.[dim]?.max ?? 100}
+                          onChange={e => updateDim(i, dim, 'max', Number(e.target.value))} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ background: C.bgSecondary }}>
+                    <td style={{ ...S.td, fontWeight: 600, color: C.text }}>Total</td>
+                    <td style={S.td}>
+                      <span style={{ fontWeight: 600, color: validMin ? '#166534' : '#991b1b' }}>
+                        {totalMin}%
+                      </span>
+                      {!validMin && <span style={{ fontSize: 10, color: '#991b1b', marginLeft: 4 }}>(must be ≤100%)</span>}
+                    </td>
+                    <td style={S.td}>
+                      <span style={{ fontWeight: 600, color: validMax ? '#166534' : '#991b1b' }}>
+                        {totalMax}%
+                      </span>
+                      {!validMax && <span style={{ fontSize: 10, color: '#991b1b', marginLeft: 4 }}>(must be ≥100%)</span>}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Add rule */}
+      <button onClick={addRule}
+        style={{ ...S.btnSm, width: '100%', padding: '10px',
+          borderStyle: 'dashed', marginBottom: 12 }}>
+        + Add Weight Rule
+      </button>
+
+      {/* Conflict checker */}
+      <div style={{ background: C.bg, border: `1px solid ${C.borderLight}`,
+        borderRadius: 10, padding: 16, marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between',
+          alignItems: 'center', marginBottom: conflicts.length > 0 ? 12 : 0 }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: C.text }}>
+              Conflict Check
+            </div>
+            <div style={{ fontSize: 12, color: C.textSecond, marginTop: 2 }}>
+              Check if any employee matches more than one rule
+            </div>
+          </div>
+          <button onClick={handleCheckConflicts} disabled={checking} style={S.btnSm}>
+            {checking ? 'Checking...' : 'Check Conflicts'}
+          </button>
+        </div>
+        {conflicts.length === 0 && !checking && (
+          <div style={{ fontSize: 12, color: '#166534', marginTop: 8 }}>✓ No conflicts detected</div>
         )}
+        {conflicts.length > 0 && (
+          <div>
+            <div style={{ fontSize: 12, color: '#991b1b', fontWeight: 600, marginBottom: 8 }}>
+              ⚠ {conflicts.length} employee(s) match multiple rules:
+            </div>
+            {conflicts.map((c: any) => (
+              <div key={c.user_id} style={{ padding: '8px 10px', marginBottom: 4,
+                background: '#fee2e2', borderRadius: 6, fontSize: 12, color: '#991b1b' }}>
+                <strong>{c.full_name}</strong> ({c.employee_id}) matches: {c.rules.join(', ')}
+              </div>
+            ))}
+            <div style={{ fontSize: 11, color: C.textSecond, marginTop: 8 }}>
+              Resolve by adjusting rule targets or increasing priority on the preferred rule.
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Save */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+          style={S.btnPrimary}>
+          {saveMutation.isPending ? 'Saving...' : 'Save All Rules'}
+        </button>
+        {saved && <span style={{ fontSize: 12, color: '#166534', fontWeight: 500 }}>✓ Saved</span>}
+        {saveMutation.isError && <span style={{ fontSize: 12, color: '#991b1b' }}>Failed to save</span>}
       </div>
     </div>
   );
@@ -850,15 +1101,15 @@ export default function KpiSettingPage() {
   });
 
   const { data: groups = [] } = useQuery({
-  queryKey: ['groups'],
-  queryFn:  () => groupsApi.list().then(r => r.data),
-  enabled:  isHrAdmin,
+    queryKey: ['groups'],
+    queryFn:  () => groupsApi.list().then(r => r.data),
+    enabled:  isHrAdmin,
   });
 
   const { data: depts = [] } = useQuery({
-  queryKey: ['depts'],
-  queryFn:  () => departmentsApi.list().then(r => r.data),
-  enabled:  isHrAdmin,
+    queryKey: ['depts'],
+    queryFn:  () => departmentsApi.list().then(r => r.data),
+    enabled:  isHrAdmin,
   });
 
   const { data: users = [] } = useQuery({
@@ -956,13 +1207,13 @@ export default function KpiSettingPage() {
           )}
 
           {tab === 'weight-rules' && (
-          <WeightRulesPanel
-          cycleId={cycleId}
-          cycles={cycles as any[]}
-          groups={groups as any[]}
-          depts={depts as any[]}
-  />
-)}
+            <WeightRulesPanel
+              cycleId={cycleId}
+              cycles={cycles as any[]}
+              groups={groups as any[]}
+              depts={depts as any[]}
+            />
+          )}
         </>
       )}
     </div>
