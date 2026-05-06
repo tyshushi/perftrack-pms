@@ -101,15 +101,34 @@ class WeightRule(Base):
     __tablename__ = "weight_rules"
     id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     cycle_id        = Column(UUID(as_uuid=True), ForeignKey("performance_cycles.id", ondelete="CASCADE"), nullable=False)
-    department_id   = Column(UUID(as_uuid=True), ForeignKey("departments.id"))
-    job_grade       = Column(String(20))
-    hierarchy       = Column(String(50))
-    user_category   = Column(String(50))
+
+    # Target — only one should be set, rest null = "Everyone"
     group_id        = Column(UUID(as_uuid=True), ForeignKey("groups.id"), nullable=True)
-    category        = Column(String(50), nullable=False)
-    min_weight      = Column(Integer, default=0, nullable=False)
-    max_weight      = Column(Integer, default=100, nullable=False)
+    hierarchy       = Column(String(50), nullable=True)
+    user_category   = Column(String(50), nullable=True)
+    department_id   = Column(UUID(as_uuid=True), ForeignKey("departments.id"), nullable=True)
+    job_grade       = Column(String(20), nullable=True)
+
+    # Per-dimension min/max weights
+    fin_min         = Column(Integer, default=0)
+    fin_max         = Column(Integer, default=100)
+    cust_min        = Column(Integer, default=0)
+    cust_max        = Column(Integer, default=100)
+    ip_min          = Column(Integer, default=0)
+    ip_max          = Column(Integer, default=100)
+    lg_min          = Column(Integer, default=0)
+    lg_max          = Column(Integer, default=100)
+    lc_min          = Column(Integer, default=0)
+    lc_max          = Column(Integer, default=100)
+
+    # Legacy single category rule (kept for backward compat)
+    category        = Column(String(50))
+    min_weight      = Column(Integer, default=0)
+    max_weight      = Column(Integer, default=100)
     fixed_weight    = Column(Integer)
+
+    label           = Column(String(100))  # human-readable label e.g. "Corporate Staff"
+    priority        = Column(Integer, default=0)  # higher = more specific
     created_by      = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at      = Column(DateTime(timezone=True), default=datetime.utcnow)
     cycle           = relationship("PerformanceCycle", back_populates="weight_rules")
