@@ -41,7 +41,7 @@ function WeightRulesPanel({ cycleId }: { cycleId: string }) {
     queryFn:  () => kpisApi.getWeightRules(cycleId).then(r => r.data),
     onSuccess: (data: any[]) => {
       const map: Record<string, { min: number; max: number }> = {};
-      data.forEach(r => { map[r.category] = { min: r.min_weight, max: r.max_weight }; });
+      data.forEach(r => { map[r.kpi_dimension] = { min: r.min_weight, max: r.max_weight }; });
       setRules(map);
     },
     enabled: !!cycleId,
@@ -49,8 +49,8 @@ function WeightRulesPanel({ cycleId }: { cycleId: string }) {
 
   const saveMutation = useMutation({
     mutationFn: () => kpisApi.setWeightRules(cycleId,
-      Object.entries(rules).map(([category, r]) => ({
-        category,
+      Object.entries(rules).map(([kpi_dimension, r]) => ({
+        kpi_dimension,
         min_weight: r.min,
         max_weight: r.max,
       }))
@@ -62,8 +62,8 @@ function WeightRulesPanel({ cycleId }: { cycleId: string }) {
     },
   });
 
-  function update(category: string, field: 'min' | 'max', value: number) {
-    setRules(p => ({ ...p, [category]: { ...p[category], [field]: value } }));
+  function update(kpi_dimension: string, field: 'min' | 'max', value: number) {
+    setRules(p => ({ ...p, [kpi_dimension]: { ...p[kpi_dimension], [field]: value } }));
   }
 
   return (
@@ -74,13 +74,13 @@ function WeightRulesPanel({ cycleId }: { cycleId: string }) {
       </div>
       <div style={{ fontSize: 12, color: 'var(--color-text-secondary)',
         marginBottom: 14 }}>
-        Set min and max weight % per KPI category. Total weights across
+        Set min and max weight % per KPI kpi_dimension. Total weights across
         all categories should add up to 100%.
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ background: 'var(--color-background-secondary)' }}>
-            {['Category', 'Min Weight %', 'Max Weight %'].map(h => (
+            {['kpi_dimension', 'Min Weight %', 'Max Weight %'].map(h => (
               <th key={h} style={S.th}>{h}</th>
             ))}
           </tr>
@@ -133,7 +133,7 @@ function CascadePanel({
   const qc = useQueryClient();
   const [name,        setName]        = useState('');
   const [description, setDescription] = useState('');
-  const [category,    setCategory]    = useState('Core');
+  const [kpi_dimension,    setkpi_dimension]    = useState('Core');
   const [weight,      setWeight]      = useState(0);
   const [target,      setTarget]      = useState('');
   const [measurement, setMeasurement] = useState('');
@@ -147,7 +147,10 @@ function CascadePanel({
     enabled:  !!cycleId,
   });
 
-  const rule = (weightRules as any[]).find((r: any) => r.category === category);
+  const [dimension, setDimension] = useState('Financials');
+
+  
+  const rule = (weightRules as any[]).find((r: any) => r.kpi_dimension === kpi_dimension);
 
   const eligibleUsers = users.filter(u =>
     u.id !== currentUserId && u.is_active !== false
@@ -170,7 +173,7 @@ function CascadePanel({
   const cascadeMutation = useMutation({
     mutationFn: () => kpisApi.cascade({
       cycle_id:     cycleId,
-      name, description, category, weight, target, measurement,
+      name, description, kpi_dimension, weight, target, measurement,
       employee_ids: selected,
     }),
     onSuccess: (res) => {
@@ -209,9 +212,9 @@ function CascadePanel({
             placeholder="Optional description..." />
         </div>
         <div>
-          <label style={S.label}>Category</label>
-          <select style={S.input} value={category}
-            onChange={e => setCategory(e.target.value)}>
+          <label style={S.label}>kpi_dimension</label>
+          <select style={S.input} value={kpi_dimension}
+            onChange={e => setkpi_dimension(e.target.value)}>
             {CATEGORIES.map(c => (
               <option key={c} value={c}>{c}</option>
             ))}
@@ -367,7 +370,7 @@ function StaffKpiList({
   const createMutation = useMutation({
     mutationFn: () => kpisApi.create({
       cycle_id: cycleId, name, description: desc,
-      category: cat, weight, target, measurement: meas,
+      kpi_dimension: cat, weight, target, measurement: meas,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['kpis', cycleId, userId] });
@@ -395,14 +398,14 @@ function StaffKpiList({
 
   // Calculate totals
   const totalWeight = (kpis as any[]).reduce((sum, k) => sum + k.weight, 0);
-  const byCategory  = CATEGORIES.map(cat => ({
+  const bykpi_dimension  = CATEGORIES.map(cat => ({
     cat,
-    total:   (kpis as any[]).filter(k => k.category === cat)
+    total:   (kpis as any[]).filter(k => k.kpi_dimension === cat)
                              .reduce((s, k) => s + k.weight, 0),
-    rule:    weightRules.find((r: any) => r.category === cat),
+    rule:    weightRules.find((r: any) => r.kpi_dimension === cat),
   }));
 
-  const rule = weightRules.find((r: any) => r.category === cat);
+  const rule = weightRules.find((r: any) => r.kpi_dimension === cat);
 
   return (
     <div>
@@ -415,7 +418,7 @@ function StaffKpiList({
         <div style={{ display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
           gap: 8, marginBottom: 10 }}>
-          {byCategory.map(({ cat, total, rule }) => {
+          {bykpi_dimension.map(({ cat, total, rule }) => {
             const ok = !rule ||
               (total >= (rule.min_weight || 0) &&
                total <= (rule.max_weight || 100));
@@ -503,7 +506,7 @@ function StaffKpiList({
                 value={desc} onChange={e => setDesc(e.target.value)} />
             </div>
             <div>
-              <label style={S.label}>Category</label>
+              <label style={S.label}>kpi_dimension</label>
               <select style={S.input} value={cat}
                 onChange={e => setCat(e.target.value)}>
                 {CATEGORIES.map(c => (
@@ -576,7 +579,7 @@ function KpiCard({
 }) {
   const [editWeight, setEditWeight] = useState(false);
   const [newWeight,  setNewWeight]  = useState(kpi.weight);
-  const rule = weightRules.find((r: any) => r.category === kpi.category);
+  const rule = weightRules.find((r: any) => r.kpi_dimension === kpi.kpi_dimension);
   const isFixed    = kpi.kpi_type === 'FIXED';
   const canEdit    = kpi.status === 'DRAFT' || kpi.status === 'REJECTED';
   const canSubmit  = kpi.status === 'DRAFT' || kpi.status === 'REJECTED';
@@ -606,7 +609,7 @@ function KpiCard({
             </div>
           )}
           <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
-            {kpi.category} · Target: {kpi.target}
+            {kpi.kpi_dimension} · Target: {kpi.target}
             {kpi.measurement ? ` · ${kpi.measurement}` : ''}
           </div>
         </div>
@@ -775,7 +778,7 @@ function ManagerApprovalPanel({
                 color: 'var(--color-text-primary)' }}>{kpi.name}</div>
               <div style={{ fontSize: 12,
                 color: 'var(--color-text-secondary)', marginTop: 2 }}>
-                {kpi.category} · {kpi.weight}% · Target: {kpi.target}
+                {kpi.kpi_dimension} · {kpi.weight}% · Target: {kpi.target}
               </div>
             </div>
             {kpi.kpi_type === 'FIXED' && (
