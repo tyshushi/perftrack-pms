@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { kpisApi, cyclesApi, usersApi } from '../api/client';
 import { useAuthStore } from '../store/auth';
+import { kpisApi, cyclesApi, usersApi, groupsApi, departmentsApi } from '../api/client';
 
 const C = {
   bg:           '#ffffff',
@@ -848,6 +849,18 @@ export default function KpiSettingPage() {
     },
   });
 
+  const { data: groups = [] } = useQuery({
+  queryKey: ['groups'],
+  queryFn:  () => groupsApi.list().then(r => r.data),
+  enabled:  isHrAdmin,
+  });
+
+  const { data: depts = [] } = useQuery({
+  queryKey: ['depts'],
+  queryFn:  () => departmentsApi.list().then(r => r.data),
+  enabled:  isHrAdmin,
+  });
+
   const { data: users = [] } = useQuery({
     queryKey: ['users'],
     queryFn:  () => usersApi.list().then(r => r.data),
@@ -946,8 +959,13 @@ export default function KpiSettingPage() {
           )}
 
           {tab === 'weight-rules' && (
-            <WeightRulesPanel cycleId={cycleId} />
-          )}
+          <WeightRulesPanel
+          cycleId={cycleId}
+          cycles={cycles as any[]}
+          groups={groups as any[]}
+          depts={depts as any[]}
+  />
+)}
         </>
       )}
     </div>
