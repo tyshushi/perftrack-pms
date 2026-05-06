@@ -111,6 +111,7 @@ function WeightRulesPanel({
   function addRule() {
     setRules(p => [...p, {
       label:         'New Rule',
+      target_type:   'everyone',
       group_id:      null,
       hierarchy:     null,
       user_category: null,
@@ -143,6 +144,7 @@ function WeightRulesPanel({
   }
 
   function getTargetType(rule: any): string {
+    if (rule.target_type) return rule.target_type;
     if (rule.group_id)      return 'group';
     if (rule.hierarchy)     return 'hierarchy';
     if (rule.user_category) return 'category';
@@ -153,8 +155,12 @@ function WeightRulesPanel({
   function setTargetType(i: number, type: string) {
     setRules(p => p.map((r, j) => j !== i ? r : {
       ...r,
-      group_id: null, hierarchy: null, user_category: null,
-      department_id: null, job_grade: null,
+      target_type:   type,
+      group_id:      null,
+      hierarchy:     null,
+      user_category: null,
+      department_id: null,
+      job_grade:     null,
     }));
   }
 
