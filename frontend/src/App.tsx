@@ -12,6 +12,7 @@ import ManagerEvalPage from './pages/ManagerEvalPage';
 import DashboardPage from './pages/DashboardPage';
 import AdminPage from './pages/AdminPage';
 import NotificationsPage from './pages/NotificationsPage';
+import GroupsPage from './pages/GroupsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="dashboard"     element={<DashboardPage />} />
             <Route path="admin"         element={<AdminPage />} />
             <Route path="notifications" element={<NotificationsPage />} />
+            <Route path="/groups" element={<GroupsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
