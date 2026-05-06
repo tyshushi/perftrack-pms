@@ -3,7 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { kpisApi, cyclesApi, usersApi } from '../api/client';
 import { useAuthStore } from '../store/auth';
 
-const CATEGORIES = ['Core', 'Operational', 'Development', 'Optional'];
+const CATEGORIES = [
+  'Financials',
+  'Customer',
+  'Internal Process',
+  'Learning & Growth',
+  'Leadership & Culture',
+];
 
 const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
   DRAFT:       { bg: '#f5f5f3', color: '#555',    label: 'Draft' },
