@@ -136,6 +136,7 @@ class Kpi(Base):
     cycle_id        = Column(UUID(as_uuid=True), ForeignKey("performance_cycles.id"), nullable=False)
     user_id         = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     template_id     = Column(UUID(as_uuid=True), ForeignKey("kpi_templates.id"))
+    cascaded_by     = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     name            = Column(String(200), nullable=False)
     description     = Column(Text)
     category        = Column(String(50), nullable=False)
