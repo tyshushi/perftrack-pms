@@ -58,19 +58,26 @@ function WeightRulesPanel({
   depts:   any[];
 }) {
   const qc = useQueryClient();
-  const [rules,    setRules]   = useState<any[]>([]);
   const [conflicts, setConflicts] = useState<any[]>([]);
   const [copyFrom, setCopyFrom] = useState('');
   const [saved,    setSaved]   = useState(false);
   const [checking, setChecking] = useState(false);
   const [copying,  setCopying] = useState(false);
 
-  useQuery({
+  const { data: fetchedRules = [] } = useQuery({
     queryKey: ['weight-rules', cycleId],
     queryFn:  () => kpisApi.getWeightRules(cycleId).then(r => r.data),
     enabled:  !!cycleId,
-    onSuccess: (data: any[]) => setRules(data),
   });
+
+  // Sync fetched rules into local editable state
+  const [rules, setRules] = useState<any[]>([]);
+  const [initialized, setInitialized] = useState('');
+
+  if (fetchedRules.length > 0 && initialized !== cycleId) {
+    setRules(fetchedRules);
+    setInitialized(cycleId);
+  }
 
   const saveMutation = useMutation({
     mutationFn: () => kpisApi.setWeightRules(cycleId, rules),
