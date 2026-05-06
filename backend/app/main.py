@@ -67,16 +67,40 @@ MIGRATIONS = """
     DO $$ BEGIN ALTER TABLE kpis ADD COLUMN cascaded_by UUID REFERENCES users(id);
     EXCEPTION WHEN duplicate_column THEN NULL; END $$;
     DO $$ BEGIN ALTER TABLE users ADD COLUMN hierarchy VARCHAR(50);
-EXCEPTION WHEN duplicate_column THEN NULL; END $$;
-
-DO $$ BEGIN ALTER TABLE kpis ADD COLUMN kpi_dimension VARCHAR(50);
-EXCEPTION WHEN duplicate_column THEN NULL; END $$;
-
-DO $$ BEGIN
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE kpis ADD COLUMN kpi_dimension VARCHAR(50);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN
     UPDATE kpis SET kpi_dimension = category WHERE kpi_dimension IS NULL;
-EXCEPTION WHEN others THEN NULL; END $$;
+    EXCEPTION WHEN others THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN fin_min INT DEFAULT 0;
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN fin_max INT DEFAULT 100;
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN cust_min INT DEFAULT 0;
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN cust_max INT DEFAULT 100;
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN ip_min INT DEFAULT 0;
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN ip_max INT DEFAULT 100;
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN lg_min INT DEFAULT 0;
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN lg_max INT DEFAULT 100;
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN lc_min INT DEFAULT 0;
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN lc_max INT DEFAULT 100;
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN label VARCHAR(100);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN priority INT DEFAULT 0;
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN created_by UUID REFERENCES users(id);
+    EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 
-DO $$ BEGIN
+    DO $$ BEGIN
     CREATE TABLE IF NOT EXISTS groups (
         id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         name        VARCHAR(100) NOT NULL,
@@ -87,9 +111,9 @@ DO $$ BEGIN
         created_at  TIMESTAMPTZ DEFAULT NOW(),
         updated_at  TIMESTAMPTZ DEFAULT NOW()
     );
-EXCEPTION WHEN duplicate_table THEN NULL; END $$;
+    EXCEPTION WHEN duplicate_table THEN NULL; END $$;
 
-DO $$ BEGIN
+    DO $$ BEGIN
     CREATE TABLE IF NOT EXISTS group_members (
         id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         group_id   UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
