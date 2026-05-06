@@ -56,6 +56,8 @@ class CascadeKpiRequest(BaseModel):
     target:       str
     measurement:  Optional[str] = None
     employee_ids: List[UUID]
+    kpi_dimension: str  # replaces category
+
 
 
 class WeightAdjustRequest(BaseModel):
