@@ -65,6 +65,69 @@ MIGRATIONS = """
     EXCEPTION WHEN others THEN NULL; END $$;
     DO $$ BEGIN ALTER TABLE kpis ADD COLUMN cascaded_by UUID REFERENCES users(id);
     EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN ALTER TABLE users ADD COLUMN hierarchy VARCHAR(50);
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE kpis ADD COLUMN kpi_dimension VARCHAR(50);
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN
+    UPDATE kpis SET kpi_dimension = category WHERE kpi_dimension IS NULL;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE TABLE IF NOT EXISTS groups (
+        id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        name        VARCHAR(100) NOT NULL,
+        description TEXT,
+        cycle_id    UUID REFERENCES performance_cycles(id),
+        created_by  UUID REFERENCES users(id),
+        is_active   BOOLEAN DEFAULT TRUE,
+        created_at  TIMESTAMPTZ DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+EXCEPTION WHEN duplicate_table THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE TABLE IF NOT EXISTS group_members (
+        id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        group_id   UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        added_by   UUID REFERENCES users(id),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(group_id, user_id)
+    );
+EXCEPTION WHEN duplicate_table THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN hierarchy VARCHAR(50);
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN user_category VARCHAR(50);
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN group_id UUID REFERENCES groups(id);
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE kpi_templates ADD COLUMN kpi_dimension VARCHAR(50);
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE kpi_templates ADD COLUMN min_weight INT DEFAULT 0;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE kpi_templates ADD COLUMN max_weight INT DEFAULT 100;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE kpi_templates ADD COLUMN hierarchy VARCHAR(50);
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE kpi_templates ADD COLUMN user_category VARCHAR(50);
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE kpi_templates ADD COLUMN group_id UUID REFERENCES groups(id);
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE kpi_templates ADD COLUMN cascaded_by UUID REFERENCES users(id);
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 """
 
 
