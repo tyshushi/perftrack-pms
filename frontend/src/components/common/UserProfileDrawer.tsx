@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { userProfileApi } from '../../api/client';
-
 const C = {
   bg:           '#ffffff',
   bgSecondary:  '#f7f7f5',
@@ -12,6 +11,7 @@ const C = {
   textSecond:   '#6b6b6b',
   textTertiary: '#9a9a9a',
   textInfo:     '#0369a1',
+  textDanger:   '#b91c1c',
   border:       '#dcdcd6',
   borderLight:  '#ececea',
   font:         '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',

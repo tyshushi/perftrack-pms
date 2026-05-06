@@ -2,6 +2,21 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { kpisApi, usersApi, cyclesApi } from '../api/client';
 import { useAuthStore } from '../store/auth';
+const C = {
+  bg:           '#ffffff',
+  bgSecondary:  '#f7f7f5',
+  bgTertiary:   '#efefec',
+  bgInfo:       '#e0f2fe',
+  bgWarning:    '#fef9c3',
+  text:         '#1a1a1a',
+  textSecond:   '#6b6b6b',
+  textTertiary: '#9a9a9a',
+  textInfo:     '#0369a1',
+  textDanger:   '#b91c1c',
+  border:       '#dcdcd6',
+  borderLight:  '#ececea',
+  font:         '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+};
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT:       'Draft',

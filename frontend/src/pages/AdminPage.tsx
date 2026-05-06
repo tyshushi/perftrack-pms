@@ -7,13 +7,6 @@ import { cyclesApi, usersApi, departmentsApi, api } from '../api/client';
 import { useForm } from 'react-hook-form';
 import { useState, useRef } from 'react';
 import UserProfileDrawer from '../components/common/UserProfileDrawer';
-
-const PAGE_SIZE = 20;
-
-// ── Solid color palette ───────────────────────────────────────────────────
-// Deliberately NOT using CSS vars — host's --color-background-primary
-// resolves to a transparent value in this context, which kills borders,
-// dividers, and zebra rows.
 const C = {
   bg:           '#ffffff',
   bgSecondary:  '#f7f7f5',
@@ -29,6 +22,8 @@ const C = {
   borderLight:  '#ececea',
   font:         '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
 };
+
+const PAGE_SIZE = 20;
 
 const ROLE_LABELS: Record<string, string> = {
   STAFF: 'Staff', MANAGER: 'Manager', MGR2: "Mgr's Manager",

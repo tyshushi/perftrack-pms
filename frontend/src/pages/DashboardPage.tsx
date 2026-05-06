@@ -2,6 +2,21 @@ import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { scorecardsApi, cyclesApi } from '../api/client';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+const C = {
+  bg:           '#ffffff',
+  bgSecondary:  '#f7f7f5',
+  bgTertiary:   '#efefec',
+  bgInfo:       '#e0f2fe',
+  bgWarning:    '#fef9c3',
+  text:         '#1a1a1a',
+  textSecond:   '#6b6b6b',
+  textTertiary: '#9a9a9a',
+  textInfo:     '#0369a1',
+  textDanger:   '#b91c1c',
+  border:       '#dcdcd6',
+  borderLight:  '#ececea',
+  font:         '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+};
 
 export default function DashboardPage() {
   const [cycleId, setCycleId] = useState('');
