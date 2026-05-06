@@ -775,7 +775,7 @@ function ReportingLinesTab({ users }: { users: any[] }) {
 
 export default function AdminPage() {
   const qc = useQueryClient();
-  const [tab,     setTab]     = useState<'cycles' | 'users' | 'depts'>('cycles');
+  const [tab,     setTab]     = useState<'cycles' | 'users'>('cycles');
   const [userTab, setUserTab] = useState<'list' | 'import' | 'reporting'>('list');
   const { register: rc, handleSubmit: hc, reset: resetC } = useForm();
 
@@ -800,7 +800,6 @@ export default function AdminPage() {
   const MAIN_TABS = [
     ['cycles', 'Cycles'],
     ['users',  'User Management'],
-    ['depts',  'Departments'],
   ] as const;
 
   const USER_TABS = [
@@ -983,29 +982,6 @@ export default function AdminPage() {
           {userTab === 'import' && <CsvImportTab />}
           {userTab === 'reporting' && (
             <ReportingLinesTab users={users as any[]} />
-          )}
-        </div>
-      )}
-
-      {/* ── Departments ── */}
-      {tab === 'depts' && (
-        <div style={S.card}>
-          <div style={{ fontWeight: 600, marginBottom: 12, color: C.text }}>
-            Departments ({(depts as any[]).length})
-          </div>
-          {(depts as any[]).map((d: any, i: number, arr: any[]) => (
-            <div key={d.id} style={{ padding: '10px 0',
-              borderBottom: i < arr.length - 1
-                ? `1px solid ${C.borderLight}` : 'none',
-              fontSize: 13, display: 'flex', gap: 10 }}>
-              <span style={{ fontWeight: 500, color: C.text }}>{d.name}</span>
-              <span style={{ color: C.textSecond }}>{d.code}</span>
-            </div>
-          ))}
-          {(depts as any[]).length === 0 && (
-            <div style={{ color: C.textSecond, fontSize: 13 }}>
-              No departments found.
-            </div>
           )}
         </div>
       )}
