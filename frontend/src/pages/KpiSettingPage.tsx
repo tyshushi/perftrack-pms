@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
 import { kpisApi, cyclesApi, usersApi, groupsApi, departmentsApi } from '../api/client';
 
-const C = {
+const PALETTE = {
   bg:           '#ffffff',
   bgSecondary:  '#f7f7f5',
   bgTertiary:   '#efefec',
@@ -85,17 +85,17 @@ function WeightRulesPanel({ cycleId }: { cycleId: string }) {
   return (
     <div style={S.card}>
       <div style={{ fontWeight: 500, marginBottom: 4,
-        color: 'C.text' }}>
+        color: 'PALETTE.text' }}>
         KPI Weight Rules
       </div>
-      <div style={{ fontSize: 12, color: 'C.textSecond',
+      <div style={{ fontSize: 12, color: 'PALETTE.textSecond',
         marginBottom: 14 }}>
         Set min and max weight % per KPI kpi_dimension. Total weights across
         all categories should add up to 100%.
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
-          <tr style={{ background: 'C.bgSecondary' }}>
+          <tr style={{ background: 'PALETTE.bgSecondary' }}>
             {['kpi_dimension', 'Min Weight %', 'Max Weight %'].map(h => (
               <th key={h} style={S.th}>{h}</th>
             ))}
@@ -203,10 +203,10 @@ function CascadePanel({
   return (
     <div style={S.card}>
       <div style={{ fontWeight: 500, marginBottom: 4,
-        color: 'C.text' }}>
+        color: 'PALETTE.text' }}>
         Cascade KPI
       </div>
-      <div style={{ fontSize: 12, color: 'C.textSecond',
+      <div style={{ fontSize: 12, color: 'PALETTE.textSecond',
         marginBottom: 14 }}>
         Push a KPI to specific employees. It will appear as Approved
         in their KPI list. They can adjust the weight within the
@@ -240,7 +240,7 @@ function CascadePanel({
           <label style={S.label}>
             Weight %
             {rule && (
-              <span style={{ fontWeight: 400, color: 'C.textTertiary',
+              <span style={{ fontWeight: 400, color: 'PALETTE.textTertiary',
                 marginLeft: 6 }}>
                 (allowed: {rule.min_weight}–{rule.max_weight}%)
               </span>
@@ -276,7 +276,7 @@ function CascadePanel({
           borderRadius: 8, maxHeight: 220, overflowY: 'auto' }}>
           {filteredUsers.length === 0 && (
             <div style={{ padding: 16, textAlign: 'center',
-              color: 'C.textTertiary', fontSize: 13 }}>
+              color: 'PALETTE.textTertiary', fontSize: 13 }}>
               No employees found
             </div>
           )}
@@ -292,7 +292,7 @@ function CascadePanel({
               onMouseEnter={e => {
                 if (!selected.includes(u.id))
                   e.currentTarget.style.background =
-                    'C.bgSecondary';
+                    'PALETTE.bgSecondary';
               }}
               onMouseLeave={e => {
                 e.currentTarget.style.background =
@@ -303,11 +303,11 @@ function CascadePanel({
                 style={{ flexShrink: 0 }} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 500,
-                  color: 'C.text' }}>
+                  color: 'PALETTE.text' }}>
                   {u.full_name}
                 </div>
                 <div style={{ fontSize: 11,
-                  color: 'C.textSecond' }}>
+                  color: 'PALETTE.textSecond' }}>
                   {u.employee_id}
                   {u.position_title ? ` · ${u.position_title}` : ''}
                 </div>
@@ -428,7 +428,7 @@ function StaffKpiList({
       {/* Weight summary */}
       <div style={{ ...S.card, marginBottom: 12 }}>
         <div style={{ fontWeight: 500, marginBottom: 10,
-          color: 'C.text' }}>
+          color: 'PALETTE.text' }}>
           Weight Summary
         </div>
         <div style={{ display: 'grid',
@@ -441,21 +441,21 @@ function StaffKpiList({
             return (
               <div key={cat} style={{ padding: '10px 12px', borderRadius: 8,
                 background: ok
-                  ? 'C.bgSecondary'
+                  ? 'PALETTE.bgSecondary'
                   : '#fee2e2',
                 border: `0.5px solid ${ok
                   ? 'var(--color-border-tertiary)'
                   : '#fca5a5'}` }}>
                 <div style={{ fontSize: 11,
-                  color: 'C.textSecond',
+                  color: 'PALETTE.textSecond',
                   marginBottom: 4 }}>{cat}</div>
                 <div style={{ fontSize: 20, fontWeight: 500,
-                  color: ok ? 'C.text' : '#991b1b' }}>
+                  color: ok ? 'PALETTE.text' : '#991b1b' }}>
                   {total}%
                 </div>
                 {rule && (
                   <div style={{ fontSize: 10,
-                    color: ok ? 'C.textTertiary' : '#991b1b' }}>
+                    color: ok ? 'PALETTE.textTertiary' : '#991b1b' }}>
                     Range: {rule.min_weight}–{rule.max_weight}%
                   </div>
                 )}
@@ -467,7 +467,7 @@ function StaffKpiList({
           alignItems: 'center', paddingTop: 8,
           borderTop: '0.5px solid var(--color-border-tertiary)' }}>
           <span style={{ fontSize: 13,
-            color: 'C.textSecond' }}>Total</span>
+            color: 'PALETTE.textSecond' }}>Total</span>
           <span style={{ fontSize: 16, fontWeight: 600,
             color: totalWeight === 100 ? '#166534' : '#991b1b' }}>
             {totalWeight}%
@@ -494,8 +494,8 @@ function StaffKpiList({
 
       {(kpis as any[]).length === 0 && !adding && (
         <div style={{ textAlign: 'center', padding: 32,
-          color: 'C.textSecond', fontSize: 13,
-          border: '0.5px dashed C.border',
+          color: 'PALETTE.textSecond', fontSize: 13,
+          border: '0.5px dashed PALETTE.border',
           borderRadius: 10 }}>
           No KPIs yet. Add your first KPI or wait for your manager to
           cascade KPIs to you.
@@ -506,7 +506,7 @@ function StaffKpiList({
       {adding && (
         <div style={S.card}>
           <div style={{ fontWeight: 500, marginBottom: 12,
-            color: 'C.text' }}>
+            color: 'PALETTE.text' }}>
             Add Optional KPI
           </div>
           <div style={S.grid2}>
@@ -535,7 +535,7 @@ function StaffKpiList({
                 Weight %
                 {rule && (
                   <span style={{ fontWeight: 400,
-                    color: 'C.textTertiary', marginLeft: 6 }}>
+                    color: 'PALETTE.textTertiary', marginLeft: 6 }}>
                     (allowed: {rule.min_weight}–{rule.max_weight}%)
                   </span>
                 )}
@@ -609,7 +609,7 @@ function KpiCard({
           <div style={{ display: 'flex', alignItems: 'center',
             gap: 8, marginBottom: 4 }}>
             <span style={{ fontWeight: 500, fontSize: 14,
-              color: 'C.text' }}>{kpi.name}</span>
+              color: 'PALETTE.text' }}>{kpi.name}</span>
             {isFixed && (
               <span style={{ fontSize: 10, padding: '1px 6px',
                 borderRadius: 6, background: '#e0f2fe',
@@ -620,11 +620,11 @@ function KpiCard({
           </div>
           {kpi.description && (
             <div style={{ fontSize: 12,
-              color: 'C.textSecond', marginBottom: 4 }}>
+              color: 'PALETTE.textSecond', marginBottom: 4 }}>
               {kpi.description}
             </div>
           )}
-          <div style={{ fontSize: 12, color: 'C.textSecond' }}>
+          <div style={{ fontSize: 12, color: 'PALETTE.textSecond' }}>
             {kpi.kpi_dimension} · Target: {kpi.target}
             {kpi.measurement ? ` · ${kpi.measurement}` : ''}
           </div>
@@ -633,7 +633,7 @@ function KpiCard({
           alignItems: 'flex-end', gap: 6, flexShrink: 0, marginLeft: 12 }}>
           <StatusPill status={kpi.status} />
           <div style={{ fontSize: 18, fontWeight: 600,
-            color: 'C.text' }}>
+            color: 'PALETTE.text' }}>
             {kpi.weight}%
           </div>
         </div>
@@ -645,9 +645,9 @@ function KpiCard({
           {!editWeight ? (
             <button onClick={() => { setEditWeight(true); setNewWeight(kpi.weight); }}
               style={{ fontSize: 11, padding: '3px 8px',
-                border: '0.5px solid C.border',
+                border: '0.5px solid PALETTE.border',
                 borderRadius: 6, background: 'transparent',
-                cursor: 'pointer', color: 'C.textSecond',
+                cursor: 'pointer', color: 'PALETTE.textSecond',
                 fontFamily: 'var(--font-sans)' }}>
               Adjust weight
             </button>
@@ -659,10 +659,10 @@ function KpiCard({
                 value={newWeight}
                 onChange={e => setNewWeight(Number(e.target.value))} />
               <span style={{ fontSize: 12,
-                color: 'C.textSecond' }}>%</span>
+                color: 'PALETTE.textSecond' }}>%</span>
               {rule && (
                 <span style={{ fontSize: 11,
-                  color: 'C.textTertiary' }}>
+                  color: 'PALETTE.textTertiary' }}>
                   ({rule.min_weight}–{rule.max_weight}%)
                 </span>
               )}
@@ -704,7 +704,7 @@ function KpiCard({
       {/* Pending message */}
       {kpi.status === 'PENDING_DM' && (
         <div style={{ marginTop: 8, fontSize: 12,
-          color: 'C.textSecond',
+          color: 'PALETTE.textSecond',
           fontStyle: 'italic' }}>
           Awaiting manager approval...
         </div>
@@ -752,7 +752,7 @@ function ManagerApprovalPanel({
   return (
     <div>
       <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 12, color: 'C.textSecond',
+        <div style={{ fontSize: 12, color: 'PALETTE.textSecond',
           marginBottom: 8 }}>
           Select employee to review their KPIs
         </div>
@@ -763,13 +763,13 @@ function ManagerApprovalPanel({
                 onClick={() => setSelectedReport(r)}
                 style={{ padding: '6px 12px', borderRadius: 8,
                   border: `0.5px solid ${selectedReport?.id === r.id
-                    ? 'C.text'
-                    : 'C.border'}`,
+                    ? 'PALETTE.text'
+                    : 'PALETTE.border'}`,
                   background: selectedReport?.id === r.id
-                    ? 'C.text' : 'transparent',
+                    ? 'PALETTE.text' : 'transparent',
                   color: selectedReport?.id === r.id
-                    ? 'C.bg'
-                    : 'C.textSecond',
+                    ? 'PALETTE.bg'
+                    : 'PALETTE.textSecond',
                   cursor: 'pointer', fontSize: 13,
                   fontFamily: 'var(--font-sans)' }}>
                 {r.full_name}
@@ -780,7 +780,7 @@ function ManagerApprovalPanel({
 
       {selectedReport && pendingKpis.length === 0 && (
         <div style={{ textAlign: 'center', padding: 24,
-          color: 'C.textSecond', fontSize: 13 }}>
+          color: 'PALETTE.textSecond', fontSize: 13 }}>
           No KPIs pending your approval for {selectedReport.full_name}
         </div>
       )}
@@ -791,9 +791,9 @@ function ManagerApprovalPanel({
             marginBottom: 8 }}>
             <div>
               <div style={{ fontWeight: 500,
-                color: 'C.text' }}>{kpi.name}</div>
+                color: 'PALETTE.text' }}>{kpi.name}</div>
               <div style={{ fontSize: 12,
-                color: 'C.textSecond', marginTop: 2 }}>
+                color: 'PALETTE.textSecond', marginTop: 2 }}>
                 {kpi.kpi_dimension} · {kpi.weight}% · Target: {kpi.target}
               </div>
             </div>
@@ -890,9 +890,9 @@ export default function KpiSettingPage() {
         alignItems: 'flex-start', marginBottom: 20 }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 4,
-            color: 'C.text' }}>KPI Setting</h1>
+            color: 'PALETTE.text' }}>KPI Setting</h1>
           <p style={{ fontSize: 13,
-            color: 'C.textSecond' }}>
+            color: 'PALETTE.textSecond' }}>
             Set, cascade, and approve KPIs for this performance cycle
           </p>
         </div>
@@ -907,7 +907,7 @@ export default function KpiSettingPage() {
 
       {!cycleId && (
         <div style={{ textAlign: 'center', padding: 48,
-          color: 'C.textSecond', fontSize: 13 }}>
+          color: 'PALETTE.textSecond', fontSize: 13 }}>
           Select a performance cycle to get started
         </div>
       )}
@@ -922,11 +922,11 @@ export default function KpiSettingPage() {
                 style={{ padding: '8px 16px', border: 'none',
                   background: 'transparent', cursor: 'pointer', fontSize: 13,
                   color: tab === t.key
-                    ? 'C.text'
-                    : 'C.textSecond',
+                    ? 'PALETTE.text'
+                    : 'PALETTE.textSecond',
                   fontWeight: tab === t.key ? 500 : 400,
                   borderBottom: tab === t.key
-                    ? '2px solid C.text'
+                    ? '2px solid PALETTE.text'
                     : '2px solid transparent',
                   marginBottom: -0.5 }}>
                 {t.label}
@@ -972,12 +972,12 @@ export default function KpiSettingPage() {
 }
 
 const S: Record<string, any> = {
-  card:      { background: C.bg, border: `1px solid ${C.borderLight}`, borderRadius: 10, padding: 16, marginBottom: 12 },
+  card:      { background: PALETTE.bg, border: `1px solid ${PALETTE.borderLight}`, borderRadius: 10, padding: 16, marginBottom: 12 },
   grid2:     { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 },
-  label:     { fontSize: 12, fontWeight: 500, color: C.textSecond, display: 'block', marginBottom: 4 },
-  input:     { width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.bg, color: C.text, fontFamily: C.font, outline: 'none' },
-  btnPrimary:{ padding: '8px 16px', border: 'none', borderRadius: 8, background: C.text, color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
-  btnSm:     { padding: '6px 10px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font },
-  th:        { textAlign: 'left', padding: '10px', borderBottom: `1px solid ${C.borderLight}`, fontSize: 11, color: C.textSecond, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' },
-  td:        { padding: '10px', fontSize: 13, color: C.text },
+  label:     { fontSize: 12, fontWeight: 500, color: PALETTE.textSecond, display: 'block', marginBottom: 4 },
+  input:     { width: '100%', padding: '8px 10px', border: `1px solid ${PALETTE.border}`, borderRadius: 8, fontSize: 13, background: PALETTE.bg, color: PALETTE.text, fontFamily: PALETTE.font, outline: 'none' },
+  btnPrimary:{ padding: '8px 16px', border: 'none', borderRadius: 8, background: PALETTE.text, color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: PALETTE.font },
+  btnSm:     { padding: '6px 10px', border: `1px solid ${PALETTE.border}`, borderRadius: 8, background: PALETTE.bg, color: PALETTE.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: PALETTE.font },
+  th:        { textAlign: 'left', padding: '10px', borderBottom: `1px solid ${PALETTE.borderLight}`, fontSize: 11, color: PALETTE.textSecond, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' },
+  td:        { padding: '10px', fontSize: 13, color: PALETTE.text },
 };
