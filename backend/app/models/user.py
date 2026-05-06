@@ -37,6 +37,7 @@ class User(Base):
     section              = Column(String(100))
     position_title       = Column(String(150))
     category             = Column(String(50))
+    hierarchy             = Column(String(50))
     country              = Column(String(100))
     work_location        = Column(String(100))
     employee_type        = Column(String(50))
@@ -102,6 +103,9 @@ class WeightRule(Base):
     cycle_id        = Column(UUID(as_uuid=True), ForeignKey("performance_cycles.id", ondelete="CASCADE"), nullable=False)
     department_id   = Column(UUID(as_uuid=True), ForeignKey("departments.id"))
     job_grade       = Column(String(20))
+    hierarchy       = Column(String(50))
+    user_category   = Column(String(50))
+    group_id        = Column(UUID(as_uuid=True), ForeignKey("groups.id"), nullable=True)
     category        = Column(String(50), nullable=False)
     min_weight      = Column(Integer, default=0, nullable=False)
     max_weight      = Column(Integer, default=100, nullable=False)
@@ -139,7 +143,8 @@ class Kpi(Base):
     cascaded_by     = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     name            = Column(String(200), nullable=False)
     description     = Column(Text)
-    category        = Column(String(50), nullable=False)
+    kpi_dimension   = Column(String(50), nullable=False)
+    category        = Column(String(50))  # keep for backward compat, will be removed
     kpi_type        = Column(String(20), default="OPTIONAL", nullable=False)
     weight          = Column(Integer, nullable=False)
     target          = Column(String(200), nullable=False)
@@ -246,3 +251,30 @@ class Notification(Base):
     is_read         = Column(Boolean, default=False)
     created_at      = Column(DateTime(timezone=True), default=datetime.utcnow)
     user            = relationship("User", back_populates="notifications")
+
+class Group(Base):
+    __tablename__ = "groups"
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name        = Column(String(100), nullable=False)
+    description = Column(Text)
+    cycle_id    = Column(UUID(as_uuid=True), ForeignKey("performance_cycles.id"), nullable=True)
+    created_by  = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    is_active   = Column(Boolean, default=True)
+    created_at  = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at  = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    members     = relationship("GroupMember", back_populates="group")
+
+
+class GroupMember(Base):
+    __tablename__ = "group_members"
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    group_id   = Column(UUID(as_uuid=True), ForeignKey("groups.id", ondelete="CASCADE"), nullable=False)
+    user_id    = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    added_by   = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    group      = relationship("Group", back_populates="members")
+    user       = relationship("User", foreign_keys=[user_id])
+    __table_args__ = (UniqueConstraint("group_id", "user_id"),)
+
+
+
