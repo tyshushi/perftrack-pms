@@ -4,6 +4,21 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
 import { kpisApi, cyclesApi } from '../api/client';
 import { useForm } from 'react-hook-form';
+const C = {
+  bg:           '#ffffff',
+  bgSecondary:  '#f7f7f5',
+  bgTertiary:   '#efefec',
+  bgInfo:       '#e0f2fe',
+  bgWarning:    '#fef9c3',
+  text:         '#1a1a1a',
+  textSecond:   '#6b6b6b',
+  textTertiary: '#9a9a9a',
+  textInfo:     '#0369a1',
+  textDanger:   '#b91c1c',
+  border:       '#dcdcd6',
+  borderLight:  '#ececea',
+  font:         '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+};
 
 const STATUS_STYLES: Record<string, { label: string; bg: string; color: string }> = {
   DRAFT:       { label: 'Draft',                    bg: '#f5f5f3', color: '#666' },

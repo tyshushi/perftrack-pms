@@ -2,6 +2,21 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useAuthStore } from '../store/auth';
+const C = {
+  bg:           '#ffffff',
+  bgSecondary:  '#f7f7f5',
+  bgTertiary:   '#efefec',
+  bgInfo:       '#e0f2fe',
+  bgWarning:    '#fef9c3',
+  text:         '#1a1a1a',
+  textSecond:   '#6b6b6b',
+  textTertiary: '#9a9a9a',
+  textInfo:     '#0369a1',
+  textDanger:   '#b91c1c',
+  border:       '#dcdcd6',
+  borderLight:  '#ececea',
+  font:         '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+};
 
 export default function LoginPage() {
   const { login, user, isLoading, error } = useAuthStore();
