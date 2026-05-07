@@ -163,6 +163,7 @@ async def create_kpi(
         name          = body.name,
         description   = body.description,
         kpi_dimension = body.kpi_dimension,
+        category      = body.kpi_dimension,
         kpi_type      = kpi_type,
         weight        = body.weight,
         target        = body.target,
@@ -277,6 +278,7 @@ async def cascade_kpi(
             name          = body.name,
             description   = body.description,
             kpi_dimension = body.kpi_dimension,
+            category      = body.kpi_dimension,
             kpi_type      = "FIXED",
             weight        = body.weight,
             target        = body.target,
@@ -434,6 +436,7 @@ async def cascade_template(
         if existing:
             existing.description   = t.description
             existing.kpi_dimension = t.category
+            existing.category      = t.category
             existing.weight        = t.weight
             existing.target        = t.target
             existing.measurement   = t.measurement
@@ -448,6 +451,7 @@ async def cascade_template(
                 name          = t.name,
                 description   = t.description,
                 kpi_dimension = t.category,
+                category      = t.category,
                 kpi_type      = "FIXED",
                 weight        = t.weight,
                 target        = t.target,
