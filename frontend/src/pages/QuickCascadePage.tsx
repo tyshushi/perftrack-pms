@@ -39,12 +39,6 @@ const APPLIES_TO_OPTS_HR = [
   { value: 'grade',      label: 'Job Grade' },
 ];
 
-const APPLIES_TO_OPTS_MGR = [
-  { value: 'my_reports', label: 'My Direct Reports' },
-  { value: 'group',      label: 'Custom Group' },
-  { value: 'grade',      label: 'Job Grade' },
-];
-
 const S: Record<string, any> = {
   card:       { background: C.bg, border: `1px solid ${C.borderLight}`, borderRadius: 10, padding: 16, marginBottom: 12 },
   grid2:      { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 },
@@ -57,8 +51,7 @@ const S: Record<string, any> = {
 export default function QuickCascadePage() {
   const { user } = useAuthStore();
   const qc = useQueryClient();
-  const isHrAdmin     = isHR(user?.role || '');
-  const appliesToOpts = isHrAdmin ? APPLIES_TO_OPTS_HR : APPLIES_TO_OPTS_MGR;
+  const isHrAdmin = isHR(user?.role || '');
   const [cycleId, setCycleId] = useState('');
 
   const { data: cycles = [] } = useQuery({
@@ -262,70 +255,75 @@ export default function QuickCascadePage() {
             <div style={{ fontWeight: 500, fontSize: 13, color: C.text, marginBottom: 10 }}>
               Applies To
             </div>
-            <div style={S.grid2}>
-              <div>
-                <label style={S.label}>Target</label>
-                <select style={S.input} value={appliesTo}
-                  onChange={e => changeAppliesTo(e.target.value)}>
-                  {appliesToOpts.map(o => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
+            {isHrAdmin ? (
+              <div style={S.grid2}>
+                <div>
+                  <label style={S.label}>Target</label>
+                  <select style={S.input} value={appliesTo}
+                    onChange={e => changeAppliesTo(e.target.value)}>
+                    {APPLIES_TO_OPTS_HR.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {appliesTo === 'group' && (
+                  <div>
+                    <label style={S.label}>Custom Group</label>
+                    <select style={S.input} value={groupId}
+                      onChange={e => setGroupId(e.target.value)}>
+                      <option value="">Select group…</option>
+                      {(groups as any[]).map((g: any) => (
+                        <option key={g.id} value={g.id}>{g.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {appliesTo === 'hierarchy' && (
+                  <div>
+                    <label style={S.label}>Hierarchy</label>
+                    <input style={S.input} value={hierarchy}
+                      onChange={e => setHierarchy(e.target.value)}
+                      placeholder="e.g. Apex-1" />
+                  </div>
+                )}
+                {appliesTo === 'category' && (
+                  <div>
+                    <label style={S.label}>Employee Category</label>
+                    <input style={S.input} value={userCategory}
+                      onChange={e => setUserCategory(e.target.value)}
+                      placeholder="e.g. Corporate Staff" />
+                  </div>
+                )}
+                {appliesTo === 'department' && (
+                  <div>
+                    <label style={S.label}>Department</label>
+                    <select style={S.input} value={departmentId}
+                      onChange={e => setDepartmentId(e.target.value)}>
+                      <option value="">Select department…</option>
+                      {(depts as any[]).map((d: any) => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {appliesTo === 'grade' && (
+                  <div>
+                    <label style={S.label}>Job Grade</label>
+                    <input style={S.input} value={jobGrade}
+                      onChange={e => setJobGrade(e.target.value)}
+                      placeholder="e.g. G2" />
+                  </div>
+                )}
               </div>
-              {appliesTo === 'my_reports' && (
-                <div style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', background: C.bgInfo, borderRadius: 8, fontSize: 12, color: C.textInfo }}>
-                  All employees where you are their direct manager, reviewing manager, or HOD.
-                </div>
-              )}
-              {appliesTo === 'group' && (
-                <div>
-                  <label style={S.label}>Custom Group</label>
-                  <select style={S.input} value={groupId}
-                    onChange={e => setGroupId(e.target.value)}>
-                    <option value="">Select group…</option>
-                    {(groups as any[]).map((g: any) => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {appliesTo === 'hierarchy' && isHrAdmin && (
-                <div>
-                  <label style={S.label}>Hierarchy</label>
-                  <input style={S.input} value={hierarchy}
-                    onChange={e => setHierarchy(e.target.value)}
-                    placeholder="e.g. Apex-1" />
-                </div>
-              )}
-              {appliesTo === 'category' && isHrAdmin && (
-                <div>
-                  <label style={S.label}>Employee Category</label>
-                  <input style={S.input} value={userCategory}
-                    onChange={e => setUserCategory(e.target.value)}
-                    placeholder="e.g. Corporate Staff" />
-                </div>
-              )}
-              {appliesTo === 'department' && isHrAdmin && (
-                <div>
-                  <label style={S.label}>Department</label>
-                  <select style={S.input} value={departmentId}
-                    onChange={e => setDepartmentId(e.target.value)}>
-                    <option value="">Select department…</option>
-                    {(depts as any[]).map((d: any) => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {appliesTo === 'grade' && (
-                <div>
-                  <label style={S.label}>Job Grade</label>
-                  <input style={S.input} value={jobGrade}
-                    onChange={e => setJobGrade(e.target.value)}
-                    placeholder="e.g. G2" />
-                </div>
-              )}
-            </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13, color: C.textSecond }}>Target:</span>
+                <span style={{ fontSize: 13, fontWeight: 500, color: C.text }}>My Direct Reports</span>
+                <span style={{ fontSize: 12, color: C.textSecond, marginLeft: 4 }}>
+                  — employees where you are their direct manager, reviewing manager, or HOD
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Individual employees (expandable) */}
