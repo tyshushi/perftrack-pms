@@ -30,12 +30,18 @@ const DIMENSIONS = [
   'Learning & Growth', 'Leadership & Culture',
 ];
 
-const APPLIES_TO_OPTS = [
+const APPLIES_TO_OPTS_HR = [
   { value: 'everyone',   label: 'Everyone' },
   { value: 'group',      label: 'Custom Group' },
   { value: 'hierarchy',  label: 'Hierarchy' },
   { value: 'category',   label: 'Employee Category' },
   { value: 'department', label: 'Department' },
+  { value: 'grade',      label: 'Job Grade' },
+];
+
+const APPLIES_TO_OPTS_MGR = [
+  { value: 'my_reports', label: 'My Direct Reports' },
+  { value: 'group',      label: 'Custom Group' },
   { value: 'grade',      label: 'Job Grade' },
 ];
 
@@ -51,7 +57,8 @@ const S: Record<string, any> = {
 export default function QuickCascadePage() {
   const { user } = useAuthStore();
   const qc = useQueryClient();
-  const isHrAdmin = isHR(user?.role || '');
+  const isHrAdmin     = isHR(user?.role || '');
+  const appliesToOpts = isHrAdmin ? APPLIES_TO_OPTS_HR : APPLIES_TO_OPTS_MGR;
   const [cycleId, setCycleId] = useState('');
 
   const { data: cycles = [] } = useQuery({
@@ -89,7 +96,7 @@ export default function QuickCascadePage() {
   const [weight,       setWeight]       = useState(0);
   const [target,       setTarget]       = useState('');
   const [measurement,  setMeasurement]  = useState('');
-  const [appliesTo,    setAppliesTo]    = useState('everyone');
+  const [appliesTo,    setAppliesTo]    = useState(() => isHrAdmin ? 'everyone' : 'my_reports');
   const [groupId,      setGroupId]      = useState('');
   const [hierarchy,    setHierarchy]    = useState('');
   const [userCategory, setUserCategory] = useState('');
@@ -145,13 +152,15 @@ export default function QuickCascadePage() {
       user_category: appliesTo === 'category'   ? userCategory || null : null,
       department_id: appliesTo === 'department' ? departmentId || null : null,
       job_grade:     appliesTo === 'grade'      ? jobGrade     || null : null,
+      // my_reports passes no target fields; backend intersects with reporting chain
     }),
     onSuccess: (res) => {
       setResult(res.data);
       qc.invalidateQueries({ queryKey: ['kpis'] });
       setName(''); setDescription(''); setTarget(''); setMeasurement('');
       setWeight(0); setSelected([]); setSearch('');
-      setAppliesTo('everyone'); setGroupId(''); setHierarchy('');
+      setAppliesTo(isHrAdmin ? 'everyone' : 'my_reports');
+      setGroupId(''); setHierarchy('');
       setUserCategory(''); setDepartmentId(''); setJobGrade('');
     },
   });
@@ -258,11 +267,16 @@ export default function QuickCascadePage() {
                 <label style={S.label}>Target</label>
                 <select style={S.input} value={appliesTo}
                   onChange={e => changeAppliesTo(e.target.value)}>
-                  {APPLIES_TO_OPTS.map(o => (
+                  {appliesToOpts.map(o => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </select>
               </div>
+              {appliesTo === 'my_reports' && (
+                <div style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', background: C.bgInfo, borderRadius: 8, fontSize: 12, color: C.textInfo }}>
+                  All employees where you are their direct manager, reviewing manager, or HOD.
+                </div>
+              )}
               {appliesTo === 'group' && (
                 <div>
                   <label style={S.label}>Custom Group</label>
@@ -275,7 +289,7 @@ export default function QuickCascadePage() {
                   </select>
                 </div>
               )}
-              {appliesTo === 'hierarchy' && (
+              {appliesTo === 'hierarchy' && isHrAdmin && (
                 <div>
                   <label style={S.label}>Hierarchy</label>
                   <input style={S.input} value={hierarchy}
@@ -283,7 +297,7 @@ export default function QuickCascadePage() {
                     placeholder="e.g. Apex-1" />
                 </div>
               )}
-              {appliesTo === 'category' && (
+              {appliesTo === 'category' && isHrAdmin && (
                 <div>
                   <label style={S.label}>Employee Category</label>
                   <input style={S.input} value={userCategory}
@@ -291,7 +305,7 @@ export default function QuickCascadePage() {
                     placeholder="e.g. Corporate Staff" />
                 </div>
               )}
-              {appliesTo === 'department' && (
+              {appliesTo === 'department' && isHrAdmin && (
                 <div>
                   <label style={S.label}>Department</label>
                   <select style={S.input} value={departmentId}

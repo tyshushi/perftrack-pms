@@ -241,8 +241,9 @@ async def cascade_kpi(
 
     all_ids = resolved | set(body.employee_ids)
 
-    # Managers may only cascade to employees in their own reporting chain
-    if current_user.role in ["MANAGER", "MGR2", "HOD"]:
+    # Managers may only cascade to their own reporting chain;
+    # HR can opt-in to the same restriction via restrict_to_reports
+    if current_user.role in ["MANAGER", "MGR2", "HOD"] or body.restrict_to_reports:
         chain_res = await db.execute(
             select(User.id).where(
                 User.is_active == True,
