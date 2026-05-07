@@ -213,6 +213,20 @@ export default function KpiSettingPage() {
     onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] }),
   });
 
+  const submitAllMutation = useMutation({
+    mutationFn: async () => {
+      const submittable = (kpis as any[]).filter(
+        k => !k.kpi_type || k.kpi_type !== 'FIXED'
+          ? (k.status === 'DRAFT' || k.status === 'REJECTED')
+          : false
+      );
+      for (const kpi of submittable) {
+        await kpisApi.submit(kpi.id);
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] }),
+  });
+
   const totalWeight = (kpis as any[]).reduce((sum, k) => sum + k.weight, 0);
 
   const bykpi_dimension = CATEGORIES.map(c => ({
@@ -372,6 +386,26 @@ export default function KpiSettingPage() {
               style={{ ...S.btnSm, width: '100%', padding: '10px', borderStyle: 'dashed', marginTop: 8 }}>
               + Add Optional KPI
             </button>
+          )}
+
+          {/* Submit All */}
+          {(kpis as any[]).some(k => k.kpi_type !== 'FIXED' && (k.status === 'DRAFT' || k.status === 'REJECTED')) && (
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: `0.5px solid ${C.borderLight}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <button
+                onClick={() => submitAllMutation.mutate()}
+                disabled={totalWeight !== 100 || submitAllMutation.isPending}
+                style={{ ...S.btnPrimary, opacity: totalWeight !== 100 ? 0.5 : 1 }}>
+                {submitAllMutation.isPending ? 'Submitting...' : 'Submit All for Approval'}
+              </button>
+              {totalWeight !== 100 && (
+                <span style={{ fontSize: 12, color: '#991b1b' }}>
+                  Total weight must equal 100% to submit
+                </span>
+              )}
+              {submitAllMutation.isSuccess && (
+                <span style={{ fontSize: 12, color: '#166534', fontWeight: 500 }}>✓ Submitted</span>
+              )}
+            </div>
           )}
         </div>
       )}

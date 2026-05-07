@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useAuthStore } from '../store/auth';
+import { useAuthStore, isHR } from '../store/auth';
 import { kpisApi, cyclesApi, usersApi, groupsApi, departmentsApi } from '../api/client';
 
 const C = {
@@ -51,6 +51,7 @@ const S: Record<string, any> = {
 export default function QuickCascadePage() {
   const { user } = useAuthStore();
   const qc = useQueryClient();
+  const isHrAdmin = isHR(user?.role || '');
   const [cycleId, setCycleId] = useState('');
 
   const { data: cycles = [] } = useQuery({
@@ -99,9 +100,18 @@ export default function QuickCascadePage() {
   const [selected,     setSelected]     = useState<string[]>([]);
   const [result,       setResult]       = useState<any>(null);
 
-  const eligibleUsers = (users as any[]).filter(u =>
-    u.id !== user?.id && u.is_active !== false
-  );
+  const eligibleUsers = useMemo(() => {
+    const base = (users as any[]).filter(u =>
+      u.id !== user?.id && u.is_active !== false
+    );
+    if (isHrAdmin) return base;
+    // For MANAGER/MGR2/HOD: only show employees in their reporting chain
+    return base.filter((u: any) =>
+      u.direct_manager_id    === user?.id ||
+      u.reviewing_manager_id === user?.id ||
+      u.hod_id               === user?.id
+    );
+  }, [users, user, isHrAdmin]);
 
   const filteredUsers = useMemo(() => {
     const q = search.toLowerCase();

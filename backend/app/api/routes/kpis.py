@@ -61,6 +61,7 @@ class CascadeKpiRequest(BaseModel):
     user_category: Optional[str]  = None
     department_id: Optional[UUID] = None
     job_grade:     Optional[str]  = None
+    restrict_to_reports: bool     = False
 
 
 class WeightAdjustRequest(BaseModel):
@@ -217,6 +218,11 @@ async def cascade_kpi(
             select(User.id).where(User.hierarchy == body.hierarchy, User.is_active == True)
         )
         resolved.update(row[0] for row in u_res.all())
+    elif body.user_category:
+        u_res = await db.execute(
+            select(User.id).where(User.category == body.user_category, User.is_active == True)
+        )
+        resolved.update(row[0] for row in u_res.all())
     elif body.department_id:
         u_res = await db.execute(
             select(User.id).where(User.department_id == body.department_id, User.is_active == True)
@@ -233,6 +239,21 @@ async def cascade_kpi(
         resolved.update(row[0] for row in u_res.all())
 
     all_ids = resolved | set(body.employee_ids)
+
+    # Managers may only cascade to employees in their own reporting chain
+    if current_user.role in ["MANAGER", "MGR2", "HOD"]:
+        chain_res = await db.execute(
+            select(User.id).where(
+                User.is_active == True,
+                (
+                    (User.direct_manager_id    == current_user.id) |
+                    (User.reviewing_manager_id == current_user.id) |
+                    (User.hod_id               == current_user.id)
+                ),
+            )
+        )
+        chain_ids = {row[0] for row in chain_res.all()}
+        all_ids   = all_ids & chain_ids
 
     created = []
     skipped = []
