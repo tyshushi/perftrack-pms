@@ -1105,15 +1105,18 @@ const DIMENSIONS = [
 
 const APPLIES_TO_OPTS = [
   { value: 'everyone',   label: 'Everyone' },
-  { value: 'department', label: 'Department' },
-  { value: 'grade',      label: 'Job Grade' },
+  { value: 'group',      label: 'Custom Group' },
   { value: 'hierarchy',  label: 'Hierarchy' },
   { value: 'category',   label: 'Employee Category' },
+  { value: 'department', label: 'Department' },
+  { value: 'grade',      label: 'Job Grade' },
 ];
 
 function appliesLabel(t: any): string {
   if (t.job_grade)     return `Grade: ${t.job_grade}`;
-  if (t.department_id) return `Dept: ${t.department_id.slice(0, 8)}…`;
+  if (t.department_id) return `Dept ID: ${String(t.department_id).slice(0, 8)}…`;
+  if (t.hierarchy)     return `Hierarchy: ${t.hierarchy}`;
+  if (t.user_category) return `Category: ${t.user_category}`;
   return 'Everyone';
 }
 
@@ -1127,6 +1130,7 @@ function KpiTemplatesPanel({
   const [description, setDescription] = useState('');
   const [dimension,   setDimension]   = useState('Financials');
   const [appliesTo,   setAppliesTo]   = useState('everyone');
+  const [groupId,     setGroupId]     = useState('');
   const [deptId,      setDeptId]      = useState('');
   const [jobGrade,    setJobGrade]    = useState('');
   const [hierarchy,   setHierarchy]   = useState('');
@@ -1136,9 +1140,9 @@ function KpiTemplatesPanel({
   const [target,      setTarget]      = useState('');
   const [measurement, setMeasurement] = useState('');
   const [cascading,   setCascading]   = useState<string | null>(null);
-  const [showForm,    setShowForm]    = useState(false);
+  const [adding,      setAdding]      = useState(false);
 
-  const { data: templates = [] } = useQuery({
+  const { data: templates = [], isLoading: templatesLoading } = useQuery({
     queryKey: ['kpi-templates', cycleId],
     queryFn:  () => kpisApi.getTemplates(cycleId).then(r => r.data),
     enabled:  !!cycleId,
@@ -1152,17 +1156,18 @@ function KpiTemplatesPanel({
       min_weight:    minWeight,
       max_weight:    maxWeight,
       target, measurement,
-      department_id: appliesTo === 'department' ? deptId || null : null,
-      job_grade:     appliesTo === 'grade'      ? jobGrade || null : null,
-      hierarchy:     appliesTo === 'hierarchy'  ? hierarchy || null : null,
-      user_category: appliesTo === 'category'   ? category || null : null,
+      group_id:      appliesTo === 'group'      ? groupId     || null : null,
+      department_id: appliesTo === 'department' ? deptId      || null : null,
+      job_grade:     appliesTo === 'grade'      ? jobGrade    || null : null,
+      hierarchy:     appliesTo === 'hierarchy'  ? hierarchy   || null : null,
+      user_category: appliesTo === 'category'   ? category    || null : null,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['kpi-templates', cycleId] });
       setName(''); setDescription(''); setTarget(''); setMeasurement('');
-      setMinWeight(0); setMaxWeight(100); setDeptId(''); setJobGrade('');
-      setHierarchy(''); setCategory(''); setAppliesTo('everyone');
-      setShowForm(false);
+      setMinWeight(0); setMaxWeight(100); setGroupId(''); setDeptId('');
+      setJobGrade(''); setHierarchy(''); setCategory('');
+      setAppliesTo('everyone'); setAdding(false);
     },
   });
 
@@ -1187,8 +1192,13 @@ function KpiTemplatesPanel({
   return (
     <div style={{ fontFamily: C.font }}>
 
-      {/* Template list */}
-      {(templates as any[]).length === 0 && !showForm && (
+      {/* ── Template cards ── */}
+      {templatesLoading && (
+        <div style={{ padding: 24, textAlign: 'center', color: C.textSecond,
+          fontSize: 13 }}>Loading templates…</div>
+      )}
+
+      {!templatesLoading && (templates as any[]).length === 0 && (
         <div style={{ textAlign: 'center', padding: 32, color: C.textSecond,
           fontSize: 13, border: `1px dashed ${C.border}`, borderRadius: 10,
           marginBottom: 12 }}>
@@ -1207,11 +1217,11 @@ function KpiTemplatesPanel({
                 {t.description}
               </div>
             )}
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 12,
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12,
               color: C.textSecond }}>
               <span>{t.kpi_dimension}</span>
               <span>·</span>
-              <span>Weight: {t.weight}%</span>
+              <span>{t.weight}–{t.max_weight ?? t.weight}%</span>
               <span>·</span>
               <span>Target: {t.target}</span>
               <span>·</span>
@@ -1219,24 +1229,32 @@ function KpiTemplatesPanel({
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            <button
-              onClick={() => handleCascade(t.id)}
-              disabled={cascading === t.id}
-              style={S.btnPrimary}>
-              {cascading === t.id ? 'Cascading…' : 'Cascade'}
+            <button onClick={() => handleCascade(t.id)}
+              disabled={cascading === t.id} style={S.btnPrimary}>
+              {cascading === t.id ? 'Cascading…' : 'Cascade Now'}
             </button>
             <button
               onClick={() => deleteMutation.mutate(t.id)}
               disabled={deleteMutation.isPending}
-              style={{ ...S.btnSm, color: '#991b1b', borderColor: '#fca5a5' }}>
-              Delete
+              style={{ ...S.btnSm, padding: '6px 10px', color: C.textTertiary,
+                fontSize: 14, lineHeight: 1 }}>
+              ✕
             </button>
           </div>
         </div>
       ))}
 
-      {/* Create form */}
-      {showForm && (
+      {/* ── Add button ── */}
+      {!adding && (
+        <button onClick={() => setAdding(true)}
+          style={{ ...S.btnSm, width: '100%', padding: '10px',
+            borderStyle: 'dashed', marginBottom: 12 }}>
+          + New KPI Template
+        </button>
+      )}
+
+      {/* ── Create form ── */}
+      {adding && (
         <div style={S.card}>
           <div style={{ fontWeight: 500, marginBottom: 14, color: C.text }}>
             New KPI Template
@@ -1272,6 +1290,18 @@ function KpiTemplatesPanel({
                 ))}
               </select>
             </div>
+            {appliesTo === 'group' && (
+              <div>
+                <label style={S.label}>Custom Group</label>
+                <select style={S.input} value={groupId}
+                  onChange={e => setGroupId(e.target.value)}>
+                  <option value="">Select group…</option>
+                  {groups.map((g: any) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             {appliesTo === 'department' && (
               <div>
                 <label style={S.label}>Department ID</label>
@@ -1341,19 +1371,11 @@ function KpiTemplatesPanel({
               style={{ ...S.btnPrimary, opacity: !name || !target ? 0.5 : 1 }}>
               {createMutation.isPending ? 'Creating…' : 'Create Template'}
             </button>
-            <button onClick={() => setShowForm(false)} style={S.btnSm}>
+            <button onClick={() => setAdding(false)} style={S.btnSm}>
               Cancel
             </button>
           </div>
         </div>
-      )}
-
-      {!showForm && (
-        <button onClick={() => setShowForm(true)}
-          style={{ ...S.btnSm, width: '100%', padding: '10px',
-            borderStyle: 'dashed', marginTop: 4 }}>
-          + New Template
-        </button>
       )}
     </div>
   );
