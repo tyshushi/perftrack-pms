@@ -34,6 +34,12 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
   LOCKED:      { bg: '#e0f2fe', color: '#0c4a6e', label: 'Locked' },
 };
 
+const CYCLE_STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+  DRAFT:  { bg: '#f5f5f3', color: '#555',    label: 'Draft' },
+  ACTIVE: { bg: '#dcfce7', color: '#166534', label: 'Active' },
+  CLOSED: { bg: '#e0f2fe', color: '#0c4a6e', label: 'Closed' },
+};
+
 function StatusPill({ status }: { status: string }) {
   const s = STATUS_STYLE[status] || STATUS_STYLE.DRAFT;
   return (
@@ -70,17 +76,42 @@ function WeightRulesPanel({
     enabled:  !!cycleId,
   });
 
-  // Sync fetched rules into local editable state
-  const [rules, setRules] = useState<any[]>([]);
+  // Sync fetched rules into local editable state (excluding GLOBAL_MIN)
+  const [rules, setRules]           = useState<any[]>([]);
+  const [globalMin, setGlobalMin]   = useState(0);
   const [initialized, setInitialized] = useState('');
 
   if (fetchedRules.length > 0 && initialized !== cycleId) {
-    setRules(fetchedRules);
+    const globalMinRule = (fetchedRules as any[]).find((r: any) => r.label === 'GLOBAL_MIN');
+    if (globalMinRule) {
+      setGlobalMin(globalMinRule.dimensions?.['Financials']?.min ?? 0);
+    } else {
+      setGlobalMin(0);
+    }
+    setRules((fetchedRules as any[]).filter((r: any) => r.label !== 'GLOBAL_MIN'));
     setInitialized(cycleId);
   }
 
+  const GLOBAL_MIN_RULE = {
+    label:         'GLOBAL_MIN',
+    target_type:   'everyone',
+    group_id:      null,
+    hierarchy:     null,
+    user_category: null,
+    department_id: null,
+    job_grade:     null,
+    priority:      999,
+    dimensions: {
+      'Financials':           { min: globalMin, max: 100 },
+      'Customer':             { min: globalMin, max: 100 },
+      'Internal Process':     { min: globalMin, max: 100 },
+      'Learning & Growth':    { min: globalMin, max: 100 },
+      'Leadership & Culture': { min: globalMin, max: 100 },
+    },
+  };
+
   const saveMutation = useMutation({
-    mutationFn: () => kpisApi.setWeightRules(cycleId, rules),
+    mutationFn: () => kpisApi.setWeightRules(cycleId, [...rules, GLOBAL_MIN_RULE]),
     onSuccess:  () => {
       qc.invalidateQueries({ queryKey: ['weight-rules', cycleId] });
       setSaved(true);
@@ -188,6 +219,26 @@ function WeightRulesPanel({
 
   return (
     <div style={{ fontFamily: C.font }}>
+
+      {/* Global Minimum Weight per KPI */}
+      <div style={{ background: C.bgInfo, border: `1px solid #bae6fd`,
+        borderRadius: 10, padding: 16, marginBottom: 12 }}>
+        <div style={{ fontWeight: 600, fontSize: 13, color: C.text, marginBottom: 4 }}>
+          Global Minimum Weight per KPI
+        </div>
+        <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 12 }}>
+          This overrides all other rules. No individual KPI can be set below this weight.
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <label style={{ ...S.label, marginBottom: 0, whiteSpace: 'nowrap' }}>
+            Minimum weight for any single KPI (%)
+          </label>
+          <input type="number" min={0} max={100}
+            style={{ ...S.input, width: 90 }}
+            value={globalMin}
+            onChange={e => setGlobalMin(Number(e.target.value))} />
+        </div>
+      </div>
 
       {/* Copy from previous cycle */}
       <div style={{ background: C.bg, border: `1px solid ${C.borderLight}`,
@@ -1466,34 +1517,44 @@ export default function KpiSettingPage() {
   const { user } = useAuthStore();
   const isManager = ['MANAGER', 'MGR2', 'HOD', 'HR_ADMIN', 'SUPER_ADMIN'].includes(user?.role || '');
   const isHrAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user?.role || '');
-  const [cycleId,  setCycleId]  = useState('');
-  const [tab, setTab] = useState<'my-kpis' | 'cascade' | 'approve' | 'weight-rules' | 'templates'>('my-kpis');
+  const [cycleId,          setCycleId]          = useState('');
+  const [showQuickCascade, setShowQuickCascade] = useState(false);
+  const [tab, setTab] = useState<'my-kpis' | 'approve' | 'kpi-setup' | 'weight-rules'>('my-kpis');
 
   const { data: cycles = [] } = useQuery({
     queryKey: ['cycles'],
     queryFn:  () => cyclesApi.list().then(r => r.data),
-    onSuccess: (d: any[]) => {
-      if (d.length && !cycleId) setCycleId(d[0].id);
-    },
   });
+
+  const sortedCycles = useMemo(() =>
+    [...(cycles as any[])].sort((a, b) => b.name.localeCompare(a.name)),
+    [cycles]
+  );
+
+  // Auto-select most recent cycle on first load
+  if (sortedCycles.length && !cycleId) {
+    setCycleId(sortedCycles[0].id);
+  }
+
+  const cycleIdx    = sortedCycles.findIndex((c: any) => c.id === cycleId);
+  const currentCycle = cycleIdx >= 0 ? sortedCycles[cycleIdx] : null;
 
   const { data: groups = [] } = useQuery({
     queryKey: ['groups'],
     queryFn:  () => groupsApi.list().then(r => r.data),
-    enabled:  isHrAdmin,
+    enabled:  isManager,
   });
 
   const { data: depts = [] } = useQuery({
     queryKey: ['depts'],
     queryFn:  () => departmentsApi.list().then(r => r.data),
-    enabled:  isHrAdmin,
+    enabled:  isManager,
   });
 
   const { data: users = [] } = useQuery({
     queryKey: ['users'],
     queryFn:  () => usersApi.list().then(r => r.data),
-    enabled:  ['HR_ADMIN', 'SUPER_ADMIN', 'MANAGER', 'MGR2', 'HOD']
-                .includes(user?.role || ''),
+    enabled:  isManager,
   });
 
   const { data: weightRules = [] } = useQuery({
@@ -1502,59 +1563,95 @@ export default function KpiSettingPage() {
     enabled:  !!cycleId,
   });
 
-
   const TABS = [
-    { key: 'my-kpis',      label: 'My KPIs',      show: true },
-    { key: 'approve',      label: 'Approve KPIs',  show: isManager },
-    { key: 'cascade',      label: 'Cascade KPIs',  show: isManager },
-    { key: 'weight-rules', label: 'Weight Rules',   show: isHrAdmin },
-    { key: 'templates',    label: 'KPI Templates',  show: isHrAdmin },
+    { key: 'my-kpis',      label: 'My KPIs',     show: true },
+    { key: 'approve',      label: 'Approve KPIs', show: isManager },
+    { key: 'kpi-setup',    label: 'KPI Setup',    show: isManager },
+    { key: 'weight-rules', label: 'Weight Rules', show: isHrAdmin },
   ].filter(t => t.show);
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between',
-        alignItems: 'flex-start', marginBottom: 20 }}>
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 4,
-            color: C.text }}>KPI Setting</h1>
-          <p style={{ fontSize: 13,
-            color: C.textSecond }}>
-            Set, cascade, and approve KPIs for this performance cycle
-          </p>
+      {/* Page header */}
+      <div style={{ marginBottom: 16 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 4,
+          color: C.text }}>KPI Setting</h1>
+        <p style={{ fontSize: 13, color: C.textSecond }}>
+          Set, cascade, and approve KPIs for this performance cycle
+        </p>
+      </div>
+
+      {/* Cycle selector bar */}
+      <div style={{ background: C.bg, border: `1px solid ${C.border}`,
+        borderRadius: 10, padding: '12px 16px', marginBottom: 20,
+        display: 'flex', alignItems: 'center', gap: 16 }}>
+        <button
+          onClick={() => cycleIdx < sortedCycles.length - 1 &&
+            setCycleId(sortedCycles[cycleIdx + 1].id)}
+          disabled={cycleIdx >= sortedCycles.length - 1 || sortedCycles.length === 0}
+          style={{ border: `1px solid ${C.border}`, borderRadius: 8,
+            background: C.bg, padding: '6px 12px', cursor: 'pointer',
+            fontSize: 14, color: C.textSecond, flexShrink: 0,
+            opacity: cycleIdx >= sortedCycles.length - 1 || sortedCycles.length === 0
+              ? 0.3 : 1 }}>
+          ←
+        </button>
+        <div style={{ flex: 1, textAlign: 'center' }}>
+          {currentCycle ? (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontWeight: 600, fontSize: 15, color: C.text }}>
+                {currentCycle.name}
+              </span>
+              {currentCycle.status && (() => {
+                const st = CYCLE_STATUS_STYLE[currentCycle.status]
+                  || { bg: '#f5f5f3', color: '#555', label: currentCycle.status };
+                return (
+                  <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px',
+                    borderRadius: 10, background: st.bg, color: st.color }}>
+                    {st.label}
+                  </span>
+                );
+              })()}
+            </div>
+          ) : (
+            <span style={{ fontSize: 13, color: C.textTertiary }}>
+              {sortedCycles.length === 0 ? 'No cycles available' : 'Loading…'}
+            </span>
+          )}
         </div>
-        <select style={{ ...S.input, width: 200 }}
-          value={cycleId} onChange={e => setCycleId(e.target.value)}>
-          <option value="">Select cycle...</option>
-          {(cycles as any[]).map((c: any) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
+        <button
+          onClick={() => cycleIdx > 0 && setCycleId(sortedCycles[cycleIdx - 1].id)}
+          disabled={cycleIdx <= 0 || sortedCycles.length === 0}
+          style={{ border: `1px solid ${C.border}`, borderRadius: 8,
+            background: C.bg, padding: '6px 12px', cursor: 'pointer',
+            fontSize: 14, color: C.textSecond, flexShrink: 0,
+            opacity: cycleIdx <= 0 || sortedCycles.length === 0 ? 0.3 : 1 }}>
+          →
+        </button>
       </div>
 
       {!cycleId && (
         <div style={{ textAlign: 'center', padding: 48,
           color: C.textSecond, fontSize: 13 }}>
-          Select a performance cycle to get started
+          {sortedCycles.length === 0
+            ? 'No performance cycles found. Create one in HR Admin.'
+            : 'Loading cycle…'}
         </div>
       )}
 
       {cycleId && (
         <>
           <div style={{ display: 'flex', gap: 2,
-            borderBottom: '0.5px solid var(--color-border-tertiary)',
+            borderBottom: `0.5px solid ${C.borderLight}`,
             marginBottom: 20 }}>
             {TABS.map(t => (
               <button key={t.key} onClick={() => setTab(t.key as any)}
                 style={{ padding: '8px 16px', border: 'none',
                   background: 'transparent', cursor: 'pointer', fontSize: 13,
-                  color: tab === t.key
-                    ? C.text
-                    : C.textSecond,
+                  color: tab === t.key ? C.text : C.textSecond,
                   fontWeight: tab === t.key ? 500 : 400,
                   borderBottom: tab === t.key
-                    ? `2px solid ${C.text}`
-                    : '2px solid transparent',
+                    ? `2px solid ${C.text}` : '2px solid transparent',
                   marginBottom: -0.5 }}>
                 {t.label}
               </button>
@@ -1569,35 +1666,53 @@ export default function KpiSettingPage() {
             />
           )}
 
-          {tab === 'cascade' && user && (
-            <CascadePanel
-              cycleId={cycleId}
-              users={users as any[]}
-              currentUserId={user.id}
-              groups={groups as any[]}
-              depts={depts as any[]}
-            />
+          {tab === 'approve' && user && (
+            <ManagerApprovalPanel cycleId={cycleId} userId={user.id} />
           )}
 
-          {tab === 'approve' && user && (
-            <ManagerApprovalPanel
-              cycleId={cycleId}
-              userId={user.id}
-            />
+          {tab === 'kpi-setup' && user && (
+            <div>
+              {/* KPI Templates section */}
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontWeight: 500, fontSize: 14, color: C.text,
+                  marginBottom: 12 }}>
+                  KPI Templates
+                </div>
+                <KpiTemplatesPanel
+                  cycleId={cycleId}
+                  groups={groups as any[]}
+                  depts={depts as any[]}
+                />
+              </div>
+
+              {/* Quick Cascade section — collapsible */}
+              <div style={{ marginTop: 8 }}>
+                <button onClick={() => setShowQuickCascade(p => !p)}
+                  style={{ ...S.btnSm, width: '100%', display: 'flex',
+                    justifyContent: 'space-between', alignItems: 'center',
+                    marginBottom: showQuickCascade ? 12 : 0 }}>
+                  <span style={{ fontWeight: 500, color: C.textSecond }}>
+                    Quick Cascade
+                  </span>
+                  <span style={{ fontSize: 10 }}>{showQuickCascade ? '▲' : '▼'}</span>
+                </button>
+                {showQuickCascade && (
+                  <CascadePanel
+                    cycleId={cycleId}
+                    users={users as any[]}
+                    currentUserId={user.id}
+                    groups={groups as any[]}
+                    depts={depts as any[]}
+                  />
+                )}
+              </div>
+            </div>
           )}
 
           {tab === 'weight-rules' && (
             <WeightRulesPanel
               cycleId={cycleId}
               cycles={cycles as any[]}
-              groups={groups as any[]}
-              depts={depts as any[]}
-            />
-          )}
-
-          {tab === 'templates' && (
-            <KpiTemplatesPanel
-              cycleId={cycleId}
               groups={groups as any[]}
               depts={depts as any[]}
             />
