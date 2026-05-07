@@ -1,7 +1,7 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { useAuthStore, ROLE_LABELS, isHR, isMgr, isHOD } from '../../store/auth';
-import { useQuery } from '@tanstack/react-query';
-import { notificationsApi } from '../../api/client';
+import React, { useState, useEffect } from 'react';
+import { Outlet, NavLink, useLocation } from 'react-router-dom';
+import { useAuthStore, ROLE_LABELS, isHR, isMgr } from '../../store/auth';
+
 const C = {
   bg:           '#ffffff',
   bgSecondary:  '#f7f7f5',
@@ -18,87 +18,230 @@ const C = {
   font:         '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
 };
 
+function getAutoExpanded(path: string): Set<string> {
+  const ids = new Set<string>(['scorecards', 'my-scorecard']);
+  if (path.startsWith('/tray/'))      ids.add('managers-tray');
+  if (path.startsWith('/admin/')) {
+    ids.add('admin-functions');
+    if (path.startsWith('/admin/kpi-setup/')) ids.add('kpi-setup');
+  }
+  return ids;
+}
+
 export default function Layout() {
   const { user, logout } = useAuthStore();
   const role = user?.role || '';
+  const location = useLocation();
+  const isManager = isMgr(role);
+  const isHrAdmin = isHR(role);
 
-  const { data: notifs } = useQuery({
-    queryKey: ['notifications', 'unread'],
-    queryFn: () => notificationsApi.list(true).then(r => r.data),
-    refetchInterval: 30_000,
-  });
-  const unreadCount = notifs?.length || 0;
+  const [expanded, setExpanded] = useState<Set<string>>(() =>
+    getAutoExpanded(location.pathname)
+  );
 
-  const navItems = [
-    { to: '/kpis',          label: 'KPI Setting',      icon: '◈', show: true },
-    { to: '/self-eval',     label: 'Self Evaluation',  icon: '◉', show: role === 'STAFF' || isHR(role) },
-    { to: '/mgr-eval',      label: 'Team Evaluation',  icon: '◎', show: isMgr(role) },
-    { to: '/dashboard',     label: 'Dashboard',        icon: '▦', show: isHOD(role) || isMgr(role) },
-    { to: '/admin',         label: 'HR Admin',         icon: '⚙', show: isHR(role) },
-    { to: '/notifications', label: 'Notifications',    icon: '◻', badge: unreadCount, show: true },
-    { to: '/groups',        label: 'Groups',           icon: '⊞', show: isHR(role) },
-  ].filter(n => n.show);
+  useEffect(() => {
+    setExpanded(prev => new Set([...prev, ...getAutoExpanded(location.pathname)]));
+  }, [location.pathname]);
+
+  function toggle(id: string) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const l0Header: React.CSSProperties = {
+    fontSize: 11, fontWeight: 600, color: '#9a9a9a',
+    textTransform: 'uppercase', letterSpacing: '0.06em',
+    padding: '10px 16px', userSelect: 'none',
+  };
+
+  function l0LinkStyle(isActive: boolean): React.CSSProperties {
+    return {
+      display: 'block',
+      fontSize: 11, fontWeight: 600,
+      color: isActive ? C.text : '#9a9a9a',
+      textTransform: 'uppercase', letterSpacing: '0.06em',
+      padding: '10px 16px', textDecoration: 'none',
+      background: isActive ? '#f5f5f3' : 'transparent',
+      borderRight: isActive ? '2px solid #1a1a1a' : '2px solid transparent',
+    };
+  }
+
+  function l1LinkStyle(isActive: boolean): React.CSSProperties {
+    return {
+      display: 'block',
+      fontSize: 13,
+      color: isActive ? C.text : '#444',
+      fontWeight: isActive ? 600 : 400,
+      padding: '8px 16px 8px 24px',
+      textDecoration: 'none',
+      background: isActive ? '#f5f5f3' : 'transparent',
+      borderRight: isActive ? '2px solid #1a1a1a' : '2px solid transparent',
+    };
+  }
+
+  function l2LinkStyle(isActive: boolean): React.CSSProperties {
+    return {
+      display: 'block',
+      fontSize: 12,
+      color: isActive ? C.text : '#666',
+      fontWeight: isActive ? 600 : 400,
+      padding: '7px 16px 7px 36px',
+      textDecoration: 'none',
+      background: isActive ? '#f5f5f3' : 'transparent',
+      borderRight: isActive ? '2px solid #1a1a1a' : '2px solid transparent',
+    };
+  }
+
+  const groupRow: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    fontSize: 13, color: '#444',
+    padding: '8px 16px 8px 24px',
+    cursor: 'pointer', userSelect: 'none',
+  };
+
+  const arrowStyle: React.CSSProperties = {
+    fontSize: 9, color: '#9a9a9a', flexShrink: 0,
+  };
+
+  const divider: React.CSSProperties = {
+    height: '0.5px', background: '#e5e4df', margin: '4px 0',
+  };
 
   return (
-    <div style={styles.shell}>
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', fontFamily: C.font, fontSize: 14, background: '#f5f5f3', color: C.text }}>
       {/* Sidebar */}
-      <aside style={styles.sidebar}>
-        <div style={styles.logo}>
-          <div style={styles.logoMark}>PMS</div>
+      <aside style={{ width: 220, background: '#fff', borderRight: '0.5px solid #e5e4df', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+
+        {/* Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 16px 16px', borderBottom: '0.5px solid #e5e4df' }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#1a1a18', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>PMS</div>
           <div>
-            <div style={styles.logoTitle}>PerfTrack</div>
-            <div style={styles.logoSub}>Enterprise Edition</div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>PerfTrack</div>
+            <div style={{ fontSize: 10, color: '#888' }}>Enterprise Edition</div>
           </div>
         </div>
 
-        <div style={styles.userCard}>
-          <div style={styles.avatar}>{user?.full_name.split(' ').map(w => w[0]).join('').slice(0,2)}</div>
+        {/* User card */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderBottom: '0.5px solid #e5e4df' }}>
+          <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#e8f1fb', color: '#185fa5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
+            {user?.full_name.split(' ').map(w => w[0]).join('').slice(0, 2)}
+          </div>
           <div>
-            <div style={styles.userName}>{user?.full_name}</div>
-            <div style={styles.userRole}>{ROLE_LABELS[role] || role}</div>
+            <div style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.3 }}>{user?.full_name}</div>
+            <div style={{ fontSize: 10, color: '#888' }}>{ROLE_LABELS[role] || role}</div>
           </div>
         </div>
 
-        <nav style={styles.nav}>
-          {navItems.map(item => (
-            <NavLink key={item.to} to={item.to} style={({ isActive }) => ({
-              ...styles.navItem,
-              ...(isActive ? styles.navActive : {}),
-            })}>
-              <span style={styles.navIcon}>{item.icon}</span>
-              <span>{item.label}</span>
-              {item.badge ? <span style={styles.badge}>{item.badge}</span> : null}
-            </NavLink>
-          ))}
+        {/* Nav */}
+        <nav style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+
+          {/* ── SCORECARDS (always expanded, no toggle) ── */}
+          <div style={l0Header}>Scorecards</div>
+
+          {/* My Scorecard group */}
+          <div style={groupRow} onClick={() => toggle('my-scorecard')}>
+            <span>My Scorecard</span>
+            <span style={arrowStyle}>{expanded.has('my-scorecard') ? '▼' : '▶'}</span>
+          </div>
+          {expanded.has('my-scorecard') && (
+            <>
+              <NavLink to="/scorecard/setting" style={({ isActive }) => l2LinkStyle(isActive)} end>
+                Scorecard Setting
+              </NavLink>
+              <NavLink to="/scorecard/self-eval" style={({ isActive }) => l2LinkStyle(isActive)} end>
+                Self Evaluation
+              </NavLink>
+            </>
+          )}
+
+          {/* Manager's Tray group */}
+          {isManager && (
+            <>
+              <div style={groupRow} onClick={() => toggle('managers-tray')}>
+                <span>Manager's Tray</span>
+                <span style={arrowStyle}>{expanded.has('managers-tray') ? '▼' : '▶'}</span>
+              </div>
+              {expanded.has('managers-tray') && (
+                <>
+                  <NavLink to="/tray/approve" style={({ isActive }) => l2LinkStyle(isActive)} end>
+                    Approve Scorecards
+                  </NavLink>
+                  <NavLink to="/tray/team-eval" style={({ isActive }) => l2LinkStyle(isActive)} end>
+                    Team Evaluation
+                  </NavLink>
+                  <NavLink to="/tray/cascade" style={({ isActive }) => l2LinkStyle(isActive)} end>
+                    Quick Cascade
+                  </NavLink>
+                </>
+              )}
+            </>
+          )}
+
+          {/* ── DASHBOARD (level 0 direct link) ── */}
+          {isManager && (
+            <>
+              <div style={divider} />
+              <NavLink to="/dashboard" style={({ isActive }) => l0LinkStyle(isActive)} end>
+                Dashboard
+              </NavLink>
+            </>
+          )}
+
+          {/* ── ADMIN FUNCTIONS (toggleable header) ── */}
+          {isHrAdmin && (
+            <>
+              <div style={divider} />
+              <div
+                style={{ ...l0Header, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                onClick={() => toggle('admin-functions')}
+              >
+                <span>Admin Functions</span>
+                <span style={{ fontSize: 9 }}>{expanded.has('admin-functions') ? '▼' : '▶'}</span>
+              </div>
+              {expanded.has('admin-functions') && (
+                <>
+                  <NavLink to="/admin/cycles" style={({ isActive }) => l1LinkStyle(isActive)} end>
+                    Performance Cycle
+                  </NavLink>
+                  <NavLink to="/admin/users" style={({ isActive }) => l1LinkStyle(isActive)} end>
+                    User Management
+                  </NavLink>
+                  <NavLink to="/admin/groups" style={({ isActive }) => l1LinkStyle(isActive)} end>
+                    Groups Management
+                  </NavLink>
+                  <NavLink to="/admin/weight-rules" style={({ isActive }) => l1LinkStyle(isActive)} end>
+                    Weight Rules
+                  </NavLink>
+
+                  {/* KPI Setup sub-group */}
+                  <div style={groupRow} onClick={() => toggle('kpi-setup')}>
+                    <span>KPI Setup</span>
+                    <span style={arrowStyle}>{expanded.has('kpi-setup') ? '▼' : '▶'}</span>
+                  </div>
+                  {expanded.has('kpi-setup') && (
+                    <NavLink to="/admin/kpi-setup/templates" style={({ isActive }) => l2LinkStyle(isActive)} end>
+                      Templates & Cascade
+                    </NavLink>
+                  )}
+                </>
+              )}
+            </>
+          )}
         </nav>
 
-        <button onClick={logout} style={styles.logoutBtn}>Sign out</button>
+        <button onClick={logout} style={{ margin: '12px', padding: '8px', border: '0.5px solid #e5e4df', borderRadius: 8, background: 'transparent', cursor: 'pointer', fontSize: 12, color: '#666', fontFamily: C.font }}>
+          Sign out
+        </button>
       </aside>
 
       {/* Main */}
-      <main style={styles.main}>
+      <main style={{ flex: 1, overflowY: 'auto', padding: 28 }}>
         <Outlet />
       </main>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  shell:     { display: 'flex', height: '100vh', overflow: 'hidden', fontFamily: 'system-ui, sans-serif', fontSize: 14, background: '#f5f5f3', color: '#1a1a18' },
-  sidebar:   { width: 220, background: '#fff', borderRight: '0.5px solid #e5e4df', display: 'flex', flexDirection: 'column', padding: '0', flexShrink: 0 },
-  logo:      { display: 'flex', alignItems: 'center', gap: 10, padding: '20px 16px 16px', borderBottom: '0.5px solid #e5e4df' },
-  logoMark:  { width: 32, height: 32, borderRadius: 8, background: '#1a1a18', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, flexShrink: 0 },
-  logoTitle: { fontSize: 13, fontWeight: 600 },
-  logoSub:   { fontSize: 10, color: '#888' },
-  userCard:  { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderBottom: '0.5px solid #e5e4df' },
-  avatar:    { width: 30, height: 30, borderRadius: '50%', background: '#e8f1fb', color: '#185fa5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, flexShrink: 0 },
-  userName:  { fontSize: 12, fontWeight: 500, lineHeight: 1.3 },
-  userRole:  { fontSize: 10, color: '#888' },
-  nav:       { flex: 1, padding: '8px 0', overflowY: 'auto' },
-  navItem:   { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px', textDecoration: 'none', color: '#666', fontSize: 13, transition: 'background 0.1s', borderRight: '2px solid transparent' },
-  navActive: { background: '#f5f5f3', color: '#1a1a18', fontWeight: 500, borderRightColor: '#1a1a18' },
-  navIcon:   { width: 16, flexShrink: 0 },
-  badge:     { marginLeft: 'auto', background: '#fee2e2', color: '#991b1b', fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 8 },
-  logoutBtn: { margin: '12px', padding: '8px', border: '0.5px solid #e5e4df', borderRadius: 8, background: 'transparent', cursor: 'pointer', fontSize: 12, color: '#666' },
-  main:      { flex: 1, overflowY: 'auto', padding: 28 },
-};
