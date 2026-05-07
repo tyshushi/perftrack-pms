@@ -55,7 +55,12 @@ class CascadeKpiRequest(BaseModel):
     weight:        int
     target:        str
     measurement:   Optional[str] = None
-    employee_ids:  List[UUID]
+    employee_ids:  List[UUID]    = []
+    group_id:      Optional[UUID] = None
+    hierarchy:     Optional[str]  = None
+    user_category: Optional[str]  = None
+    department_id: Optional[UUID] = None
+    job_grade:     Optional[str]  = None
 
 
 class WeightAdjustRequest(BaseModel):
@@ -198,10 +203,41 @@ async def cascade_kpi(
                 f"Weight {body.weight}% exceeds maximum "
                 f"{rule.max_weight}% for {body.kpi_dimension}")
 
+    # Resolve employees from target fields, then merge with explicit IDs
+    from app.models.user import GroupMember
+    resolved: set = set()
+
+    if body.group_id:
+        gm_res = await db.execute(
+            select(GroupMember.user_id).where(GroupMember.group_id == body.group_id)
+        )
+        resolved.update(row[0] for row in gm_res.all())
+    elif body.hierarchy:
+        u_res = await db.execute(
+            select(User.id).where(User.hierarchy == body.hierarchy, User.is_active == True)
+        )
+        resolved.update(row[0] for row in u_res.all())
+    elif body.department_id:
+        u_res = await db.execute(
+            select(User.id).where(User.department_id == body.department_id, User.is_active == True)
+        )
+        resolved.update(row[0] for row in u_res.all())
+    elif body.job_grade:
+        u_res = await db.execute(
+            select(User.id).where(User.job_grade == body.job_grade, User.is_active == True)
+        )
+        resolved.update(row[0] for row in u_res.all())
+    elif not body.employee_ids:
+        # No target specified and no explicit IDs → cascade to all active users
+        u_res = await db.execute(select(User.id).where(User.is_active == True))
+        resolved.update(row[0] for row in u_res.all())
+
+    all_ids = resolved | set(body.employee_ids)
+
     created = []
     skipped = []
 
-    for emp_id in body.employee_ids:
+    for emp_id in all_ids:
         existing = await db.execute(
             select(Kpi).where(
                 Kpi.cycle_id      == body.cycle_id,
