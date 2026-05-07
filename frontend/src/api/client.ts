@@ -62,7 +62,9 @@ export const kpisApi = {
   getTemplates:    (cycleId: string)                => api.get(`/kpis/templates/${cycleId}`),
   createTemplate:  (data: any)                      => api.post('/kpis/templates', data),
   deleteTemplate:  (id: string)                     => api.delete(`/kpis/templates/${id}`),
-  cascadeTemplate: (id: string)                     => api.post(`/kpis/templates/${id}/cascade`),
+  cascadeTemplate:  (id: string)                     => api.post(`/kpis/templates/${id}/cascade`),
+  submitScorecard:  (cycleId: string)                => api.post('/kpis/submit-scorecard', { cycle_id: cycleId }),
+  reviewScorecard:  (data: any)                      => api.post('/kpis/review-scorecard', data),
 };
 
 export const usersApi = {
