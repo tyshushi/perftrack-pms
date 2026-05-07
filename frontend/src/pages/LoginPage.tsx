@@ -36,12 +36,13 @@ export default function LoginPage() {
   return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f5f3', fontFamily:'system-ui,sans-serif' }}>
       <div style={{ background:'#fff', border:'0.5px solid #e5e4df', borderRadius:16, padding:36, width:360 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:28 }}>
-          <div style={{ width:36, height:36, borderRadius:10, background:'#1a1a18', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:600 }}>PMS</div>
-          <div>
-            <div style={{ fontWeight:600, fontSize:15 }}>PerfTrack</div>
-            <div style={{ fontSize:11, color:'#888' }}>Enterprise Performance Management</div>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <img src="/perftrack-pms/pr-mark-80.png" alt="PerformRight"
+            style={{ width: 80, height: 80, borderRadius: 12, marginBottom: 16 }} />
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>
+            PerformRight
           </div>
+          <div style={{ fontSize: 13, color: '#6b6b6b' }}>by Valiram</div>
         </div>
 
         <h1 style={{ fontSize:18, fontWeight:500, marginBottom:4 }}>Sign in</h1>
