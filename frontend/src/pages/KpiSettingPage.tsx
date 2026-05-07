@@ -35,9 +35,9 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
 };
 
 const CYCLE_STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
-  DRAFT:  { bg: '#f5f5f3', color: '#555',    label: 'Draft' },
+  DRAFT:  { bg: '#f7f7f5', color: '#6b6b6b', label: 'Draft' },
   ACTIVE: { bg: '#dcfce7', color: '#166534', label: 'Active' },
-  CLOSED: { bg: '#e0f2fe', color: '#0c4a6e', label: 'Closed' },
+  CLOSED: { bg: '#fee2e2', color: '#991b1b', label: 'Closed' },
 };
 
 function StatusPill({ status }: { status: string }) {
@@ -1536,8 +1536,7 @@ export default function KpiSettingPage() {
     setCycleId(sortedCycles[0].id);
   }
 
-  const cycleIdx    = sortedCycles.findIndex((c: any) => c.id === cycleId);
-  const currentCycle = cycleIdx >= 0 ? sortedCycles[cycleIdx] : null;
+  const currentCycle = sortedCycles.find((c: any) => c.id === cycleId) ?? null;
 
   const { data: groups = [] } = useQuery({
     queryKey: ['groups'],
@@ -1581,63 +1580,40 @@ export default function KpiSettingPage() {
         </p>
       </div>
 
-      {/* Cycle selector bar */}
+      {/* Cycle selector */}
       <div style={{ background: C.bg, border: `1px solid ${C.border}`,
-        borderRadius: 10, padding: '12px 16px', marginBottom: 20,
-        display: 'flex', alignItems: 'center', gap: 16 }}>
-        <button
-          onClick={() => cycleIdx < sortedCycles.length - 1 &&
-            setCycleId(sortedCycles[cycleIdx + 1].id)}
-          disabled={cycleIdx >= sortedCycles.length - 1 || sortedCycles.length === 0}
-          style={{ border: `1px solid ${C.border}`, borderRadius: 8,
-            background: C.bg, padding: '6px 12px', cursor: 'pointer',
-            fontSize: 14, color: C.textSecond, flexShrink: 0,
-            opacity: cycleIdx >= sortedCycles.length - 1 || sortedCycles.length === 0
-              ? 0.3 : 1 }}>
-          ←
-        </button>
-        <div style={{ flex: 1, textAlign: 'center' }}>
-          {currentCycle ? (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontWeight: 600, fontSize: 15, color: C.text }}>
-                {currentCycle.name}
+        borderRadius: 10, padding: 16, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+          <span style={{ fontSize: 13, color: C.textSecond }}>◈</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: C.textSecond,
+            textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Performance Cycle
+          </span>
+          {currentCycle?.status && (() => {
+            const st = CYCLE_STATUS_STYLE[currentCycle.status]
+              || { bg: '#f7f7f5', color: '#6b6b6b', label: currentCycle.status };
+            return (
+              <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px',
+                borderRadius: 10, background: st.bg, color: st.color, marginLeft: 2 }}>
+                {st.label}
               </span>
-              {currentCycle.status && (() => {
-                const st = CYCLE_STATUS_STYLE[currentCycle.status]
-                  || { bg: '#f5f5f3', color: '#555', label: currentCycle.status };
-                return (
-                  <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px',
-                    borderRadius: 10, background: st.bg, color: st.color }}>
-                    {st.label}
-                  </span>
-                );
-              })()}
-            </div>
-          ) : (
-            <span style={{ fontSize: 13, color: C.textTertiary }}>
-              {sortedCycles.length === 0 ? 'No cycles available' : 'Loading…'}
-            </span>
-          )}
+            );
+          })()}
         </div>
-        <button
-          onClick={() => cycleIdx > 0 && setCycleId(sortedCycles[cycleIdx - 1].id)}
-          disabled={cycleIdx <= 0 || sortedCycles.length === 0}
-          style={{ border: `1px solid ${C.border}`, borderRadius: 8,
-            background: C.bg, padding: '6px 12px', cursor: 'pointer',
-            fontSize: 14, color: C.textSecond, flexShrink: 0,
-            opacity: cycleIdx <= 0 || sortedCycles.length === 0 ? 0.3 : 1 }}>
-          →
-        </button>
+        <select
+          value={cycleId}
+          onChange={e => setCycleId(e.target.value)}
+          style={{ width: '100%', padding: '12px 14px',
+            border: `1px solid ${C.border}`, borderRadius: 8,
+            fontSize: 15, fontWeight: 600, background: C.bg,
+            color: cycleId ? C.text : C.textTertiary,
+            fontFamily: C.font, outline: 'none', cursor: 'pointer' }}>
+          <option value="">Select a performance cycle to begin…</option>
+          {sortedCycles.map((c: any) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
       </div>
-
-      {!cycleId && (
-        <div style={{ textAlign: 'center', padding: 48,
-          color: C.textSecond, fontSize: 13 }}>
-          {sortedCycles.length === 0
-            ? 'No performance cycles found. Create one in HR Admin.'
-            : 'Loading cycle…'}
-        </div>
-      )}
 
       {cycleId && (
         <>
