@@ -118,10 +118,11 @@ export default function Layout() {
 
         {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 16px 16px', borderBottom: '0.5px solid #e5e4df' }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#1a1a18', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>PMS</div>
+          <img src="/perftrack-pms/pr-mark-32.png" alt="PerformRight"
+            style={{ width: 32, height: 32, borderRadius: 6, flexShrink: 0 }} />
           <div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>PerfTrack</div>
-            <div style={{ fontSize: 10, color: '#888' }}>Enterprise Edition</div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>PerformRight</div>
+            <div style={{ fontSize: 10, color: '#888' }}>by Valiram</div>
           </div>
         </div>
 
