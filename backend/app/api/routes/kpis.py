@@ -68,6 +68,17 @@ class WeightAdjustRequest(BaseModel):
     weight: int
 
 
+class ScorecardSubmitRequest(BaseModel):
+    cycle_id: UUID
+
+
+class ScorecardReviewRequest(BaseModel):
+    cycle_id:    UUID
+    employee_id: UUID
+    action:      str   # "approve" | "reject"
+    comment:     str = ""
+
+
 # ── Helper ─────────────────────────────────────────────────────────────────
 
 def kpi_to_dict(k: Kpi) -> dict:
@@ -525,6 +536,118 @@ async def set_weight_rules(
 
     await db.flush()
     return {"message": f"Saved {len(body)} weight rule(s)"}
+
+
+# ── Scorecard-level endpoints ──────────────────────────────────────────────
+
+@router.post("/submit-scorecard")
+async def submit_scorecard(
+    body:         ScorecardSubmitRequest,
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(get_current_user),
+):
+    all_res = await db.execute(
+        select(Kpi).where(Kpi.cycle_id == body.cycle_id, Kpi.user_id == current_user.id)
+    )
+    all_kpis = all_res.scalars().all()
+
+    total_weight = sum(k.weight for k in all_kpis)
+    if total_weight != 100:
+        raise HTTPException(400, "Total weight must equal 100%")
+
+    submittable = [k for k in all_kpis if k.status in ("DRAFT", "REJECTED", "APPROVED")]
+    if not submittable:
+        raise HTTPException(400, "No KPIs in submittable status (DRAFT, REJECTED, or APPROVED)")
+
+    from app.models.user import KpiAuditLog, Notification  # noqa
+    for kpi in submittable:
+        old = kpi.status
+        kpi.status = "PENDING_DM"
+        db.add(KpiAuditLog(
+            kpi_id=kpi.id, actor_id=current_user.id,
+            from_status=old, to_status="PENDING_DM",
+        ))
+
+    if current_user.direct_manager_id:
+        db.add(Notification(
+            user_id=current_user.direct_manager_id,
+            title="Scorecard Pending Your Approval",
+            body=f"{current_user.full_name} has submitted their scorecard for your review.",
+            type="KPI_PENDING",
+        ))
+
+    await db.flush()
+    return {"submitted": len(submittable), "message": "Scorecard submitted for approval"}
+
+
+@router.post("/review-scorecard")
+async def review_scorecard(
+    body:         ScorecardReviewRequest,
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(get_current_user),
+):
+    if body.action not in ("approve", "reject"):
+        raise HTTPException(400, "action must be 'approve' or 'reject'")
+
+    emp_res = await db.execute(select(User).where(User.id == body.employee_id))
+    employee = emp_res.scalar_one_or_none()
+    if not employee:
+        raise HTTPException(404, "Employee not found")
+
+    if current_user.role not in ["HR_ADMIN", "SUPER_ADMIN"]:
+        if not employee.direct_manager_id or \
+                str(employee.direct_manager_id) != str(current_user.id):
+            raise HTTPException(403, "You are not the direct manager of this employee")
+
+    kpis_res = await db.execute(
+        select(Kpi).where(
+            Kpi.cycle_id == body.cycle_id,
+            Kpi.user_id  == body.employee_id,
+            Kpi.status   == "PENDING_DM",
+        )
+    )
+    kpis = kpis_res.scalars().all()
+    if not kpis:
+        raise HTTPException(404, "No KPIs pending approval for this employee")
+
+    from app.models.user import KpiAuditLog, Notification
+
+    if body.action == "approve":
+        for kpi in kpis:
+            old = kpi.status
+            kpi.status = "LOCKED"
+            db.add(KpiAuditLog(
+                kpi_id=kpi.id, actor_id=current_user.id,
+                from_status=old, to_status="LOCKED", comment=body.comment or None,
+            ))
+        db.add(Notification(
+            user_id=employee.id,
+            title="Scorecard Approved",
+            body=f"Your scorecard has been approved and locked by {current_user.full_name}.",
+            type="KPI_APPROVED",
+        ))
+        msg = f"Scorecard approved and locked for {employee.full_name}"
+    else:
+        if not body.comment:
+            raise HTTPException(400, "A comment is required when rejecting a scorecard")
+        for kpi in kpis:
+            old = kpi.status
+            kpi.status      = "REJECTED"
+            kpi.mgr_comment = body.comment
+            db.add(KpiAuditLog(
+                kpi_id=kpi.id, actor_id=current_user.id,
+                from_status=old, to_status="REJECTED", comment=body.comment,
+            ))
+        db.add(Notification(
+            user_id=employee.id,
+            title="Scorecard Rejected",
+            body=f"Your scorecard was rejected by {current_user.full_name}. Please revise and resubmit.",
+            type="KPI_REJECTED",
+        ))
+        msg = f"Scorecard rejected for {employee.full_name}"
+
+    await db.flush()
+    return {"updated": len(kpis), "message": msg}
 
 
 # ── Parameterised routes ───────────────────────────────────────────────────

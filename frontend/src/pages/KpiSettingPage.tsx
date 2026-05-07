@@ -47,20 +47,40 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+function scorecardStatusSummary(kpis: any[]): { label: string; bg: string; color: string } | null {
+  if (!kpis.length) return null;
+  const statuses = new Set(kpis.map((k: any) => k.status));
+  if (statuses.size === 1) {
+    const s = [...statuses][0];
+    if (s === 'LOCKED')     return { label: 'Approved & Locked', bg: '#e0f2fe', color: '#0c4a6e' };
+    if (s === 'PENDING_DM') return { label: 'Pending Manager Approval', bg: '#fef9c3', color: '#854d0e' };
+    if (s === 'APPROVED')   return { label: 'Approved', bg: '#dcfce7', color: '#166534' };
+  }
+  if ([...statuses].every(s => s === 'LOCKED' || s === 'APPROVED')) {
+    return { label: 'Approved & Locked', bg: '#e0f2fe', color: '#0c4a6e' };
+  }
+  if ([...statuses].some(s => s === 'REJECTED')) {
+    return { label: 'Rejected — please revise and resubmit', bg: '#fee2e2', color: '#991b1b' };
+  }
+  if ([...statuses].some(s => s === 'PENDING_DM')) {
+    return { label: 'Pending Manager Approval', bg: '#fef9c3', color: '#854d0e' };
+  }
+  const total = kpis.reduce((s: number, k: any) => s + k.weight, 0);
+  return { label: `Draft — ${total}% set`, bg: '#f5f5f3', color: '#555' };
+}
+
 function KpiCard({
-  kpi, weightRules, onSubmit, onDelete, onAdjustWeight,
+  kpi, weightRules, onDelete, onAdjustWeight,
 }: {
   kpi:            any;
   weightRules:    any[];
-  onSubmit:       () => void;
   onDelete:       () => void;
   onAdjustWeight: (w: number) => void;
 }) {
   const [editWeight, setEditWeight] = useState(false);
   const [newWeight,  setNewWeight]  = useState(kpi.weight);
-  const rule      = weightRules.find((r: any) => r.kpi_dimension === kpi.kpi_dimension);
-  const isFixed   = kpi.kpi_type === 'FIXED';
-  const canSubmit = kpi.status === 'DRAFT' || kpi.status === 'REJECTED';
+  const rule    = weightRules.find((r: any) => r.kpi_dimension === kpi.kpi_dimension);
+  const isFixed = kpi.kpi_type === 'FIXED';
   const canDelete = kpi.status === 'DRAFT' && !isFixed;
 
   return (
@@ -119,28 +139,25 @@ function KpiCard({
         </div>
       )}
 
-      {/* Actions for optional KPIs */}
-      {!isFixed && (
+      {/* Delete for optional DRAFT KPIs */}
+      {canDelete && (
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-          {canSubmit && (
-            <button onClick={onSubmit} style={S.btnPrimary}>Submit for Approval</button>
-          )}
-          {canDelete && (
-            <button onClick={onDelete} style={{ ...S.btnSm, color: '#991b1b', borderColor: '#fca5a5' }}>
-              Delete
-            </button>
-          )}
-          {kpi.status === 'REJECTED' && kpi.mgr_comment && (
-            <div style={{ fontSize: 12, color: '#991b1b', padding: '3px 8px', background: '#fee2e2', borderRadius: 6, alignSelf: 'center' }}>
-              Rejected: {kpi.mgr_comment}
-            </div>
-          )}
+          <button onClick={onDelete} style={{ ...S.btnSm, color: '#991b1b', borderColor: '#fca5a5' }}>
+            Delete
+          </button>
+        </div>
+      )}
+
+      {/* Rejection comment */}
+      {kpi.status === 'REJECTED' && kpi.mgr_comment && (
+        <div style={{ marginTop: 8, fontSize: 12, color: '#991b1b', padding: '6px 10px', background: '#fee2e2', borderRadius: 6 }}>
+          Manager comment: {kpi.mgr_comment}
         </div>
       )}
 
       {kpi.status === 'PENDING_DM' && (
         <div style={{ marginTop: 8, fontSize: 12, color: C.textSecond, fontStyle: 'italic' }}>
-          Awaiting manager approval...
+          Awaiting manager approval…
         </div>
       )}
     </div>
@@ -197,11 +214,6 @@ export default function KpiSettingPage() {
     },
   });
 
-  const submitMutation = useMutation({
-    mutationFn: (id: string) => kpisApi.submit(id),
-    onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] }),
-  });
-
   const adjustMutation = useMutation({
     mutationFn: ({ id, weight }: { id: string; weight: number }) =>
       kpisApi.adjustWeight(id, weight),
@@ -213,29 +225,29 @@ export default function KpiSettingPage() {
     onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] }),
   });
 
-  const submitAllMutation = useMutation({
-    mutationFn: async () => {
-      const submittable = (kpis as any[]).filter(
-        k => !k.kpi_type || k.kpi_type !== 'FIXED'
-          ? (k.status === 'DRAFT' || k.status === 'REJECTED')
-          : false
-      );
-      for (const kpi of submittable) {
-        await kpisApi.submit(kpi.id);
-      }
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] }),
+  const submitScorecardMutation = useMutation({
+    mutationFn: () => kpisApi.submitScorecard(cycleId),
+    onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] }),
   });
 
   const totalWeight = (kpis as any[]).reduce((sum, k) => sum + k.weight, 0);
+  const hasSubmittable = (kpis as any[]).some(k => k.status === 'DRAFT' || k.status === 'REJECTED');
 
   const bykpi_dimension = CATEGORIES.map(c => ({
-    cat: c,
+    cat:   c,
     total: (kpis as any[]).filter(k => k.kpi_dimension === c).reduce((s, k) => s + k.weight, 0),
     rule:  (weightRules as any[]).find((r: any) => r.kpi_dimension === c),
   }));
 
   const rule = (weightRules as any[]).find((r: any) => r.kpi_dimension === cat);
+
+  const statusSummary = scorecardStatusSummary(kpis as any[]);
+
+  const submitDisabledReason = totalWeight !== 100
+    ? `Total weight is ${totalWeight}% — must equal 100%`
+    : !hasSubmittable
+    ? 'No KPIs in Draft or Rejected status to submit'
+    : null;
 
   return (
     <div style={{ fontFamily: C.font, color: C.text }}>
@@ -275,6 +287,14 @@ export default function KpiSettingPage() {
 
       {cycleId && (
         <div>
+          {/* Scorecard status summary */}
+          {statusSummary && (
+            <div style={{ padding: '10px 14px', borderRadius: 8, background: statusSummary.bg, color: statusSummary.color, fontSize: 13, fontWeight: 500, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>Status:</span>
+              <span>{statusSummary.label}</span>
+            </div>
+          )}
+
           {/* Weight summary */}
           <div style={{ ...S.card, marginBottom: 12 }}>
             <div style={{ fontWeight: 500, marginBottom: 10, color: C.text }}>Weight Summary</div>
@@ -311,7 +331,6 @@ export default function KpiSettingPage() {
               key={kpi.id}
               kpi={kpi}
               weightRules={weightRules as any[]}
-              onSubmit={() => submitMutation.mutate(kpi.id)}
               onDelete={() => deleteMutation.mutate(kpi.id)}
               onAdjustWeight={w => adjustMutation.mutate({ id: kpi.id, weight: w })}
             />
@@ -388,25 +407,28 @@ export default function KpiSettingPage() {
             </button>
           )}
 
-          {/* Submit All */}
-          {(kpis as any[]).some(k => k.kpi_type !== 'FIXED' && (k.status === 'DRAFT' || k.status === 'REJECTED')) && (
-            <div style={{ marginTop: 20, paddingTop: 16, borderTop: `0.5px solid ${C.borderLight}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <button
-                onClick={() => submitAllMutation.mutate()}
-                disabled={totalWeight !== 100 || submitAllMutation.isPending}
-                style={{ ...S.btnPrimary, opacity: totalWeight !== 100 ? 0.5 : 1 }}>
-                {submitAllMutation.isPending ? 'Submitting...' : 'Submit All for Approval'}
-              </button>
-              {totalWeight !== 100 && (
-                <span style={{ fontSize: 12, color: '#991b1b' }}>
-                  Total weight must equal 100% to submit
-                </span>
-              )}
-              {submitAllMutation.isSuccess && (
-                <span style={{ fontSize: 12, color: '#166534', fontWeight: 500 }}>✓ Submitted</span>
-              )}
-            </div>
-          )}
+          {/* Submit Scorecard */}
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: `0.5px solid ${C.borderLight}` }}>
+            <button
+              onClick={() => submitScorecardMutation.mutate()}
+              disabled={!!submitDisabledReason || submitScorecardMutation.isPending}
+              style={{ ...S.btnPrimary, opacity: submitDisabledReason ? 0.5 : 1, cursor: submitDisabledReason ? 'not-allowed' : 'pointer' }}>
+              {submitScorecardMutation.isPending ? 'Submitting…' : 'Submit Scorecard for Approval'}
+            </button>
+            {submitDisabledReason && (
+              <div style={{ marginTop: 6, fontSize: 12, color: '#991b1b' }}>{submitDisabledReason}</div>
+            )}
+            {submitScorecardMutation.isSuccess && (
+              <div style={{ marginTop: 6, fontSize: 12, color: '#166534', fontWeight: 500 }}>
+                ✓ Scorecard submitted for manager approval
+              </div>
+            )}
+            {submitScorecardMutation.isError && (
+              <div style={{ marginTop: 6, fontSize: 12, color: '#991b1b' }}>
+                {(submitScorecardMutation.error as any)?.response?.data?.detail || 'Submission failed'}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
