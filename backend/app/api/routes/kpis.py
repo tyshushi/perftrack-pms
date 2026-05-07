@@ -241,6 +241,176 @@ async def cascade_kpi(
     }
 
 
+# ── KPI Templates ──────────────────────────────────────────────────────────
+
+class TemplateCreate(BaseModel):
+    cycle_id:      UUID
+    name:          str
+    description:   Optional[str] = None
+    kpi_dimension: str
+    min_weight:    int = 0
+    max_weight:    int = 100
+    target:        str
+    measurement:   Optional[str] = None
+    group_id:      Optional[UUID] = None
+    hierarchy:     Optional[str]  = None
+    user_category: Optional[str]  = None
+    department_id: Optional[UUID] = None
+    job_grade:     Optional[str]  = None
+
+
+def template_to_dict(t) -> dict:
+    return {
+        "id":            str(t.id),
+        "cycle_id":      str(t.cycle_id),
+        "name":          t.name,
+        "description":   t.description,
+        "kpi_dimension": t.category,
+        "weight":        t.weight,
+        "target":        t.target,
+        "measurement":   t.measurement,
+        "department_id": str(t.department_id) if t.department_id else None,
+        "job_grade":     t.job_grade,
+        "is_active":     t.is_active,
+    }
+
+
+@router.get("/templates/{cycle_id}")
+async def list_templates(
+    cycle_id:     UUID,
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(get_current_user),
+):
+    from app.models.user import KpiTemplate, GroupMember  # noqa
+    result = await db.execute(
+        select(KpiTemplate).where(
+            KpiTemplate.cycle_id  == cycle_id,
+            KpiTemplate.is_active == True,
+        ).order_by(KpiTemplate.created_at)
+    )
+    return [template_to_dict(t) for t in result.scalars().all()]
+
+
+@router.post("/templates")
+async def create_template(
+    body: TemplateCreate,
+    db:   AsyncSession = Depends(get_db),
+    _:    User         = Depends(require_hr_admin),
+):
+    from app.models.user import KpiTemplate, GroupMember  # noqa
+    t = KpiTemplate(
+        cycle_id      = body.cycle_id,
+        name          = body.name,
+        description   = body.description,
+        category      = body.kpi_dimension,
+        weight        = body.min_weight,
+        target        = body.target,
+        measurement   = body.measurement,
+        department_id = body.department_id,
+        job_grade     = body.job_grade,
+    )
+    db.add(t)
+    await db.flush()
+    await db.refresh(t)
+    return template_to_dict(t)
+
+
+@router.delete("/templates/{template_id}")
+async def delete_template(
+    template_id: UUID,
+    db:          AsyncSession = Depends(get_db),
+    _:           User         = Depends(require_hr_admin),
+):
+    from app.models.user import KpiTemplate, GroupMember  # noqa
+    result = await db.execute(
+        select(KpiTemplate).where(KpiTemplate.id == template_id)
+    )
+    t = result.scalar_one_or_none()
+    if not t:
+        raise HTTPException(404, "Template not found")
+    t.is_active = False
+    return {"message": "Template deleted"}
+
+
+@router.post("/templates/{template_id}/cascade")
+async def cascade_template(
+    template_id:  UUID,
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(require_hr_admin),
+):
+    from app.models.user import KpiTemplate, GroupMember
+
+    res = await db.execute(
+        select(KpiTemplate).where(KpiTemplate.id == template_id)
+    )
+    t = res.scalar_one_or_none()
+    if not t:
+        raise HTTPException(404, "Template not found")
+
+    # Match employees: group > department > job_grade > everyone
+    if t.department_id:
+        q = select(User).where(
+            User.department_id == t.department_id,
+            User.is_active     == True,
+        )
+    elif t.job_grade:
+        q = select(User).where(
+            User.job_grade == t.job_grade,
+            User.is_active == True,
+        )
+    else:
+        q = select(User).where(User.is_active == True)
+
+    matched = (await db.execute(q)).scalars().all()
+
+    created = updated = 0
+    for u in matched:
+        existing = (await db.execute(
+            select(Kpi).where(
+                Kpi.cycle_id == t.cycle_id,
+                Kpi.user_id  == u.id,
+                Kpi.name     == t.name,
+                Kpi.kpi_type == "FIXED",
+            )
+        )).scalar_one_or_none()
+
+        if existing:
+            existing.description   = t.description
+            existing.kpi_dimension = t.category
+            existing.weight        = t.weight
+            existing.target        = t.target
+            existing.measurement   = t.measurement
+            existing.status        = "APPROVED"
+            existing.cascaded_by   = current_user.id
+            updated += 1
+        else:
+            db.add(Kpi(
+                cycle_id      = t.cycle_id,
+                user_id       = u.id,
+                template_id   = t.id,
+                name          = t.name,
+                description   = t.description,
+                kpi_dimension = t.category,
+                kpi_type      = "FIXED",
+                weight        = t.weight,
+                target        = t.target,
+                measurement   = t.measurement,
+                status        = "APPROVED",
+                cascaded_by   = current_user.id,
+            ))
+            created += 1
+
+    await db.flush()
+    return {
+        "created": created,
+        "updated": updated,
+        "message": (
+            f"Cascaded to {len(matched)} employee(s) "
+            f"({created} created, {updated} updated)."
+        ),
+    }
+
+
 @router.get("/weight-rules/{cycle_id}")
 async def get_weight_rules(
     cycle_id:     UUID,

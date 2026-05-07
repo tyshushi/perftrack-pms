@@ -1096,6 +1096,269 @@ function ManagerApprovalPanel({
   );
 }
 
+// ── KPI Templates Panel ────────────────────────────────────────────────────
+
+const DIMENSIONS = [
+  'Financials', 'Customer', 'Internal Process',
+  'Learning & Growth', 'Leadership & Culture',
+];
+
+const APPLIES_TO_OPTS = [
+  { value: 'everyone',   label: 'Everyone' },
+  { value: 'department', label: 'Department' },
+  { value: 'grade',      label: 'Job Grade' },
+  { value: 'hierarchy',  label: 'Hierarchy' },
+  { value: 'category',   label: 'Employee Category' },
+];
+
+function appliesLabel(t: any): string {
+  if (t.job_grade)     return `Grade: ${t.job_grade}`;
+  if (t.department_id) return `Dept: ${t.department_id.slice(0, 8)}…`;
+  return 'Everyone';
+}
+
+function KpiTemplatesPanel({
+  cycleId, groups,
+}: {
+  cycleId: string; groups: any[];
+}) {
+  const qc = useQueryClient();
+  const [name,        setName]        = useState('');
+  const [description, setDescription] = useState('');
+  const [dimension,   setDimension]   = useState('Financials');
+  const [appliesTo,   setAppliesTo]   = useState('everyone');
+  const [deptId,      setDeptId]      = useState('');
+  const [jobGrade,    setJobGrade]    = useState('');
+  const [hierarchy,   setHierarchy]   = useState('');
+  const [category,    setCategory]    = useState('');
+  const [minWeight,   setMinWeight]   = useState(0);
+  const [maxWeight,   setMaxWeight]   = useState(100);
+  const [target,      setTarget]      = useState('');
+  const [measurement, setMeasurement] = useState('');
+  const [cascading,   setCascading]   = useState<string | null>(null);
+  const [showForm,    setShowForm]    = useState(false);
+
+  const { data: templates = [] } = useQuery({
+    queryKey: ['kpi-templates', cycleId],
+    queryFn:  () => kpisApi.getTemplates(cycleId).then(r => r.data),
+    enabled:  !!cycleId,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: () => kpisApi.createTemplate({
+      cycle_id:      cycleId,
+      name, description,
+      kpi_dimension: dimension,
+      min_weight:    minWeight,
+      max_weight:    maxWeight,
+      target, measurement,
+      department_id: appliesTo === 'department' ? deptId || null : null,
+      job_grade:     appliesTo === 'grade'      ? jobGrade || null : null,
+      hierarchy:     appliesTo === 'hierarchy'  ? hierarchy || null : null,
+      user_category: appliesTo === 'category'   ? category || null : null,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['kpi-templates', cycleId] });
+      setName(''); setDescription(''); setTarget(''); setMeasurement('');
+      setMinWeight(0); setMaxWeight(100); setDeptId(''); setJobGrade('');
+      setHierarchy(''); setCategory(''); setAppliesTo('everyone');
+      setShowForm(false);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => kpisApi.deleteTemplate(id),
+    onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpi-templates', cycleId] }),
+  });
+
+  async function handleCascade(id: string) {
+    setCascading(id);
+    try {
+      const res = await kpisApi.cascadeTemplate(id);
+      qc.invalidateQueries({ queryKey: ['kpis'] });
+      alert(res.data.message);
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Cascade failed');
+    } finally {
+      setCascading(null);
+    }
+  }
+
+  return (
+    <div style={{ fontFamily: C.font }}>
+
+      {/* Template list */}
+      {(templates as any[]).length === 0 && !showForm && (
+        <div style={{ textAlign: 'center', padding: 32, color: C.textSecond,
+          fontSize: 13, border: `1px dashed ${C.border}`, borderRadius: 10,
+          marginBottom: 12 }}>
+          No templates yet. Create one to cascade fixed KPIs to employees.
+        </div>
+      )}
+
+      {(templates as any[]).map((t: any) => (
+        <div key={t.id} style={{ ...S.card, display: 'flex',
+          justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 500, fontSize: 14, color: C.text,
+              marginBottom: 4 }}>{t.name}</div>
+            {t.description && (
+              <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 4 }}>
+                {t.description}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 12,
+              color: C.textSecond }}>
+              <span>{t.kpi_dimension}</span>
+              <span>·</span>
+              <span>Weight: {t.weight}%</span>
+              <span>·</span>
+              <span>Target: {t.target}</span>
+              <span>·</span>
+              <span style={{ color: C.textTertiary }}>{appliesLabel(t)}</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <button
+              onClick={() => handleCascade(t.id)}
+              disabled={cascading === t.id}
+              style={S.btnPrimary}>
+              {cascading === t.id ? 'Cascading…' : 'Cascade'}
+            </button>
+            <button
+              onClick={() => deleteMutation.mutate(t.id)}
+              disabled={deleteMutation.isPending}
+              style={{ ...S.btnSm, color: '#991b1b', borderColor: '#fca5a5' }}>
+              Delete
+            </button>
+          </div>
+        </div>
+      ))}
+
+      {/* Create form */}
+      {showForm && (
+        <div style={S.card}>
+          <div style={{ fontWeight: 500, marginBottom: 14, color: C.text }}>
+            New KPI Template
+          </div>
+          <div style={S.grid2}>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={S.label}>KPI Name</label>
+              <input style={S.input} value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="e.g. Customer Satisfaction Score" />
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={S.label}>Description</label>
+              <textarea style={{ ...S.input, minHeight: 54, resize: 'vertical' }}
+                value={description}
+                onChange={e => setDescription(e.target.value)} />
+            </div>
+            <div>
+              <label style={S.label}>KPI Dimension</label>
+              <select style={S.input} value={dimension}
+                onChange={e => setDimension(e.target.value)}>
+                {DIMENSIONS.map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={S.label}>Applies To</label>
+              <select style={S.input} value={appliesTo}
+                onChange={e => setAppliesTo(e.target.value)}>
+                {APPLIES_TO_OPTS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            {appliesTo === 'department' && (
+              <div>
+                <label style={S.label}>Department ID</label>
+                <input style={S.input} value={deptId}
+                  onChange={e => setDeptId(e.target.value)}
+                  placeholder="Department UUID" />
+              </div>
+            )}
+            {appliesTo === 'grade' && (
+              <div>
+                <label style={S.label}>Job Grade</label>
+                <input style={S.input} value={jobGrade}
+                  onChange={e => setJobGrade(e.target.value)}
+                  placeholder="e.g. G2" />
+              </div>
+            )}
+            {appliesTo === 'hierarchy' && (
+              <div>
+                <label style={S.label}>Hierarchy</label>
+                <input style={S.input} value={hierarchy}
+                  onChange={e => setHierarchy(e.target.value)}
+                  placeholder="e.g. Apex-1" />
+              </div>
+            )}
+            {appliesTo === 'category' && (
+              <div>
+                <label style={S.label}>Employee Category</label>
+                <input style={S.input} value={category}
+                  onChange={e => setCategory(e.target.value)}
+                  placeholder="e.g. Corporate Staff" />
+              </div>
+            )}
+            <div>
+              <label style={S.label}>Min Weight %</label>
+              <input style={S.input} type="number" min={0} max={100}
+                value={minWeight}
+                onChange={e => setMinWeight(Number(e.target.value))} />
+            </div>
+            <div>
+              <label style={S.label}>Max Weight %</label>
+              <input style={S.input} type="number" min={0} max={100}
+                value={maxWeight}
+                onChange={e => setMaxWeight(Number(e.target.value))} />
+            </div>
+            <div>
+              <label style={S.label}>Target</label>
+              <input style={S.input} value={target}
+                onChange={e => setTarget(e.target.value)}
+                placeholder="e.g. ≥ 90% satisfaction" />
+            </div>
+            <div>
+              <label style={S.label}>Measurement</label>
+              <input style={S.input} value={measurement}
+                onChange={e => setMeasurement(e.target.value)}
+                placeholder="e.g. Monthly survey score" />
+            </div>
+          </div>
+          {createMutation.isError && (
+            <div style={{ fontSize: 12, color: '#991b1b', marginBottom: 8 }}>
+              {(createMutation.error as any)?.response?.data?.detail || 'Failed to create template'}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <button
+              onClick={() => createMutation.mutate()}
+              disabled={!name || !target || createMutation.isPending}
+              style={{ ...S.btnPrimary, opacity: !name || !target ? 0.5 : 1 }}>
+              {createMutation.isPending ? 'Creating…' : 'Create Template'}
+            </button>
+            <button onClick={() => setShowForm(false)} style={S.btnSm}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!showForm && (
+        <button onClick={() => setShowForm(true)}
+          style={{ ...S.btnSm, width: '100%', padding: '10px',
+            borderStyle: 'dashed', marginTop: 4 }}>
+          + New Template
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────
 
 export default function KpiSettingPage() {
@@ -1103,7 +1366,7 @@ export default function KpiSettingPage() {
   const isManager = ['MANAGER', 'MGR2', 'HOD', 'HR_ADMIN', 'SUPER_ADMIN'].includes(user?.role || '');
   const isHrAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user?.role || '');
   const [cycleId,  setCycleId]  = useState('');
-  const [tab, setTab] = useState<'my-kpis' | 'cascade' | 'approve' | 'weight-rules'>('my-kpis');
+  const [tab, setTab] = useState<'my-kpis' | 'cascade' | 'approve' | 'weight-rules' | 'templates'>('my-kpis');
 
   const { data: cycles = [] } = useQuery({
     queryKey: ['cycles'],
@@ -1143,7 +1406,8 @@ export default function KpiSettingPage() {
     { key: 'my-kpis',      label: 'My KPIs',      show: true },
     { key: 'approve',      label: 'Approve KPIs',  show: isManager },
     { key: 'cascade',      label: 'Cascade KPIs',  show: isManager },
-    { key: 'weight-rules', label: 'Weight Rules',  show: isHrAdmin },
+    { key: 'weight-rules', label: 'Weight Rules',   show: isHrAdmin },
+    { key: 'templates',    label: 'KPI Templates',  show: isHrAdmin },
   ].filter(t => t.show);
 
   return (
@@ -1225,6 +1489,13 @@ export default function KpiSettingPage() {
               cycles={cycles as any[]}
               groups={groups as any[]}
               depts={depts as any[]}
+            />
+          )}
+
+          {tab === 'templates' && (
+            <KpiTemplatesPanel
+              cycleId={cycleId}
+              groups={groups as any[]}
             />
           )}
         </>
