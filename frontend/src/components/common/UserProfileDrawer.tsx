@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { userProfileApi } from '../../api/client';
+import { userProfileApi, cyclesApi, kpisApi } from '../../api/client';
+import { useAuthStore } from '../../store/auth';
+
 const C = {
   bg:           '#ffffff',
   bgSecondary:  '#f7f7f5',
@@ -198,17 +200,255 @@ function ManagerSlot({
   );
 }
 
+// ── Scorecard status helpers ────────────────────────────────────────────────
+
+function computeScorecardStatus(kpis: any[]): { label: string; bg: string; color: string } {
+  if (!kpis.length) return { label: 'No KPIs', bg: C.bgTertiary, color: C.textTertiary };
+  const statuses = new Set(kpis.map((k: any) => k.status));
+  if ([...statuses].every(s => s === 'LOCKED'))
+    return { label: 'Locked', bg: '#e0f2fe', color: '#0c4a6e' };
+  if ([...statuses].every(s => s === 'LOCKED' || s === 'APPROVED'))
+    return { label: 'Approved', bg: '#dcfce7', color: '#166534' };
+  if ([...statuses].some(s => s === 'PENDING_DM' || s === 'PENDING_RM' || s === 'PENDING_HOD'))
+    return { label: 'Pending Approval', bg: '#fef9c3', color: '#854d0e' };
+  if ([...statuses].some(s => s === 'REJECTED'))
+    return { label: 'Draft (Rejected)', bg: '#fee2e2', color: '#991b1b' };
+  return { label: 'Draft', bg: '#f5f5f3', color: '#555' };
+}
+
+// ── Scorecard Management section ───────────────────────────────────────────
+
+function ScorecardManagement({ employeeId, employeeName }: { employeeId: string; employeeName: string }) {
+  const qc = useQueryClient();
+  const [cycleId,      setCycleId]      = useState('');
+  const [resetConfirm, setResetConfirm] = useState(false);
+  // delete flow: null → 'warn1' → 'warn2'
+  const [deleteStep,   setDeleteStep]   = useState<null | 'warn1' | 'warn2'>(null);
+  const [deleteInput,  setDeleteInput]  = useState('');
+  const [actionMsg,    setActionMsg]    = useState<{ ok: boolean; text: string } | null>(null);
+
+  const { data: cycles = [] } = useQuery({
+    queryKey: ['cycles'],
+    queryFn:  () => cyclesApi.list().then(r => r.data),
+  });
+
+  const sortedCycles = useMemo(() =>
+    [...(cycles as any[])].sort((a: any, b: any) => b.name.localeCompare(a.name)),
+    [cycles]
+  );
+
+  if (sortedCycles.length && !cycleId) setCycleId((sortedCycles[0] as any).id);
+
+  const selectedCycle = (sortedCycles as any[]).find(c => c.id === cycleId) ?? null;
+
+  const { data: kpis = [], isLoading: kpisLoading } = useQuery({
+    queryKey: ['kpis-admin', cycleId, employeeId],
+    queryFn:  () => kpisApi.list(cycleId, employeeId).then(r => r.data),
+    enabled:  !!cycleId,
+  });
+
+  const scorecardStatus = computeScorecardStatus(kpis as any[]);
+
+  function showMsg(ok: boolean, text: string) {
+    setActionMsg({ ok, text });
+    setTimeout(() => setActionMsg(null), 4000);
+  }
+
+  const resetMutation = useMutation({
+    mutationFn: () => kpisApi.resetScorecard(cycleId, employeeId),
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ['kpis-admin', cycleId, employeeId] });
+      setResetConfirm(false);
+      showMsg(true, res.data?.message ?? 'Scorecard reset to draft');
+    },
+    onError: (err: any) => {
+      setResetConfirm(false);
+      showMsg(false, err?.response?.data?.detail ?? 'Reset failed');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => kpisApi.deleteScorecard(cycleId, employeeId),
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ['kpis-admin', cycleId, employeeId] });
+      setDeleteStep(null);
+      setDeleteInput('');
+      showMsg(true, res.data?.message ?? 'Scorecard deleted');
+    },
+    onError: (err: any) => {
+      setDeleteStep(null);
+      setDeleteInput('');
+      showMsg(false, err?.response?.data?.detail ?? 'Delete failed');
+    },
+  });
+
+  return (
+    <div style={{ marginTop: 24, paddingTop: 20, borderTop: `1px solid ${C.borderLight}` }}>
+      <div style={S.sectionLabel}>Scorecard Management</div>
+
+      {/* Cycle selector */}
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ fontSize: 11, fontWeight: 500, color: C.textSecond, display: 'block', marginBottom: 4 }}>
+          Select Cycle
+        </label>
+        <select
+          value={cycleId}
+          onChange={e => { setCycleId(e.target.value); setResetConfirm(false); setDeleteStep(null); setDeleteInput(''); setActionMsg(null); }}
+          style={{ width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.bg, color: cycleId ? C.text : C.textTertiary, fontFamily: C.font, outline: 'none', cursor: 'pointer' }}>
+          <option value="">Select a cycle…</option>
+          {(sortedCycles as any[]).map((c: any) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Current status */}
+      {cycleId && (
+        <div style={{ marginBottom: 14 }}>
+          {kpisLoading ? (
+            <div style={{ fontSize: 12, color: C.textTertiary }}>Loading status…</div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, color: C.textSecond }}>Current status:</span>
+              <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px', borderRadius: 10, background: scorecardStatus.bg, color: scorecardStatus.color }}>
+                {scorecardStatus.label}
+              </span>
+              <span style={{ fontSize: 11, color: C.textTertiary }}>
+                ({(kpis as any[]).length} KPI{(kpis as any[]).length !== 1 ? 's' : ''})
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Action message */}
+      {actionMsg && (
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 500, background: actionMsg.ok ? '#dcfce7' : '#fee2e2', color: actionMsg.ok ? '#166534' : '#991b1b', border: `1px solid ${actionMsg.ok ? '#86efac' : '#fca5a5'}` }}>
+          {actionMsg.ok ? '✓ ' : '✕ '}{actionMsg.text}
+        </div>
+      )}
+
+      {cycleId && (kpis as any[]).length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+
+          {/* Reset to Draft */}
+          {!resetConfirm && deleteStep === null && (
+            <button
+              onClick={() => setResetConfirm(true)}
+              style={{ width: '100%', padding: '8px 14px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font, textAlign: 'left' }}>
+              Reset to Draft
+            </button>
+          )}
+
+          {resetConfirm && (
+            <div style={{ padding: 12, background: C.bgWarning, borderRadius: 8, border: `1px solid #fde68a` }}>
+              <div style={{ fontSize: 12, color: '#78350f', marginBottom: 10, fontWeight: 500 }}>
+                Reset {employeeName}'s scorecard to Draft? This cannot be undone.
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => resetMutation.mutate()}
+                  disabled={resetMutation.isPending}
+                  style={{ padding: '7px 14px', border: 'none', borderRadius: 8, background: '#92400e', color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: C.font, opacity: resetMutation.isPending ? 0.6 : 1 }}>
+                  {resetMutation.isPending ? 'Resetting…' : 'Confirm Reset'}
+                </button>
+                <button
+                  onClick={() => setResetConfirm(false)}
+                  style={{ padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Delete Scorecard */}
+          {!resetConfirm && deleteStep === null && (
+            <button
+              onClick={() => setDeleteStep('warn1')}
+              style={{ width: '100%', padding: '8px 14px', border: `1px solid #fca5a5`, borderRadius: 8, background: C.bg, color: '#991b1b', fontSize: 12, cursor: 'pointer', fontFamily: C.font, textAlign: 'left' }}>
+              Delete Scorecard
+            </button>
+          )}
+
+          {deleteStep === 'warn1' && (
+            <div style={{ padding: 12, background: '#fee2e2', borderRadius: 8, border: `1px solid #fca5a5` }}>
+              <div style={{ fontSize: 12, color: '#991b1b', marginBottom: 10, fontWeight: 500 }}>
+                Are you sure you want to delete {employeeName}'s scorecard
+                {selectedCycle ? ` for ${selectedCycle.name}` : ''}?
+                All KPIs will be permanently removed.
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => { setDeleteStep('warn2'); setDeleteInput(''); }}
+                  style={{ padding: '7px 14px', border: 'none', borderRadius: 8, background: '#991b1b', color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: C.font }}>
+                  Yes, continue
+                </button>
+                <button
+                  onClick={() => setDeleteStep(null)}
+                  style={{ padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {deleteStep === 'warn2' && (
+            <div style={{ padding: 12, background: '#fee2e2', borderRadius: 8, border: `2px solid #991b1b` }}>
+              <div style={{ fontSize: 12, color: '#991b1b', marginBottom: 4, fontWeight: 700 }}>
+                This action is PERMANENT and cannot be undone.
+              </div>
+              <div style={{ fontSize: 12, color: '#991b1b', marginBottom: 10 }}>
+                Type <strong>DELETE</strong> to confirm.
+              </div>
+              <input
+                value={deleteInput}
+                onChange={e => setDeleteInput(e.target.value)}
+                placeholder="Type DELETE"
+                style={{ width: '100%', padding: '7px 10px', border: `1px solid #fca5a5`, borderRadius: 8, fontSize: 13, background: C.bg, color: C.text, fontFamily: C.font, outline: 'none', marginBottom: 10, boxSizing: 'border-box' }}
+              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => deleteMutation.mutate()}
+                  disabled={deleteInput !== 'DELETE' || deleteMutation.isPending}
+                  style={{ padding: '7px 14px', border: 'none', borderRadius: 8, background: '#991b1b', color: '#ffffff', fontSize: 12, fontWeight: 500, fontFamily: C.font, cursor: deleteInput !== 'DELETE' ? 'not-allowed' : 'pointer', opacity: deleteInput !== 'DELETE' ? 0.4 : 1 }}>
+                  {deleteMutation.isPending ? 'Deleting…' : 'Delete Permanently'}
+                </button>
+                <button
+                  onClick={() => { setDeleteStep(null); setDeleteInput(''); }}
+                  style={{ padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {cycleId && !kpisLoading && (kpis as any[]).length === 0 && (
+        <div style={{ fontSize: 12, color: C.textTertiary, fontStyle: 'italic' }}>
+          No KPIs found for this cycle.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main drawer ─────────────────────────────────────────────────────────────
+
 interface Props {
   user: any; users: any[]; depts: any[]; onClose: () => void;
 }
 
 export default function UserProfileDrawer({ user, users, depts, onClose }: Props) {
   const qc = useQueryClient();
+  const { user: currentUser } = useAuthStore();
   const [editing,     setEditing]     = useState(false);
   const [openSlot,    setOpenSlot]    = useState<SlotKey | null>(null);
   const [assignments, setAssignments] = useState<Record<string, any>>({});
   const [levels,      setLevels]      = useState(3);
   const [saveOk,      setSaveOk]      = useState(false);
+
+  const isHrAdmin = currentUser?.role === 'HR_ADMIN' || currentUser?.role === 'SUPER_ADMIN';
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['user-profile', user.id],
@@ -475,6 +715,14 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
                     </div>
                   )}
                 </div>
+              )}
+
+              {/* Scorecard Management — HR Admin only */}
+              {isHrAdmin && (
+                <ScorecardManagement
+                  employeeId={user.id}
+                  employeeName={user.full_name}
+                />
               )}
             </>
           )}

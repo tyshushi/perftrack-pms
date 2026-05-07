@@ -65,6 +65,10 @@ export const kpisApi = {
   cascadeTemplate:  (id: string)                     => api.post(`/kpis/templates/${id}/cascade`),
   submitScorecard:  (cycleId: string)                => api.post('/kpis/submit-scorecard', { cycle_id: cycleId }),
   reviewScorecard:  (data: any)                      => api.post('/kpis/review-scorecard', data),
+  resetScorecard:   (cycleId: string, employeeId: string) =>
+    api.post('/kpis/admin/reset-scorecard', { cycle_id: cycleId, employee_id: employeeId }),
+  deleteScorecard:  (cycleId: string, employeeId: string) =>
+    api.delete('/kpis/admin/delete-scorecard', { data: { cycle_id: cycleId, employee_id: employeeId } }),
 };
 
 export const usersApi = {
