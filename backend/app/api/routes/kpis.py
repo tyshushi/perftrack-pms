@@ -538,6 +538,56 @@ async def set_weight_rules(
     return {"message": f"Saved {len(body)} weight rule(s)"}
 
 
+# ── Admin scorecard management ────────────────────────────────────────────
+
+class AdminScorecardRequest(BaseModel):
+    cycle_id:    UUID
+    employee_id: UUID
+
+
+@router.post("/admin/reset-scorecard")
+async def admin_reset_scorecard(
+    body:         AdminScorecardRequest,
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(require_hr_admin),
+):
+    res = await db.execute(
+        select(Kpi).where(Kpi.cycle_id == body.cycle_id, Kpi.user_id == body.employee_id)
+    )
+    kpis = res.scalars().all()
+
+    from app.models.user import KpiAuditLog
+    for kpi in kpis:
+        old = kpi.status
+        kpi.status      = "DRAFT"
+        kpi.mgr_comment = None
+        kpi.mgr_score   = None
+        db.add(KpiAuditLog(
+            kpi_id=kpi.id, actor_id=current_user.id,
+            from_status=old, to_status="DRAFT", comment="Admin reset to draft",
+        ))
+
+    await db.flush()
+    return {"reset": len(kpis), "message": "Scorecard reset to draft"}
+
+
+@router.delete("/admin/delete-scorecard")
+async def admin_delete_scorecard(
+    body: AdminScorecardRequest,
+    db:   AsyncSession = Depends(get_db),
+    _:    User         = Depends(require_hr_admin),
+):
+    res = await db.execute(
+        select(Kpi).where(Kpi.cycle_id == body.cycle_id, Kpi.user_id == body.employee_id)
+    )
+    kpis = res.scalars().all()
+    count = len(kpis)
+    for kpi in kpis:
+        await db.delete(kpi)
+    await db.flush()
+    return {"deleted": count, "message": "Scorecard deleted"}
+
+
 # ── Scorecard-level endpoints ──────────────────────────────────────────────
 
 @router.post("/submit-scorecard")
