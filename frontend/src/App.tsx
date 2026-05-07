@@ -1,5 +1,3 @@
-// v3
-import UsersPage from './pages/UsersPage';
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -8,11 +6,15 @@ import LoginPage from './pages/LoginPage';
 import Layout from './components/common/Layout';
 import KpiSettingPage from './pages/KpiSettingPage';
 import SelfEvalPage from './pages/SelfEvalPage';
+import ManagerApprovalPage from './pages/ManagerApprovalPage';
 import ManagerEvalPage from './pages/ManagerEvalPage';
+import QuickCascadePage from './pages/QuickCascadePage';
 import DashboardPage from './pages/DashboardPage';
+import AdminCyclesPage from './pages/AdminCyclesPage';
 import AdminPage from './pages/AdminPage';
-import NotificationsPage from './pages/NotificationsPage';
 import GroupsPage from './pages/GroupsPage';
+import WeightRulesPage from './pages/WeightRulesPage';
+import KpiTemplatesPage from './pages/KpiTemplatesPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -27,26 +29,29 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 export default function App() {
   const fetchMe = useAuthStore((s) => s.fetchMe);
 
-  useEffect(() => { 
-  const token = localStorage.getItem('access_token');
-  if (token) fetchMe(); 
-}, []);
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    if (token) fetchMe();
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter basename="/perftrack-pms">
         <Routes>
-          <Route path="users" element={<UsersPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
-            <Route index element={<Navigate to="/kpis" replace />} />
-            <Route path="/kpis" element={<KpiSettingPage />} />
-            <Route path="self-eval"     element={<SelfEvalPage />} />
-            <Route path="mgr-eval"      element={<ManagerEvalPage />} />
-            <Route path="dashboard"     element={<DashboardPage />} />
-            <Route path="admin"         element={<AdminPage />} />
-            <Route path="notifications" element={<NotificationsPage />} />
-            <Route path="/groups" element={<GroupsPage />} />
+            <Route index element={<Navigate to="/scorecard/setting" replace />} />
+            <Route path="scorecard/setting"        element={<KpiSettingPage />} />
+            <Route path="scorecard/self-eval"      element={<SelfEvalPage />} />
+            <Route path="tray/approve"             element={<ManagerApprovalPage />} />
+            <Route path="tray/team-eval"           element={<ManagerEvalPage />} />
+            <Route path="tray/cascade"             element={<QuickCascadePage />} />
+            <Route path="dashboard"                element={<DashboardPage />} />
+            <Route path="admin/cycles"             element={<AdminCyclesPage />} />
+            <Route path="admin/users"              element={<AdminPage />} />
+            <Route path="admin/groups"             element={<GroupsPage />} />
+            <Route path="admin/weight-rules"       element={<WeightRulesPage />} />
+            <Route path="admin/kpi-setup/templates" element={<KpiTemplatesPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

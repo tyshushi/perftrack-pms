@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
-import { kpisApi, cyclesApi, usersApi, groupsApi, departmentsApi } from '../api/client';
+import { kpisApi, cyclesApi } from '../api/client';
+
 const C = {
   bg:           '#ffffff',
   bgSecondary:  '#f7f7f5',
@@ -19,12 +20,15 @@ const C = {
 };
 
 const CATEGORIES = [
-  'Financials',
-  'Customer',
-  'Internal Process',
-  'Learning & Growth',
-  'Leadership & Culture',
+  'Financials', 'Customer', 'Internal Process',
+  'Learning & Growth', 'Leadership & Culture',
 ];
+
+const CYCLE_STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+  DRAFT:  { bg: '#f7f7f5', color: '#6b6b6b', label: 'Draft' },
+  ACTIVE: { bg: '#dcfce7', color: '#166534', label: 'Active' },
+  CLOSED: { bg: '#fee2e2', color: '#991b1b', label: 'Closed' },
+};
 
 const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
   DRAFT:       { bg: '#f5f5f3', color: '#555',    label: 'Draft' },
@@ -34,930 +38,14 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
   LOCKED:      { bg: '#e0f2fe', color: '#0c4a6e', label: 'Locked' },
 };
 
-const CYCLE_STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
-  DRAFT:  { bg: '#f7f7f5', color: '#6b6b6b', label: 'Draft' },
-  ACTIVE: { bg: '#dcfce7', color: '#166534', label: 'Active' },
-  CLOSED: { bg: '#fee2e2', color: '#991b1b', label: 'Closed' },
-};
-
 function StatusPill({ status }: { status: string }) {
   const s = STATUS_STYLE[status] || STATUS_STYLE.DRAFT;
   return (
-    <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px',
-      borderRadius: 10, background: s.bg, color: s.color }}>
+    <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px', borderRadius: 10, background: s.bg, color: s.color }}>
       {s.label}
     </span>
   );
 }
-
-// ── Weight Rules Panel ─────────────────────────────────────────────────────
-
-function WeightRulesPanel({
-  cycleId,
-  cycles,
-  groups,
-  depts,
-}: {
-  cycleId: string;
-  cycles:  any[];
-  groups:  any[];
-  depts:   any[];
-}) {
-  const qc = useQueryClient();
-  const [conflicts, setConflicts] = useState<any[]>([]);
-  const [copyFrom, setCopyFrom] = useState('');
-  const [saved,    setSaved]   = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [copying,  setCopying] = useState(false);
-
-  const { data: fetchedRules = [] } = useQuery({
-    queryKey: ['weight-rules', cycleId],
-    queryFn:  () => kpisApi.getWeightRules(cycleId).then(r => r.data),
-    enabled:  !!cycleId,
-  });
-
-  // Sync fetched rules into local editable state (excluding GLOBAL_MIN)
-  const [rules, setRules]           = useState<any[]>([]);
-  const [globalMin, setGlobalMin]   = useState(0);
-  const [initialized, setInitialized] = useState('');
-
-  if (fetchedRules.length > 0 && initialized !== cycleId) {
-    const globalMinRule = (fetchedRules as any[]).find((r: any) => r.label === 'GLOBAL_MIN');
-    if (globalMinRule) {
-      setGlobalMin(globalMinRule.dimensions?.['Financials']?.min ?? 0);
-    } else {
-      setGlobalMin(0);
-    }
-    setRules((fetchedRules as any[]).filter((r: any) => r.label !== 'GLOBAL_MIN'));
-    setInitialized(cycleId);
-  }
-
-  const GLOBAL_MIN_RULE = {
-    label:         'GLOBAL_MIN',
-    target_type:   'everyone',
-    group_id:      null,
-    hierarchy:     null,
-    user_category: null,
-    department_id: null,
-    job_grade:     null,
-    priority:      999,
-    dimensions: {
-      'Financials':           { min: globalMin, max: 100 },
-      'Customer':             { min: globalMin, max: 100 },
-      'Internal Process':     { min: globalMin, max: 100 },
-      'Learning & Growth':    { min: globalMin, max: 100 },
-      'Leadership & Culture': { min: globalMin, max: 100 },
-    },
-  };
-
-  const saveMutation = useMutation({
-    mutationFn: () => kpisApi.setWeightRules(cycleId, [...rules, GLOBAL_MIN_RULE]),
-    onSuccess:  () => {
-      qc.invalidateQueries({ queryKey: ['weight-rules', cycleId] });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    },
-  });
-
-  async function handleCopy() {
-    if (!copyFrom) return;
-    setCopying(true);
-    try {
-      await kpisApi.copyWeightRules(cycleId, copyFrom);
-      const res = await kpisApi.getWeightRules(cycleId);
-      setRules(res.data);
-      qc.invalidateQueries({ queryKey: ['weight-rules', cycleId] });
-    } catch (e: any) {
-      alert(e.response?.data?.detail || 'Copy failed');
-    } finally {
-      setCopying(false);
-    }
-  }
-
-  async function handleCheckConflicts() {
-    setChecking(true);
-    try {
-      const res = await kpisApi.checkConflicts(cycleId);
-      setConflicts(res.data.conflicts);
-    } catch {
-      alert('Failed to check conflicts');
-    } finally {
-      setChecking(false);
-    }
-  }
-
-  function addRule() {
-    setRules(p => [...p, {
-      label:         'New Rule',
-      target_type:   'everyone',
-      group_id:      null,
-      hierarchy:     null,
-      user_category: null,
-      department_id: null,
-      job_grade:     null,
-      priority:      0,
-      dimensions: {
-        'Financials':           { min: 0, max: 100 },
-        'Customer':             { min: 0, max: 100 },
-        'Internal Process':     { min: 0, max: 100 },
-        'Learning & Growth':    { min: 0, max: 100 },
-        'Leadership & Culture': { min: 0, max: 100 },
-      },
-    }]);
-  }
-
-  function removeRule(i: number) {
-    setRules(p => p.filter((_, j) => j !== i));
-  }
-
-  function updateRule(i: number, field: string, value: any) {
-    setRules(p => p.map((r, j) => j === i ? { ...r, [field]: value } : r));
-  }
-
-  function updateDim(ruleIdx: number, dim: string, field: 'min' | 'max', value: number) {
-    setRules(p => p.map((r, j) => j === ruleIdx ? {
-      ...r,
-      dimensions: { ...r.dimensions, [dim]: { ...r.dimensions[dim], [field]: value } },
-    } : r));
-  }
-
-  function getTargetType(rule: any): string {
-    if (rule.target_type) return rule.target_type;
-    if (rule.group_id)      return 'group';
-    if (rule.hierarchy)     return 'hierarchy';
-    if (rule.user_category) return 'category';
-    if (rule.job_grade)     return 'grade';
-    return 'everyone';
-  }
-
-  function setTargetType(i: number, type: string) {
-    setRules(p => p.map((r, j) => j !== i ? r : {
-      ...r,
-      target_type:   type,
-      group_id:      null,
-      hierarchy:     null,
-      user_category: null,
-      department_id: null,
-      job_grade:     null,
-    }));
-  }
-
-  const DIMENSIONS = [
-    'Financials', 'Customer', 'Internal Process',
-    'Learning & Growth', 'Leadership & Culture',
-  ];
-
-  const TARGET_TYPES = [
-    { value: 'everyone',  label: 'Everyone' },
-    { value: 'group',     label: 'Custom Group' },
-    { value: 'hierarchy', label: 'Hierarchy' },
-    { value: 'category',  label: 'Employee Category' },
-    { value: 'grade',     label: 'Job Grade' },
-  ];
-
-  const otherCycles = cycles.filter(c => c.id !== cycleId);
-
-  return (
-    <div style={{ fontFamily: C.font }}>
-
-      {/* Global Minimum Weight per KPI */}
-      <div style={{ background: C.bgInfo, border: `1px solid #bae6fd`,
-        borderRadius: 10, padding: 16, marginBottom: 12 }}>
-        <div style={{ fontWeight: 600, fontSize: 13, color: C.text, marginBottom: 4 }}>
-          Global Minimum Weight per KPI
-        </div>
-        <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 12 }}>
-          This overrides all other rules. No individual KPI can be set below this weight.
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <label style={{ ...S.label, marginBottom: 0, whiteSpace: 'nowrap' }}>
-            Minimum weight for any single KPI (%)
-          </label>
-          <input type="number" min={0} max={100}
-            style={{ ...S.input, width: 90 }}
-            value={globalMin}
-            onChange={e => setGlobalMin(Number(e.target.value))} />
-        </div>
-      </div>
-
-      {/* Copy from previous cycle */}
-      <div style={{ background: C.bg, border: `1px solid ${C.borderLight}`,
-        borderRadius: 10, padding: 16, marginBottom: 12,
-        display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ fontWeight: 600, fontSize: 13, color: C.text, flexShrink: 0 }}>
-          Copy rules from:
-        </div>
-        <select style={{ ...S.input, flex: 1, minWidth: 200 }}
-          value={copyFrom} onChange={e => setCopyFrom(e.target.value)}>
-          <option value="">Select a previous cycle...</option>
-          {otherCycles.map((c: any) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
-        <button onClick={handleCopy} disabled={!copyFrom || copying}
-          style={{ ...S.btnPrimary, opacity: !copyFrom ? 0.5 : 1 }}>
-          {copying ? 'Copying...' : 'Copy Rules'}
-        </button>
-      </div>
-
-      {/* Rules */}
-      {rules.map((rule: any, i: number) => {
-        const targetType = getTargetType(rule);
-        const totalMin = DIMENSIONS.reduce((s, d) => s + (rule.dimensions?.[d]?.min || 0), 0);
-        const totalMax = DIMENSIONS.reduce((s, d) => s + (rule.dimensions?.[d]?.max || 0), 0);
-        const validMin = totalMin <= 100;
-        const validMax = totalMax >= 100;
-
-        return (
-          <div key={i} style={{ background: C.bg, border: `1px solid ${C.borderLight}`,
-            borderRadius: 10, padding: 16, marginBottom: 12 }}>
-
-            {/* Rule header */}
-            <div style={{ display: 'flex', gap: 10, marginBottom: 14,
-              alignItems: 'flex-end', flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, minWidth: 160 }}>
-                <label style={S.label}>Rule Label</label>
-                <input style={S.input} value={rule.label || ''}
-                  onChange={e => updateRule(i, 'label', e.target.value)}
-                  placeholder="e.g. Corporate Staff" />
-              </div>
-              <div style={{ width: 160 }}>
-                <label style={S.label}>Applies To</label>
-                <select style={S.input} value={targetType}
-                  onChange={e => setTargetType(i, e.target.value)}>
-                  {TARGET_TYPES.map(t => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
-              </div>
-              {targetType === 'group' && (
-                <div style={{ width: 180 }}>
-                  <label style={S.label}>Group</label>
-                  <select style={S.input} value={rule.group_id || ''}
-                    onChange={e => updateRule(i, 'group_id', e.target.value || null)}>
-                    <option value="">Select group...</option>
-                    {groups.map((g: any) => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {targetType === 'hierarchy' && (
-                <div style={{ width: 140 }}>
-                  <label style={S.label}>Hierarchy</label>
-                  <input style={S.input} value={rule.hierarchy || ''}
-                    onChange={e => updateRule(i, 'hierarchy', e.target.value)}
-                    placeholder="e.g. Apex-1" />
-                </div>
-              )}
-              {targetType === 'category' && (
-                <div style={{ width: 160 }}>
-                  <label style={S.label}>Employee Category</label>
-                  <input style={S.input} value={rule.user_category || ''}
-                    onChange={e => updateRule(i, 'user_category', e.target.value)}
-                    placeholder="e.g. Corporate Staff" />
-                </div>
-              )}
-              {targetType === 'grade' && (
-                <div style={{ width: 100 }}>
-                  <label style={S.label}>Job Grade</label>
-                  <input style={S.input} value={rule.job_grade || ''}
-                    onChange={e => updateRule(i, 'job_grade', e.target.value)}
-                    placeholder="e.g. G2" />
-                </div>
-              )}
-              <div style={{ width: 70 }}>
-                <label style={S.label}>Priority</label>
-                <input style={S.input} type="number" min={0}
-                  value={rule.priority || 0}
-                  onChange={e => updateRule(i, 'priority', Number(e.target.value))} />
-              </div>
-              <button onClick={() => removeRule(i)}
-                style={{ border: 'none', background: 'transparent',
-                  cursor: 'pointer', fontSize: 18, color: C.textTertiary,
-                  padding: '0 4px', marginBottom: 2 }}>✕</button>
-            </div>
-
-            {/* Dimension table */}
-            <div style={{ border: `1px solid ${C.borderLight}`, borderRadius: 8, overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ background: C.bgSecondary }}>
-                    <th style={S.th}>KPI Dimension</th>
-                    <th style={{ ...S.th, width: 120 }}>Min %</th>
-                    <th style={{ ...S.th, width: 120 }}>Max %</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {DIMENSIONS.map((dim, di, arr) => (
-                    <tr key={dim} style={{ background: C.bg }}>
-                      <td style={{ ...S.td, fontWeight: 500,
-                        borderBottom: di < arr.length - 1 ? `1px solid ${C.borderLight}` : 'none' }}>
-                        {dim}
-                      </td>
-                      <td style={{ ...S.td,
-                        borderBottom: di < arr.length - 1 ? `1px solid ${C.borderLight}` : 'none' }}>
-                        <input type="number" min={0} max={100}
-                          style={{ ...S.input, width: 80 }}
-                          value={rule.dimensions?.[dim]?.min ?? 0}
-                          onChange={e => updateDim(i, dim, 'min', Number(e.target.value))} />
-                      </td>
-                      <td style={{ ...S.td,
-                        borderBottom: di < arr.length - 1 ? `1px solid ${C.borderLight}` : 'none' }}>
-                        <input type="number" min={0} max={100}
-                          style={{ ...S.input, width: 80 }}
-                          value={rule.dimensions?.[dim]?.max ?? 100}
-                          onChange={e => updateDim(i, dim, 'max', Number(e.target.value))} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr style={{ background: C.bgSecondary }}>
-                    <td style={{ ...S.td, fontWeight: 600, color: C.text }}>Total</td>
-                    <td style={S.td}>
-                      <span style={{ fontWeight: 600, color: validMin ? '#166534' : '#991b1b' }}>
-                        {totalMin}%
-                      </span>
-                      {!validMin && <span style={{ fontSize: 10, color: '#991b1b', marginLeft: 4 }}>(must be ≤100%)</span>}
-                    </td>
-                    <td style={S.td}>
-                      <span style={{ fontWeight: 600, color: validMax ? '#166534' : '#991b1b' }}>
-                        {totalMax}%
-                      </span>
-                      {!validMax && <span style={{ fontSize: 10, color: '#991b1b', marginLeft: 4 }}>(must be ≥100%)</span>}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-        );
-      })}
-
-      {/* Add rule */}
-      <button onClick={addRule}
-        style={{ ...S.btnSm, width: '100%', padding: '10px',
-          borderStyle: 'dashed', marginBottom: 12 }}>
-        + Add Weight Rule
-      </button>
-
-      {/* Conflict checker */}
-      <div style={{ background: C.bg, border: `1px solid ${C.borderLight}`,
-        borderRadius: 10, padding: 16, marginBottom: 12 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between',
-          alignItems: 'center', marginBottom: conflicts.length > 0 ? 12 : 0 }}>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 13, color: C.text }}>
-              Conflict Check
-            </div>
-            <div style={{ fontSize: 12, color: C.textSecond, marginTop: 2 }}>
-              Check if any employee matches more than one rule
-            </div>
-          </div>
-          <button onClick={handleCheckConflicts} disabled={checking} style={S.btnSm}>
-            {checking ? 'Checking...' : 'Check Conflicts'}
-          </button>
-        </div>
-        {conflicts.length === 0 && !checking && (
-          <div style={{ fontSize: 12, color: '#166534', marginTop: 8 }}>✓ No conflicts detected</div>
-        )}
-        {conflicts.length > 0 && (
-          <div>
-            <div style={{ fontSize: 12, color: '#991b1b', fontWeight: 600, marginBottom: 8 }}>
-              ⚠ {conflicts.length} employee(s) match multiple rules:
-            </div>
-            {conflicts.map((c: any) => (
-              <div key={c.user_id} style={{ padding: '8px 10px', marginBottom: 4,
-                background: '#fee2e2', borderRadius: 6, fontSize: 12, color: '#991b1b' }}>
-                <strong>{c.full_name}</strong> ({c.employee_id}) matches: {c.rules.join(', ')}
-              </div>
-            ))}
-            <div style={{ fontSize: 11, color: C.textSecond, marginTop: 8 }}>
-              Resolve by adjusting rule targets or increasing priority on the preferred rule.
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Save */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
-          style={S.btnPrimary}>
-          {saveMutation.isPending ? 'Saving...' : 'Save All Rules'}
-        </button>
-        {saved && <span style={{ fontSize: 12, color: '#166534', fontWeight: 500 }}>✓ Saved</span>}
-        {saveMutation.isError && <span style={{ fontSize: 12, color: '#991b1b' }}>Failed to save</span>}
-      </div>
-    </div>
-  );
-}
-
-// ── Cascade KPI Panel ──────────────────────────────────────────────────────
-
-function CascadePanel({
-  cycleId, users, currentUserId, groups, depts,
-}: {
-  cycleId: string; users: any[]; currentUserId: string;
-  groups: any[]; depts: any[];
-}) {
-  const qc = useQueryClient();
-  const [name,         setName]         = useState('');
-  const [description,  setDescription]  = useState('');
-  const [kpiDimension, setKpiDimension] = useState('Financials');
-  const [weight,       setWeight]       = useState(0);
-  const [target,       setTarget]       = useState('');
-  const [measurement,  setMeasurement]  = useState('');
-
-  // Target fields
-  const [appliesTo,    setAppliesTo]    = useState('everyone');
-  const [groupId,      setGroupId]      = useState('');
-  const [hierarchy,    setHierarchy]    = useState('');
-  const [userCategory, setUserCategory] = useState('');
-  const [departmentId, setDepartmentId] = useState('');
-  const [jobGrade,     setJobGrade]     = useState('');
-
-  // Individual employee picker (secondary, expandable)
-  const [showIndividual, setShowIndividual] = useState(false);
-  const [search,         setSearch]         = useState('');
-  const [selected,       setSelected]       = useState<string[]>([]);
-
-  const [result, setResult] = useState<any>(null);
-
-  const eligibleUsers = users.filter(u =>
-    u.id !== currentUserId && u.is_active !== false
-  );
-
-  const filteredUsers = useMemo(() => {
-    const q = search.toLowerCase();
-    if (!q) return eligibleUsers;
-    return eligibleUsers.filter(u =>
-      u.full_name.toLowerCase().includes(q) ||
-      u.employee_id.toLowerCase().includes(q) ||
-      (u.department_name || '').toLowerCase().includes(q)
-    );
-  }, [search, eligibleUsers]);
-
-  function toggleUser(id: string) {
-    setSelected(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
-  }
-
-  function changeAppliesTo(val: string) {
-    setAppliesTo(val);
-    setGroupId(''); setHierarchy(''); setUserCategory('');
-    setDepartmentId(''); setJobGrade('');
-  }
-
-  const cascadeMutation = useMutation({
-    mutationFn: () => kpisApi.cascade({
-      cycle_id:      cycleId,
-      name, description,
-      kpi_dimension: kpiDimension,
-      weight, target, measurement,
-      employee_ids:  selected,
-      group_id:      appliesTo === 'group'      ? groupId      || null : null,
-      hierarchy:     appliesTo === 'hierarchy'  ? hierarchy    || null : null,
-      user_category: appliesTo === 'category'   ? userCategory || null : null,
-      department_id: appliesTo === 'department' ? departmentId || null : null,
-      job_grade:     appliesTo === 'grade'      ? jobGrade     || null : null,
-    }),
-    onSuccess: (res) => {
-      setResult(res.data);
-      qc.invalidateQueries({ queryKey: ['kpis'] });
-      setName(''); setDescription(''); setTarget(''); setMeasurement('');
-      setWeight(0); setSelected([]); setSearch('');
-      setAppliesTo('everyone'); setGroupId(''); setHierarchy('');
-      setUserCategory(''); setDepartmentId(''); setJobGrade('');
-    },
-  });
-
-  const canCascade = !!name && !!target && !cascadeMutation.isPending;
-
-  return (
-    <div style={S.card}>
-      <div style={{ fontWeight: 500, marginBottom: 4, color: C.text }}>
-        Cascade KPI
-      </div>
-      <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 14 }}>
-        Push a KPI to a target group of employees. It will appear as Approved
-        in their KPI list. They can adjust the weight within the allowed range.
-      </div>
-
-      {/* KPI details */}
-      <div style={S.grid2}>
-        <div style={{ gridColumn: '1 / -1' }}>
-          <label style={S.label}>KPI Name</label>
-          <input style={S.input} value={name}
-            onChange={e => setName(e.target.value)}
-            placeholder="e.g. Customer Satisfaction Score" />
-        </div>
-        <div style={{ gridColumn: '1 / -1' }}>
-          <label style={S.label}>Description</label>
-          <textarea style={{ ...S.input, minHeight: 60, resize: 'vertical' }}
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-            placeholder="Optional description..." />
-        </div>
-        <div>
-          <label style={S.label}>KPI Dimension</label>
-          <select style={S.input} value={kpiDimension}
-            onChange={e => setKpiDimension(e.target.value)}>
-            {DIMENSIONS.map(d => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label style={S.label}>Weight %</label>
-          <input style={S.input} type="number" min={0} max={100}
-            value={weight} onChange={e => setWeight(Number(e.target.value))} />
-        </div>
-        <div>
-          <label style={S.label}>Target</label>
-          <input style={S.input} value={target}
-            onChange={e => setTarget(e.target.value)}
-            placeholder="e.g. ≥ 90% satisfaction" />
-        </div>
-        <div>
-          <label style={S.label}>Measurement</label>
-          <input style={S.input} value={measurement}
-            onChange={e => setMeasurement(e.target.value)}
-            placeholder="e.g. Monthly survey score" />
-        </div>
-      </div>
-
-      {/* Applies To */}
-      <div style={{ border: `1px solid ${C.borderLight}`, borderRadius: 10,
-        padding: 14, marginBottom: 12 }}>
-        <div style={{ fontWeight: 500, fontSize: 13, color: C.text, marginBottom: 10 }}>
-          Applies To
-        </div>
-        <div style={S.grid2}>
-          <div>
-            <label style={S.label}>Target</label>
-            <select style={S.input} value={appliesTo}
-              onChange={e => changeAppliesTo(e.target.value)}>
-              {APPLIES_TO_OPTS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </div>
-          {appliesTo === 'group' && (
-            <div>
-              <label style={S.label}>Custom Group</label>
-              <select style={S.input} value={groupId}
-                onChange={e => setGroupId(e.target.value)}>
-                <option value="">Select group…</option>
-                {groups.map((g: any) => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          {appliesTo === 'hierarchy' && (
-            <div>
-              <label style={S.label}>Hierarchy</label>
-              <input style={S.input} value={hierarchy}
-                onChange={e => setHierarchy(e.target.value)}
-                placeholder="e.g. Apex-1" />
-            </div>
-          )}
-          {appliesTo === 'category' && (
-            <div>
-              <label style={S.label}>Employee Category</label>
-              <input style={S.input} value={userCategory}
-                onChange={e => setUserCategory(e.target.value)}
-                placeholder="e.g. Corporate Staff" />
-            </div>
-          )}
-          {appliesTo === 'department' && (
-            <div>
-              <label style={S.label}>Department</label>
-              <select style={S.input} value={departmentId}
-                onChange={e => setDepartmentId(e.target.value)}>
-                <option value="">Select department…</option>
-                {depts.map((d: any) => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          {appliesTo === 'grade' && (
-            <div>
-              <label style={S.label}>Job Grade</label>
-              <input style={S.input} value={jobGrade}
-                onChange={e => setJobGrade(e.target.value)}
-                placeholder="e.g. G2" />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Individual employees (expandable, secondary) */}
-      <div style={{ marginBottom: 12 }}>
-        <button onClick={() => setShowIndividual(p => !p)}
-          style={{ ...S.btnSm, width: '100%', display: 'flex',
-            justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>
-            Also include specific employees
-            {selected.length > 0 && (
-              <span style={{ marginLeft: 6, fontWeight: 600,
-                color: C.text }}>{selected.length} selected</span>
-            )}
-          </span>
-          <span style={{ fontSize: 10 }}>{showIndividual ? '▲' : '▼'}</span>
-        </button>
-        {showIndividual && (
-          <div style={{ marginTop: 8, border: `1px solid ${C.borderLight}`,
-            borderRadius: 10, padding: 12 }}>
-            <input style={{ ...S.input, marginBottom: 8 }}
-              placeholder="Search by name, code, or department..."
-              value={search} onChange={e => setSearch(e.target.value)} />
-            <div style={{ border: `0.5px solid ${C.border}`,
-              borderRadius: 8, maxHeight: 220, overflowY: 'auto' }}>
-              {filteredUsers.length === 0 && (
-                <div style={{ padding: 16, textAlign: 'center',
-                  color: C.textTertiary, fontSize: 13 }}>No employees found</div>
-              )}
-              {filteredUsers.map((u: any, i: number) => (
-                <div key={u.id} onClick={() => toggleUser(u.id)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '8px 12px', cursor: 'pointer',
-                    borderBottom: i < filteredUsers.length - 1
-                      ? `0.5px solid ${C.borderLight}` : 'none',
-                    background: selected.includes(u.id) ? '#f0fdf4' : 'transparent' }}>
-                  <input type="checkbox" readOnly
-                    checked={selected.includes(u.id)} style={{ flexShrink: 0 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: C.text }}>
-                      {u.full_name}
-                    </div>
-                    <div style={{ fontSize: 11, color: C.textSecond }}>
-                      {u.employee_id}{u.position_title ? ` · ${u.position_title}` : ''}
-                    </div>
-                  </div>
-                  {selected.includes(u.id) && (
-                    <span style={{ fontSize: 11, color: '#166534', fontWeight: 500 }}>✓</span>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-              <button style={S.btnSm}
-                onClick={() => setSelected(filteredUsers.map((u: any) => u.id))}>
-                Select all
-              </button>
-              <button style={S.btnSm} onClick={() => setSelected([])}>Clear</button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {result && (
-        <div style={{ marginBottom: 12, padding: '8px 12px',
-          background: '#dcfce7', borderRadius: 8, fontSize: 12, color: '#166534' }}>
-          ✓ {result.message}
-        </div>
-      )}
-
-      {cascadeMutation.isError && (
-        <div style={{ marginBottom: 12, padding: '8px 12px',
-          background: '#fee2e2', borderRadius: 8, fontSize: 12, color: '#991b1b' }}>
-          {(cascadeMutation.error as any)?.response?.data?.detail || 'Failed to cascade'}
-        </div>
-      )}
-
-      <button onClick={() => cascadeMutation.mutate()}
-        disabled={!canCascade}
-        style={{ ...S.btnPrimary, opacity: !canCascade ? 0.5 : 1 }}>
-        {cascadeMutation.isPending ? 'Cascading...' : 'Cascade KPI'}
-      </button>
-    </div>
-  );
-}
-
-// ── Staff KPI List ─────────────────────────────────────────────────────────
-
-function StaffKpiList({
-  cycleId, userId, weightRules,
-}: {
-  cycleId: string; userId: string; weightRules: any[];
-}) {
-  const qc = useQueryClient();
-  const [adding, setAdding]   = useState(false);
-  const [name,   setName]     = useState('');
-  const [desc,   setDesc]     = useState('');
-  const [cat,    setCat]      = useState('Optional');
-  const [weight, setWeight]   = useState(0);
-  const [target, setTarget]   = useState('');
-  const [meas,   setMeas]     = useState('');
-
-  const { data: kpis = [] } = useQuery({
-    queryKey: ['kpis', cycleId, userId],
-    queryFn:  () => kpisApi.list(cycleId, userId).then(r => r.data),
-    enabled:  !!cycleId,
-  });
-
-  const createMutation = useMutation({
-    mutationFn: () => kpisApi.create({
-      cycle_id: cycleId, name, description: desc,
-      kpi_dimension: cat, weight, target, measurement: meas,
-    }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['kpis', cycleId, userId] });
-      setAdding(false);
-      setName(''); setDesc(''); setTarget(''); setMeas('');
-      setWeight(0);
-    },
-  });
-
-  const submitMutation = useMutation({
-    mutationFn: (id: string) => kpisApi.submit(id),
-    onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, userId] }),
-  });
-
-  const adjustMutation = useMutation({
-    mutationFn: ({ id, weight }: { id: string; weight: number }) =>
-      kpisApi.adjustWeight(id, weight),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, userId] }),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => kpisApi.delete(id),
-    onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, userId] }),
-  });
-
-  // Calculate totals
-  const totalWeight = (kpis as any[]).reduce((sum, k) => sum + k.weight, 0);
-  const bykpi_dimension  = CATEGORIES.map(cat => ({
-    cat,
-    total:   (kpis as any[]).filter(k => k.kpi_dimension === cat)
-                             .reduce((s, k) => s + k.weight, 0),
-    rule:    weightRules.find((r: any) => r.kpi_dimension === cat),
-  }));
-
-  const rule = weightRules.find((r: any) => r.kpi_dimension === cat);
-
-  return (
-    <div>
-      {/* Weight summary */}
-      <div style={{ ...S.card, marginBottom: 12 }}>
-        <div style={{ fontWeight: 500, marginBottom: 10,
-          color: C.text }}>
-          Weight Summary
-        </div>
-        <div style={{ display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: 8, marginBottom: 10 }}>
-          {bykpi_dimension.map(({ cat, total, rule }) => {
-            const ok = !rule ||
-              (total >= (rule.min_weight || 0) &&
-               total <= (rule.max_weight || 100));
-            return (
-              <div key={cat} style={{ padding: '10px 12px', borderRadius: 8,
-                background: ok
-                  ? C.bgSecondary
-                  : '#fee2e2',
-                border: `0.5px solid ${ok
-                  ? 'var(--color-border-tertiary)'
-                  : '#fca5a5'}` }}>
-                <div style={{ fontSize: 11,
-                  color: C.textSecond,
-                  marginBottom: 4 }}>{cat}</div>
-                <div style={{ fontSize: 20, fontWeight: 500,
-                  color: ok ? C.text : '#991b1b' }}>
-                  {total}%
-                </div>
-                {rule && (
-                  <div style={{ fontSize: 10,
-                    color: ok ? C.textTertiary : '#991b1b' }}>
-                    Range: {rule.min_weight}–{rule.max_weight}%
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between',
-          alignItems: 'center', paddingTop: 8,
-          borderTop: '0.5px solid var(--color-border-tertiary)' }}>
-          <span style={{ fontSize: 13,
-            color: C.textSecond }}>Total</span>
-          <span style={{ fontSize: 16, fontWeight: 600,
-            color: totalWeight === 100 ? '#166534' : '#991b1b' }}>
-            {totalWeight}%
-            {totalWeight !== 100 && (
-              <span style={{ fontSize: 11, marginLeft: 6 }}>
-                (must equal 100%)
-              </span>
-            )}
-          </span>
-        </div>
-      </div>
-
-      {/* KPI list */}
-      {(kpis as any[]).map((kpi: any) => (
-        <KpiCard
-          key={kpi.id}
-          kpi={kpi}
-          weightRules={weightRules}
-          onSubmit={() => submitMutation.mutate(kpi.id)}
-          onDelete={() => deleteMutation.mutate(kpi.id)}
-          onAdjustWeight={(w) => adjustMutation.mutate({ id: kpi.id, weight: w })}
-        />
-      ))}
-
-      {(kpis as any[]).length === 0 && !adding && (
-        <div style={{ textAlign: 'center', padding: 32,
-          color: C.textSecond, fontSize: 13,
-          border: `0.5px dashed ${C.border}`,
-          borderRadius: 10 }}>
-          No KPIs yet. Add your first KPI or wait for your manager to
-          cascade KPIs to you.
-        </div>
-      )}
-
-      {/* Add optional KPI form */}
-      {adding && (
-        <div style={S.card}>
-          <div style={{ fontWeight: 500, marginBottom: 12,
-            color: C.text }}>
-            Add Optional KPI
-          </div>
-          <div style={S.grid2}>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label style={S.label}>KPI Name</label>
-              <input style={S.input} value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="e.g. Complete AWS certification" />
-            </div>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label style={S.label}>Description</label>
-              <textarea style={{ ...S.input, minHeight: 54, resize: 'vertical' }}
-                value={desc} onChange={e => setDesc(e.target.value)} />
-            </div>
-            <div>
-              <label style={S.label}>kpi_dimension</label>
-              <select style={S.input} value={cat}
-                onChange={e => setCat(e.target.value)}>
-                {CATEGORIES.map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={S.label}>
-                Weight %
-                {rule && (
-                  <span style={{ fontWeight: 400,
-                    color: C.textTertiary, marginLeft: 6 }}>
-                    (allowed: {rule.min_weight}–{rule.max_weight}%)
-                  </span>
-                )}
-              </label>
-              <input style={S.input} type="number" min={0} max={100}
-                value={weight}
-                onChange={e => setWeight(Number(e.target.value))} />
-            </div>
-            <div>
-              <label style={S.label}>Target</label>
-              <input style={S.input} value={target}
-                onChange={e => setTarget(e.target.value)}
-                placeholder="e.g. Pass exam by Q3" />
-            </div>
-            <div>
-              <label style={S.label}>Measurement</label>
-              <input style={S.input} value={meas}
-                onChange={e => setMeas(e.target.value)}
-                placeholder="e.g. Certificate obtained" />
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button onClick={() => createMutation.mutate()}
-              disabled={!name || !target || createMutation.isPending}
-              style={{ ...S.btnPrimary,
-                opacity: (!name || !target) ? 0.5 : 1 }}>
-              {createMutation.isPending ? 'Adding...' : 'Add KPI'}
-            </button>
-            <button onClick={() => setAdding(false)} style={S.btnSm}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {!adding && (
-        <button onClick={() => setAdding(true)}
-          style={{ ...S.btnSm, width: '100%', padding: '10px',
-            borderStyle: 'dashed', marginTop: 8 }}>
-          + Add Optional KPI
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ── KPI Card ───────────────────────────────────────────────────────────────
 
 function KpiCard({
   kpi, weightRules, onSubmit, onDelete, onAdjustWeight,
@@ -970,47 +58,34 @@ function KpiCard({
 }) {
   const [editWeight, setEditWeight] = useState(false);
   const [newWeight,  setNewWeight]  = useState(kpi.weight);
-  const rule = weightRules.find((r: any) => r.kpi_dimension === kpi.kpi_dimension);
-  const isFixed    = kpi.kpi_type === 'FIXED';
-  const canEdit    = kpi.status === 'DRAFT' || kpi.status === 'REJECTED';
-  const canSubmit  = kpi.status === 'DRAFT' || kpi.status === 'REJECTED';
-  const canDelete  = kpi.status === 'DRAFT' && !isFixed;
+  const rule      = weightRules.find((r: any) => r.kpi_dimension === kpi.kpi_dimension);
+  const isFixed   = kpi.kpi_type === 'FIXED';
+  const canSubmit = kpi.status === 'DRAFT' || kpi.status === 'REJECTED';
+  const canDelete = kpi.status === 'DRAFT' && !isFixed;
 
   return (
     <div style={{ ...S.card, marginBottom: 8 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between',
-        alignItems: 'flex-start', marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center',
-            gap: 8, marginBottom: 4 }}>
-            <span style={{ fontWeight: 500, fontSize: 14,
-              color: C.text }}>{kpi.name}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontWeight: 500, fontSize: 14, color: C.text }}>{kpi.name}</span>
             {isFixed && (
-              <span style={{ fontSize: 10, padding: '1px 6px',
-                borderRadius: 6, background: '#e0f2fe',
-                color: '#0369a1', fontWeight: 500 }}>
+              <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#e0f2fe', color: '#0369a1', fontWeight: 500 }}>
                 Cascaded
               </span>
             )}
           </div>
           {kpi.description && (
-            <div style={{ fontSize: 12,
-              color: C.textSecond, marginBottom: 4 }}>
-              {kpi.description}
-            </div>
+            <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 4 }}>{kpi.description}</div>
           )}
           <div style={{ fontSize: 12, color: C.textSecond }}>
             {kpi.kpi_dimension} · Target: {kpi.target}
             {kpi.measurement ? ` · ${kpi.measurement}` : ''}
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column',
-          alignItems: 'flex-end', gap: 6, flexShrink: 0, marginLeft: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0, marginLeft: 12 }}>
           <StatusPill status={kpi.status} />
-          <div style={{ fontSize: 18, fontWeight: 600,
-            color: C.text }}>
-            {kpi.weight}%
-          </div>
+          <div style={{ fontSize: 18, fontWeight: 600, color: C.text }}>{kpi.weight}%</div>
         </div>
       </div>
 
@@ -1019,33 +94,26 @@ function KpiCard({
         <div style={{ marginTop: 8 }}>
           {!editWeight ? (
             <button onClick={() => { setEditWeight(true); setNewWeight(kpi.weight); }}
-              style={{ fontSize: 11, padding: '3px 8px',
-                border: `0.5px solid ${C.border}`,
-                borderRadius: 6, background: 'transparent',
-                cursor: 'pointer', color: C.textSecond,
-                fontFamily: 'var(--font-sans)' }}>
+              style={{ fontSize: 11, padding: '3px 8px', border: `0.5px solid ${C.border}`, borderRadius: 6, background: 'transparent', cursor: 'pointer', color: C.textSecond, fontFamily: C.font }}>
               Adjust weight
             </button>
           ) : (
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <input type="number" min={rule?.min_weight || 0}
-                max={rule?.max_weight || 100}
+              <input type="number"
+                min={rule?.min_weight || 0} max={rule?.max_weight || 100}
                 style={{ ...S.input, width: 70 }}
                 value={newWeight}
                 onChange={e => setNewWeight(Number(e.target.value))} />
-              <span style={{ fontSize: 12,
-                color: C.textSecond }}>%</span>
+              <span style={{ fontSize: 12, color: C.textSecond }}>%</span>
               {rule && (
-                <span style={{ fontSize: 11,
-                  color: C.textTertiary }}>
+                <span style={{ fontSize: 11, color: C.textTertiary }}>
                   ({rule.min_weight}–{rule.max_weight}%)
                 </span>
               )}
-              <button onClick={() => {
-                onAdjustWeight(newWeight); setEditWeight(false);
-              }} style={S.btnPrimary}>Save</button>
-              <button onClick={() => setEditWeight(false)}
-                style={S.btnSm}>Cancel</button>
+              <button onClick={() => { onAdjustWeight(newWeight); setEditWeight(false); }} style={S.btnPrimary}>
+                Save
+              </button>
+              <button onClick={() => setEditWeight(false)} style={S.btnSm}>Cancel</button>
             </div>
           )}
         </div>
@@ -1055,32 +123,23 @@ function KpiCard({
       {!isFixed && (
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
           {canSubmit && (
-            <button onClick={onSubmit} style={S.btnPrimary}>
-              Submit for Approval
-            </button>
+            <button onClick={onSubmit} style={S.btnPrimary}>Submit for Approval</button>
           )}
           {canDelete && (
-            <button onClick={onDelete}
-              style={{ ...S.btnSm, color: '#991b1b',
-                borderColor: '#fca5a5' }}>
+            <button onClick={onDelete} style={{ ...S.btnSm, color: '#991b1b', borderColor: '#fca5a5' }}>
               Delete
             </button>
           )}
           {kpi.status === 'REJECTED' && kpi.mgr_comment && (
-            <div style={{ fontSize: 12, color: '#991b1b',
-              padding: '3px 8px', background: '#fee2e2',
-              borderRadius: 6, alignSelf: 'center' }}>
+            <div style={{ fontSize: 12, color: '#991b1b', padding: '3px 8px', background: '#fee2e2', borderRadius: 6, alignSelf: 'center' }}>
               Rejected: {kpi.mgr_comment}
             </div>
           )}
         </div>
       )}
 
-      {/* Pending message */}
       {kpi.status === 'PENDING_DM' && (
-        <div style={{ marginTop: 8, fontSize: 12,
-          color: C.textSecond,
-          fontStyle: 'italic' }}>
+        <div style={{ marginTop: 8, fontSize: 12, color: C.textSecond, fontStyle: 'italic' }}>
           Awaiting manager approval...
         </div>
       )}
@@ -1088,438 +147,17 @@ function KpiCard({
   );
 }
 
-// ── Manager Approval Panel ─────────────────────────────────────────────────
-
-function ManagerApprovalPanel({
-  cycleId, userId,
-}: {
-  cycleId: string; userId: string;
-}) {
-  const qc = useQueryClient();
-  const { data: reports = [] } = useQuery({
-    queryKey: ['direct-reports'],
-    queryFn:  () => usersApi.directReports().then(r => r.data),
-  });
-
-  const [selectedReport, setSelectedReport] = useState<any>(null);
-  const [comment, setComment] = useState('');
-
-  const { data: kpis = [] } = useQuery({
-    queryKey: ['kpis', cycleId, selectedReport?.id],
-    queryFn:  () => kpisApi.list(cycleId, selectedReport?.id).then(r => r.data),
-    enabled:  !!cycleId && !!selectedReport,
-  });
-
-  const pendingKpis = (kpis as any[]).filter(k =>
-    k.status === 'PENDING_DM' &&
-    selectedReport?.direct_manager_id === userId
-  );
-
-  const evalMutation = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: string }) =>
-      kpisApi.evaluate(id, 0, comment, action),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['kpis'] });
-      setComment('');
-    },
-  });
-
-  return (
-    <div>
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 12, color: C.textSecond,
-          marginBottom: 8 }}>
-          Select employee to review their KPIs
-        </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {(reports as any[]).filter(r => r.direct_manager_id === userId)
-            .map((r: any) => (
-              <button key={r.id}
-                onClick={() => setSelectedReport(r)}
-                style={{ padding: '6px 12px', borderRadius: 8,
-                  border: `0.5px solid ${selectedReport?.id === r.id
-                    ? C.text
-                    : C.border}`,
-                  background: selectedReport?.id === r.id
-                    ? C.text : 'transparent',
-                  color: selectedReport?.id === r.id
-                    ? C.bg
-                    : C.textSecond,
-                  cursor: 'pointer', fontSize: 13,
-                  fontFamily: 'var(--font-sans)' }}>
-                {r.full_name}
-              </button>
-            ))}
-        </div>
-      </div>
-
-      {selectedReport && pendingKpis.length === 0 && (
-        <div style={{ textAlign: 'center', padding: 24,
-          color: C.textSecond, fontSize: 13 }}>
-          No KPIs pending your approval for {selectedReport.full_name}
-        </div>
-      )}
-
-      {pendingKpis.map((kpi: any) => (
-        <div key={kpi.id} style={{ ...S.card, marginBottom: 8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between',
-            marginBottom: 8 }}>
-            <div>
-              <div style={{ fontWeight: 500,
-                color: C.text }}>{kpi.name}</div>
-              <div style={{ fontSize: 12,
-                color: C.textSecond, marginTop: 2 }}>
-                {kpi.kpi_dimension} · {kpi.weight}% · Target: {kpi.target}
-              </div>
-            </div>
-            {kpi.kpi_type === 'FIXED' && (
-              <span style={{ fontSize: 10, padding: '2px 6px',
-                borderRadius: 6, background: '#e0f2fe',
-                color: '#0369a1', fontWeight: 500, alignSelf: 'flex-start' }}>
-                Cascaded (weight adjusted)
-              </span>
-            )}
-          </div>
-          <textarea
-            placeholder="Comment (optional for approval, required for rejection)..."
-            value={comment}
-            onChange={e => setComment(e.target.value)}
-            style={{ ...S.input, width: '100%', minHeight: 60,
-              resize: 'vertical', marginBottom: 8 }}
-          />
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={() => evalMutation.mutate({ id: kpi.id, action: 'approve' })}
-              disabled={evalMutation.isPending}
-              style={S.btnPrimary}>
-              Approve
-            </button>
-            <button
-              onClick={() => evalMutation.mutate({ id: kpi.id, action: 'reject' })}
-              disabled={!comment || evalMutation.isPending}
-              style={{ ...S.btnSm, color: '#991b1b', borderColor: '#fca5a5',
-                opacity: !comment ? 0.5 : 1 }}>
-              Reject
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── KPI Templates Panel ────────────────────────────────────────────────────
-
-const DIMENSIONS = [
-  'Financials', 'Customer', 'Internal Process',
-  'Learning & Growth', 'Leadership & Culture',
-];
-
-const APPLIES_TO_OPTS = [
-  { value: 'everyone',   label: 'Everyone' },
-  { value: 'group',      label: 'Custom Group' },
-  { value: 'hierarchy',  label: 'Hierarchy' },
-  { value: 'category',   label: 'Employee Category' },
-  { value: 'department', label: 'Department' },
-  { value: 'grade',      label: 'Job Grade' },
-];
-
-function appliesLabel(t: any): string {
-  if (t.job_grade)     return `Grade: ${t.job_grade}`;
-  if (t.department_id) return `Dept ID: ${String(t.department_id).slice(0, 8)}…`;
-  if (t.hierarchy)     return `Hierarchy: ${t.hierarchy}`;
-  if (t.user_category) return `Category: ${t.user_category}`;
-  return 'Everyone';
-}
-
-function KpiTemplatesPanel({
-  cycleId, groups, depts,
-}: {
-  cycleId: string; groups: any[]; depts: any[];
-}) {
-  const qc = useQueryClient();
-  const [name,        setName]        = useState('');
-  const [description, setDescription] = useState('');
-  const [dimension,   setDimension]   = useState('Financials');
-  const [appliesTo,   setAppliesTo]   = useState('everyone');
-  const [groupId,     setGroupId]     = useState('');
-  const [deptId,      setDeptId]      = useState('');
-  const [jobGrade,    setJobGrade]    = useState('');
-  const [hierarchy,   setHierarchy]   = useState('');
-  const [category,    setCategory]    = useState('');
-  const [minWeight,   setMinWeight]   = useState(0);
-  const [maxWeight,   setMaxWeight]   = useState(100);
-  const [target,      setTarget]      = useState('');
-  const [measurement, setMeasurement] = useState('');
-  const [cascading,   setCascading]   = useState<string | null>(null);
-  const [adding,      setAdding]      = useState(false);
-
-  const { data: templates = [], isLoading: templatesLoading } = useQuery({
-    queryKey: ['kpi-templates', cycleId],
-    queryFn:  () => kpisApi.getTemplates(cycleId).then(r => r.data),
-    enabled:  !!cycleId,
-  });
-
-  const createMutation = useMutation({
-    mutationFn: () => kpisApi.createTemplate({
-      cycle_id:      cycleId,
-      name, description,
-      kpi_dimension: dimension,
-      min_weight:    minWeight,
-      max_weight:    maxWeight,
-      target, measurement,
-      group_id:      appliesTo === 'group'      ? groupId     || null : null,
-      department_id: appliesTo === 'department' ? deptId      || null : null,
-      job_grade:     appliesTo === 'grade'      ? jobGrade    || null : null,
-      hierarchy:     appliesTo === 'hierarchy'  ? hierarchy   || null : null,
-      user_category: appliesTo === 'category'   ? category    || null : null,
-    }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['kpi-templates', cycleId] });
-      setName(''); setDescription(''); setTarget(''); setMeasurement('');
-      setMinWeight(0); setMaxWeight(100); setGroupId(''); setDeptId('');
-      setJobGrade(''); setHierarchy(''); setCategory('');
-      setAppliesTo('everyone'); setAdding(false);
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => kpisApi.deleteTemplate(id),
-    onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpi-templates', cycleId] }),
-  });
-
-  async function handleCascade(t: any) {
-    setCascading(t.id);
-    try {
-      const res = await kpisApi.cascade({
-        cycle_id:      cycleId,
-        name:          t.name,
-        description:   t.description,
-        kpi_dimension: t.kpi_dimension,
-        weight:        t.weight,
-        target:        t.target,
-        measurement:   t.measurement,
-        employee_ids:  [],
-        group_id:      null,
-        hierarchy:     null,
-        user_category: null,
-        department_id: t.department_id || null,
-        job_grade:     t.job_grade     || null,
-      });
-      qc.invalidateQueries({ queryKey: ['kpis'] });
-      alert(res.data.message);
-    } catch (e: any) {
-      alert(e.response?.data?.detail || 'Cascade failed');
-    } finally {
-      setCascading(null);
-    }
-  }
-
-  return (
-    <div style={{ fontFamily: C.font }}>
-
-      {/* ── Template cards ── */}
-      {templatesLoading && (
-        <div style={{ padding: 24, textAlign: 'center', color: C.textSecond,
-          fontSize: 13 }}>Loading templates…</div>
-      )}
-
-      {!templatesLoading && (templates as any[]).length === 0 && (
-        <div style={{ textAlign: 'center', padding: 32, color: C.textSecond,
-          fontSize: 13, border: `1px dashed ${C.border}`, borderRadius: 10,
-          marginBottom: 12 }}>
-          No templates yet. Create one to cascade fixed KPIs to employees.
-        </div>
-      )}
-
-      {(templates as any[]).map((t: any) => (
-        <div key={t.id} style={{ ...S.card, display: 'flex',
-          justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 500, fontSize: 14, color: C.text,
-              marginBottom: 4 }}>{t.name}</div>
-            {t.description && (
-              <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 4 }}>
-                {t.description}
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12,
-              color: C.textSecond }}>
-              <span>{t.kpi_dimension}</span>
-              <span>·</span>
-              <span>{t.weight}–{t.max_weight ?? t.weight}%</span>
-              <span>·</span>
-              <span>Target: {t.target}</span>
-              <span>·</span>
-              <span style={{ color: C.textTertiary }}>{appliesLabel(t)}</span>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            <button onClick={() => handleCascade(t)}
-              disabled={cascading === t.id} style={S.btnPrimary}>
-              {cascading === t.id ? 'Cascading…' : 'Cascade Now'}
-            </button>
-            <button
-              onClick={() => deleteMutation.mutate(t.id)}
-              disabled={deleteMutation.isPending}
-              style={{ ...S.btnSm, padding: '6px 10px', color: C.textTertiary,
-                fontSize: 14, lineHeight: 1 }}>
-              ✕
-            </button>
-          </div>
-        </div>
-      ))}
-
-      {/* ── Add button ── */}
-      {!adding && (
-        <button onClick={() => setAdding(true)}
-          style={{ ...S.btnSm, width: '100%', padding: '10px',
-            borderStyle: 'dashed', marginBottom: 12 }}>
-          + New KPI Template
-        </button>
-      )}
-
-      {/* ── Create form ── */}
-      {adding && (
-        <div style={S.card}>
-          <div style={{ fontWeight: 500, marginBottom: 14, color: C.text }}>
-            New KPI Template
-          </div>
-          <div style={S.grid2}>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label style={S.label}>KPI Name</label>
-              <input style={S.input} value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="e.g. Customer Satisfaction Score" />
-            </div>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label style={S.label}>Description</label>
-              <textarea style={{ ...S.input, minHeight: 54, resize: 'vertical' }}
-                value={description}
-                onChange={e => setDescription(e.target.value)} />
-            </div>
-            <div>
-              <label style={S.label}>KPI Dimension</label>
-              <select style={S.input} value={dimension}
-                onChange={e => setDimension(e.target.value)}>
-                {DIMENSIONS.map(d => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={S.label}>Applies To</label>
-              <select style={S.input} value={appliesTo}
-                onChange={e => setAppliesTo(e.target.value)}>
-                {APPLIES_TO_OPTS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </div>
-            {appliesTo === 'group' && (
-              <div>
-                <label style={S.label}>Custom Group</label>
-                <select style={S.input} value={groupId}
-                  onChange={e => setGroupId(e.target.value)}>
-                  <option value="">Select group…</option>
-                  {groups.map((g: any) => (
-                    <option key={g.id} value={g.id}>{g.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {appliesTo === 'department' && (
-              <div>
-                <label style={S.label}>Department</label>
-                <select style={S.input} value={deptId}
-                  onChange={e => setDeptId(e.target.value)}>
-                  <option value="">Select department…</option>
-                  {depts.map((d: any) => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {appliesTo === 'grade' && (
-              <div>
-                <label style={S.label}>Job Grade</label>
-                <input style={S.input} value={jobGrade}
-                  onChange={e => setJobGrade(e.target.value)}
-                  placeholder="e.g. G2" />
-              </div>
-            )}
-            {appliesTo === 'hierarchy' && (
-              <div>
-                <label style={S.label}>Hierarchy</label>
-                <input style={S.input} value={hierarchy}
-                  onChange={e => setHierarchy(e.target.value)}
-                  placeholder="e.g. Apex-1" />
-              </div>
-            )}
-            {appliesTo === 'category' && (
-              <div>
-                <label style={S.label}>Employee Category</label>
-                <input style={S.input} value={category}
-                  onChange={e => setCategory(e.target.value)}
-                  placeholder="e.g. Corporate Staff" />
-              </div>
-            )}
-            <div>
-              <label style={S.label}>Min Weight %</label>
-              <input style={S.input} type="number" min={0} max={100}
-                value={minWeight}
-                onChange={e => setMinWeight(Number(e.target.value))} />
-            </div>
-            <div>
-              <label style={S.label}>Max Weight %</label>
-              <input style={S.input} type="number" min={0} max={100}
-                value={maxWeight}
-                onChange={e => setMaxWeight(Number(e.target.value))} />
-            </div>
-            <div>
-              <label style={S.label}>Target</label>
-              <input style={S.input} value={target}
-                onChange={e => setTarget(e.target.value)}
-                placeholder="e.g. ≥ 90% satisfaction" />
-            </div>
-            <div>
-              <label style={S.label}>Measurement</label>
-              <input style={S.input} value={measurement}
-                onChange={e => setMeasurement(e.target.value)}
-                placeholder="e.g. Monthly survey score" />
-            </div>
-          </div>
-          {createMutation.isError && (
-            <div style={{ fontSize: 12, color: '#991b1b', marginBottom: 8 }}>
-              {(createMutation.error as any)?.response?.data?.detail || 'Failed to create template'}
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-            <button
-              onClick={() => createMutation.mutate()}
-              disabled={!name || !target || createMutation.isPending}
-              style={{ ...S.btnPrimary, opacity: !name || !target ? 0.5 : 1 }}>
-              {createMutation.isPending ? 'Creating…' : 'Create Template'}
-            </button>
-            <button onClick={() => setAdding(false)} style={S.btnSm}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Main Page ──────────────────────────────────────────────────────────────
-
 export default function KpiSettingPage() {
   const { user } = useAuthStore();
-  const isManager = ['MANAGER', 'MGR2', 'HOD', 'HR_ADMIN', 'SUPER_ADMIN'].includes(user?.role || '');
-  const isHrAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user?.role || '');
-  const [cycleId,          setCycleId]          = useState('');
-  const [showQuickCascade, setShowQuickCascade] = useState(false);
-  const [tab, setTab] = useState<'my-kpis' | 'approve' | 'kpi-setup' | 'weight-rules'>('my-kpis');
+  const qc = useQueryClient();
+  const [cycleId, setCycleId] = useState('');
+  const [adding,  setAdding]  = useState(false);
+  const [name,    setName]    = useState('');
+  const [desc,    setDesc]    = useState('');
+  const [cat,     setCat]     = useState('Financials');
+  const [weight,  setWeight]  = useState(0);
+  const [target,  setTarget]  = useState('');
+  const [meas,    setMeas]    = useState('');
 
   const { data: cycles = [] } = useQuery({
     queryKey: ['cycles'],
@@ -1531,29 +169,14 @@ export default function KpiSettingPage() {
     [cycles]
   );
 
-  // Auto-select most recent cycle on first load
-  if (sortedCycles.length && !cycleId) {
-    setCycleId(sortedCycles[0].id);
-  }
+  if (sortedCycles.length && !cycleId) setCycleId(sortedCycles[0].id);
 
   const currentCycle = sortedCycles.find((c: any) => c.id === cycleId) ?? null;
 
-  const { data: groups = [] } = useQuery({
-    queryKey: ['groups'],
-    queryFn:  () => groupsApi.list().then(r => r.data),
-    enabled:  isManager,
-  });
-
-  const { data: depts = [] } = useQuery({
-    queryKey: ['depts'],
-    queryFn:  () => departmentsApi.list().then(r => r.data),
-    enabled:  isManager,
-  });
-
-  const { data: users = [] } = useQuery({
-    queryKey: ['users'],
-    queryFn:  () => usersApi.list().then(r => r.data),
-    enabled:  isManager,
+  const { data: kpis = [] } = useQuery({
+    queryKey: ['kpis', cycleId, user?.id],
+    queryFn:  () => kpisApi.list(cycleId, user?.id).then(r => r.data),
+    enabled:  !!cycleId && !!user,
   });
 
   const { data: weightRules = [] } = useQuery({
@@ -1562,39 +185,64 @@ export default function KpiSettingPage() {
     enabled:  !!cycleId,
   });
 
-  const TABS = [
-    { key: 'my-kpis',      label: 'My KPIs',     show: true },
-    { key: 'approve',      label: 'Approve KPIs', show: isManager },
-    { key: 'kpi-setup',    label: 'KPI Setup',    show: isManager },
-    { key: 'weight-rules', label: 'Weight Rules', show: isHrAdmin },
-  ].filter(t => t.show);
+  const createMutation = useMutation({
+    mutationFn: () => kpisApi.create({
+      cycle_id: cycleId, name, description: desc,
+      kpi_dimension: cat, weight, target, measurement: meas,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] });
+      setAdding(false);
+      setName(''); setDesc(''); setTarget(''); setMeas(''); setWeight(0);
+    },
+  });
+
+  const submitMutation = useMutation({
+    mutationFn: (id: string) => kpisApi.submit(id),
+    onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] }),
+  });
+
+  const adjustMutation = useMutation({
+    mutationFn: ({ id, weight }: { id: string; weight: number }) =>
+      kpisApi.adjustWeight(id, weight),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => kpisApi.delete(id),
+    onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] }),
+  });
+
+  const totalWeight = (kpis as any[]).reduce((sum, k) => sum + k.weight, 0);
+
+  const bykpi_dimension = CATEGORIES.map(c => ({
+    cat: c,
+    total: (kpis as any[]).filter(k => k.kpi_dimension === c).reduce((s, k) => s + k.weight, 0),
+    rule:  (weightRules as any[]).find((r: any) => r.kpi_dimension === c),
+  }));
+
+  const rule = (weightRules as any[]).find((r: any) => r.kpi_dimension === cat);
 
   return (
-    <div>
-      {/* Page header */}
+    <div style={{ fontFamily: C.font, color: C.text }}>
       <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 4,
-          color: C.text }}>KPI Setting</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 4, color: C.text }}>My Scorecard</h1>
         <p style={{ fontSize: 13, color: C.textSecond }}>
-          Set, cascade, and approve KPIs for this performance cycle
+          Set your KPIs for this performance cycle
         </p>
       </div>
 
       {/* Cycle selector */}
-      <div style={{ background: C.bg, border: `1px solid ${C.border}`,
-        borderRadius: 10, padding: 16, marginBottom: 20 }}>
+      <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
           <span style={{ fontSize: 13, color: C.textSecond }}>◈</span>
-          <span style={{ fontSize: 11, fontWeight: 600, color: C.textSecond,
-            textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: C.textSecond, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Performance Cycle
           </span>
           {currentCycle?.status && (() => {
-            const st = CYCLE_STATUS_STYLE[currentCycle.status]
-              || { bg: '#f7f7f5', color: '#6b6b6b', label: currentCycle.status };
+            const st = CYCLE_STATUS_STYLE[currentCycle.status] || { bg: '#f7f7f5', color: '#6b6b6b', label: currentCycle.status };
             return (
-              <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px',
-                borderRadius: 10, background: st.bg, color: st.color, marginLeft: 2 }}>
+              <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px', borderRadius: 10, background: st.bg, color: st.color, marginLeft: 2 }}>
                 {st.label}
               </span>
             );
@@ -1603,11 +251,7 @@ export default function KpiSettingPage() {
         <select
           value={cycleId}
           onChange={e => setCycleId(e.target.value)}
-          style={{ width: '100%', padding: '12px 14px',
-            border: `1px solid ${C.border}`, borderRadius: 8,
-            fontSize: 15, fontWeight: 600, background: C.bg,
-            color: cycleId ? C.text : C.textTertiary,
-            fontFamily: C.font, outline: 'none', cursor: 'pointer' }}>
+          style={{ width: '100%', padding: '12px 14px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 15, fontWeight: 600, background: C.bg, color: cycleId ? C.text : C.textTertiary, fontFamily: C.font, outline: 'none', cursor: 'pointer' }}>
           <option value="">Select a performance cycle to begin…</option>
           {sortedCycles.map((c: any) => (
             <option key={c.id} value={c.id}>{c.name}</option>
@@ -1616,96 +260,130 @@ export default function KpiSettingPage() {
       </div>
 
       {cycleId && (
-        <>
-          <div style={{ display: 'flex', gap: 2,
-            borderBottom: `0.5px solid ${C.borderLight}`,
-            marginBottom: 20 }}>
-            {TABS.map(t => (
-              <button key={t.key} onClick={() => setTab(t.key as any)}
-                style={{ padding: '8px 16px', border: 'none',
-                  background: 'transparent', cursor: 'pointer', fontSize: 13,
-                  color: tab === t.key ? C.text : C.textSecond,
-                  fontWeight: tab === t.key ? 500 : 400,
-                  borderBottom: tab === t.key
-                    ? `2px solid ${C.text}` : '2px solid transparent',
-                  marginBottom: -0.5 }}>
-                {t.label}
-              </button>
-            ))}
+        <div>
+          {/* Weight summary */}
+          <div style={{ ...S.card, marginBottom: 12 }}>
+            <div style={{ fontWeight: 500, marginBottom: 10, color: C.text }}>Weight Summary</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 10 }}>
+              {bykpi_dimension.map(({ cat, total, rule }) => {
+                const ok = !rule || (total >= (rule.min_weight || 0) && total <= (rule.max_weight || 100));
+                return (
+                  <div key={cat} style={{ padding: '10px 12px', borderRadius: 8, background: ok ? C.bgSecondary : '#fee2e2', border: `0.5px solid ${ok ? C.borderLight : '#fca5a5'}` }}>
+                    <div style={{ fontSize: 11, color: C.textSecond, marginBottom: 4 }}>{cat}</div>
+                    <div style={{ fontSize: 20, fontWeight: 500, color: ok ? C.text : '#991b1b' }}>{total}%</div>
+                    {rule && (
+                      <div style={{ fontSize: 10, color: ok ? C.textTertiary : '#991b1b' }}>
+                        Range: {rule.min_weight}–{rule.max_weight}%
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTop: `0.5px solid ${C.borderLight}` }}>
+              <span style={{ fontSize: 13, color: C.textSecond }}>Total</span>
+              <span style={{ fontSize: 16, fontWeight: 600, color: totalWeight === 100 ? '#166534' : '#991b1b' }}>
+                {totalWeight}%
+                {totalWeight !== 100 && (
+                  <span style={{ fontSize: 11, marginLeft: 6 }}>(must equal 100%)</span>
+                )}
+              </span>
+            </div>
           </div>
 
-          {tab === 'my-kpis' && user && (
-            <StaffKpiList
-              cycleId={cycleId}
-              userId={user.id}
+          {/* KPI list */}
+          {(kpis as any[]).map((kpi: any) => (
+            <KpiCard
+              key={kpi.id}
+              kpi={kpi}
               weightRules={weightRules as any[]}
+              onSubmit={() => submitMutation.mutate(kpi.id)}
+              onDelete={() => deleteMutation.mutate(kpi.id)}
+              onAdjustWeight={w => adjustMutation.mutate({ id: kpi.id, weight: w })}
             />
+          ))}
+
+          {(kpis as any[]).length === 0 && !adding && (
+            <div style={{ textAlign: 'center', padding: 32, color: C.textSecond, fontSize: 13, border: `0.5px dashed ${C.border}`, borderRadius: 10 }}>
+              No KPIs yet. Add your first KPI or wait for your manager to cascade KPIs to you.
+            </div>
           )}
 
-          {tab === 'approve' && user && (
-            <ManagerApprovalPanel cycleId={cycleId} userId={user.id} />
-          )}
-
-          {tab === 'kpi-setup' && user && (
-            <div>
-              {/* KPI Templates section */}
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ fontWeight: 500, fontSize: 14, color: C.text,
-                  marginBottom: 12 }}>
-                  KPI Templates
+          {/* Add optional KPI form */}
+          {adding && (
+            <div style={S.card}>
+              <div style={{ fontWeight: 500, marginBottom: 12, color: C.text }}>Add Optional KPI</div>
+              <div style={S.grid2}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={S.label}>KPI Name</label>
+                  <input style={S.input} value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="e.g. Complete AWS certification" />
                 </div>
-                <KpiTemplatesPanel
-                  cycleId={cycleId}
-                  groups={groups as any[]}
-                  depts={depts as any[]}
-                />
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={S.label}>Description</label>
+                  <textarea style={{ ...S.input, minHeight: 54, resize: 'vertical' }}
+                    value={desc} onChange={e => setDesc(e.target.value)} />
+                </div>
+                <div>
+                  <label style={S.label}>KPI Dimension</label>
+                  <select style={S.input} value={cat} onChange={e => setCat(e.target.value)}>
+                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={S.label}>
+                    Weight %
+                    {rule && (
+                      <span style={{ fontWeight: 400, color: C.textTertiary, marginLeft: 6 }}>
+                        (allowed: {rule.min_weight}–{rule.max_weight}%)
+                      </span>
+                    )}
+                  </label>
+                  <input style={S.input} type="number" min={0} max={100}
+                    value={weight} onChange={e => setWeight(Number(e.target.value))} />
+                </div>
+                <div>
+                  <label style={S.label}>Target</label>
+                  <input style={S.input} value={target}
+                    onChange={e => setTarget(e.target.value)}
+                    placeholder="e.g. Pass exam by Q3" />
+                </div>
+                <div>
+                  <label style={S.label}>Measurement</label>
+                  <input style={S.input} value={meas}
+                    onChange={e => setMeas(e.target.value)}
+                    placeholder="e.g. Certificate obtained" />
+                </div>
               </div>
-
-              {/* Quick Cascade section — collapsible */}
-              <div style={{ marginTop: 8 }}>
-                <button onClick={() => setShowQuickCascade(p => !p)}
-                  style={{ ...S.btnSm, width: '100%', display: 'flex',
-                    justifyContent: 'space-between', alignItems: 'center',
-                    marginBottom: showQuickCascade ? 12 : 0 }}>
-                  <span style={{ fontWeight: 500, color: C.textSecond }}>
-                    Quick Cascade
-                  </span>
-                  <span style={{ fontSize: 10 }}>{showQuickCascade ? '▲' : '▼'}</span>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button onClick={() => createMutation.mutate()}
+                  disabled={!name || !target || createMutation.isPending}
+                  style={{ ...S.btnPrimary, opacity: (!name || !target) ? 0.5 : 1 }}>
+                  {createMutation.isPending ? 'Adding...' : 'Add KPI'}
                 </button>
-                {showQuickCascade && (
-                  <CascadePanel
-                    cycleId={cycleId}
-                    users={users as any[]}
-                    currentUserId={user.id}
-                    groups={groups as any[]}
-                    depts={depts as any[]}
-                  />
-                )}
+                <button onClick={() => setAdding(false)} style={S.btnSm}>Cancel</button>
               </div>
             </div>
           )}
 
-          {tab === 'weight-rules' && (
-            <WeightRulesPanel
-              cycleId={cycleId}
-              cycles={cycles as any[]}
-              groups={groups as any[]}
-              depts={depts as any[]}
-            />
+          {!adding && (
+            <button onClick={() => setAdding(true)}
+              style={{ ...S.btnSm, width: '100%', padding: '10px', borderStyle: 'dashed', marginTop: 8 }}>
+              + Add Optional KPI
+            </button>
           )}
-        </>
+        </div>
       )}
     </div>
   );
 }
 
 const S: Record<string, any> = {
-  card:      { background: C.bg, border: `1px solid ${C.borderLight}`, borderRadius: 10, padding: 16, marginBottom: 12 },
-  grid2:     { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 },
-  label:     { fontSize: 12, fontWeight: 500, color: C.textSecond, display: 'block', marginBottom: 4 },
-  input:     { width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.bg, color: C.text, fontFamily: C.font, outline: 'none' },
-  btnPrimary:{ padding: '8px 16px', border: 'none', borderRadius: 8, background: C.text, color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
-  btnSm:     { padding: '6px 10px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font },
-  th:        { textAlign: 'left', padding: '10px', borderBottom: `1px solid ${C.borderLight}`, fontSize: 11, color: C.textSecond, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' },
-  td:        { padding: '10px', fontSize: 13, color: C.text },
+  card:       { background: C.bg, border: `1px solid ${C.borderLight}`, borderRadius: 10, padding: 16, marginBottom: 12 },
+  grid2:      { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 },
+  label:      { fontSize: 12, fontWeight: 500, color: C.textSecond, display: 'block', marginBottom: 4 },
+  input:      { width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.bg, color: C.text, fontFamily: C.font, outline: 'none' },
+  btnPrimary: { padding: '8px 16px', border: 'none', borderRadius: 8, background: C.text, color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
+  btnSm:      { padding: '6px 10px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font },
 };
