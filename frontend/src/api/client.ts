@@ -55,10 +55,14 @@ export const kpisApi = {
     api.post(`/kpis/${id}/evaluate`, { score, comment, action }),
   lock:         (id: string) => api.post(`/kpis/${id}/lock`),
   auditLog:     (id: string) => api.get(`/kpis/${id}/audit`),
-  cascade:        (data: any)                      => api.post('/kpis/cascade', data),
-  adjustWeight:   (id: string, weight: number)     => api.patch(`/kpis/${id}/weight`, { weight }),
-  getWeightRules: (cycleId: string)                => api.get(`/kpis/weight-rules/${cycleId}`),
-  setWeightRules: (cycleId: string, rules: any[])  => api.post(`/kpis/weight-rules/${cycleId}`, rules),
+  cascade:         (data: any)                      => api.post('/kpis/cascade', data),
+  adjustWeight:    (id: string, weight: number)     => api.patch(`/kpis/${id}/weight`, { weight }),
+  getWeightRules:  (cycleId: string)                => api.get(`/kpis/weight-rules/${cycleId}`),
+  setWeightRules:  (cycleId: string, rules: any[])  => api.post(`/kpis/weight-rules/${cycleId}`, rules),
+  getTemplates:    (cycleId: string)                => api.get(`/kpis/templates/${cycleId}`),
+  createTemplate:  (data: any)                      => api.post('/kpis/templates', data),
+  deleteTemplate:  (id: string)                     => api.delete(`/kpis/templates/${id}`),
+  cascadeTemplate: (id: string)                     => api.post(`/kpis/templates/${id}/cascade`),
 };
 
 export const usersApi = {
