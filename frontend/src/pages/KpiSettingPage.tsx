@@ -405,31 +405,33 @@ function WeightRulesPanel({
 // ── Cascade KPI Panel ──────────────────────────────────────────────────────
 
 function CascadePanel({
-  cycleId, users, currentUserId,
+  cycleId, users, currentUserId, groups, depts,
 }: {
   cycleId: string; users: any[]; currentUserId: string;
+  groups: any[]; depts: any[];
 }) {
   const qc = useQueryClient();
-  const [name,        setName]        = useState('');
-  const [description, setDescription] = useState('');
-  const [kpi_dimension,    setkpi_dimension]    = useState('Core');
-  const [weight,      setWeight]      = useState(0);
-  const [target,      setTarget]      = useState('');
-  const [measurement, setMeasurement] = useState('');
-  const [search,      setSearch]      = useState('');
-  const [selected,    setSelected]    = useState<string[]>([]);
-  const [result,      setResult]      = useState<any>(null);
+  const [name,         setName]         = useState('');
+  const [description,  setDescription]  = useState('');
+  const [kpiDimension, setKpiDimension] = useState('Financials');
+  const [weight,       setWeight]       = useState(0);
+  const [target,       setTarget]       = useState('');
+  const [measurement,  setMeasurement]  = useState('');
 
-  const { data: weightRules = [] } = useQuery({
-    queryKey: ['weight-rules', cycleId],
-    queryFn:  () => kpisApi.getWeightRules(cycleId).then(r => r.data),
-    enabled:  !!cycleId,
-  });
+  // Target fields
+  const [appliesTo,    setAppliesTo]    = useState('everyone');
+  const [groupId,      setGroupId]      = useState('');
+  const [hierarchy,    setHierarchy]    = useState('');
+  const [userCategory, setUserCategory] = useState('');
+  const [departmentId, setDepartmentId] = useState('');
+  const [jobGrade,     setJobGrade]     = useState('');
 
-  const [dimension, setDimension] = useState('Financials');
+  // Individual employee picker (secondary, expandable)
+  const [showIndividual, setShowIndividual] = useState(false);
+  const [search,         setSearch]         = useState('');
+  const [selected,       setSelected]       = useState<string[]>([]);
 
-  
-  const rule = (weightRules as any[]).find((r: any) => r.kpi_dimension === kpi_dimension);
+  const [result, setResult] = useState<any>(null);
 
   const eligibleUsers = users.filter(u =>
     u.id !== currentUserId && u.is_active !== false
@@ -449,33 +451,48 @@ function CascadePanel({
     setSelected(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
   }
 
+  function changeAppliesTo(val: string) {
+    setAppliesTo(val);
+    setGroupId(''); setHierarchy(''); setUserCategory('');
+    setDepartmentId(''); setJobGrade('');
+  }
+
   const cascadeMutation = useMutation({
     mutationFn: () => kpisApi.cascade({
-      cycle_id:     cycleId,
-      name, description, kpi_dimension, weight, target, measurement,
-      employee_ids: selected,
+      cycle_id:      cycleId,
+      name, description,
+      kpi_dimension: kpiDimension,
+      weight, target, measurement,
+      employee_ids:  selected,
+      group_id:      appliesTo === 'group'      ? groupId      || null : null,
+      hierarchy:     appliesTo === 'hierarchy'  ? hierarchy    || null : null,
+      user_category: appliesTo === 'category'   ? userCategory || null : null,
+      department_id: appliesTo === 'department' ? departmentId || null : null,
+      job_grade:     appliesTo === 'grade'      ? jobGrade     || null : null,
     }),
     onSuccess: (res) => {
       setResult(res.data);
       qc.invalidateQueries({ queryKey: ['kpis'] });
-      setName(''); setDescription(''); setTarget('');
-      setMeasurement(''); setSelected([]); setSearch('');
+      setName(''); setDescription(''); setTarget(''); setMeasurement('');
+      setWeight(0); setSelected([]); setSearch('');
+      setAppliesTo('everyone'); setGroupId(''); setHierarchy('');
+      setUserCategory(''); setDepartmentId(''); setJobGrade('');
     },
   });
 
+  const canCascade = !!name && !!target && !cascadeMutation.isPending;
+
   return (
     <div style={S.card}>
-      <div style={{ fontWeight: 500, marginBottom: 4,
-        color: C.text }}>
+      <div style={{ fontWeight: 500, marginBottom: 4, color: C.text }}>
         Cascade KPI
       </div>
-      <div style={{ fontSize: 12, color: C.textSecond,
-        marginBottom: 14 }}>
-        Push a KPI to specific employees. It will appear as Approved
-        in their KPI list. They can adjust the weight within the
-        allowed range.
+      <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 14 }}>
+        Push a KPI to a target group of employees. It will appear as Approved
+        in their KPI list. They can adjust the weight within the allowed range.
       </div>
 
+      {/* KPI details */}
       <div style={S.grid2}>
         <div style={{ gridColumn: '1 / -1' }}>
           <label style={S.label}>KPI Name</label>
@@ -491,24 +508,16 @@ function CascadePanel({
             placeholder="Optional description..." />
         </div>
         <div>
-          <label style={S.label}>kpi_dimension</label>
-          <select style={S.input} value={kpi_dimension}
-            onChange={e => setkpi_dimension(e.target.value)}>
-            {CATEGORIES.map(c => (
-              <option key={c} value={c}>{c}</option>
+          <label style={S.label}>KPI Dimension</label>
+          <select style={S.input} value={kpiDimension}
+            onChange={e => setKpiDimension(e.target.value)}>
+            {DIMENSIONS.map(d => (
+              <option key={d} value={d}>{d}</option>
             ))}
           </select>
         </div>
         <div>
-          <label style={S.label}>
-            Weight %
-            {rule && (
-              <span style={{ fontWeight: 400, color: C.textTertiary,
-                marginLeft: 6 }}>
-                (allowed: {rule.min_weight}–{rule.max_weight}%)
-              </span>
-            )}
-          </label>
+          <label style={S.label}>Weight %</label>
           <input style={S.input} type="number" min={0} max={100}
             value={weight} onChange={e => setWeight(Number(e.target.value))} />
         </div>
@@ -526,99 +535,151 @@ function CascadePanel({
         </div>
       </div>
 
-      {/* Employee selector */}
-      <div style={{ marginTop: 4 }}>
-        <label style={S.label}>
-          Select Employees ({selected.length} selected)
-        </label>
-        <input style={{ ...S.input, marginBottom: 8 }}
-          placeholder="Search by name, code, or department..."
-          value={search} onChange={e => setSearch(e.target.value)} />
-
-        <div style={{ border: '0.5px solid var(--color-border-tertiary)',
-          borderRadius: 8, maxHeight: 220, overflowY: 'auto' }}>
-          {filteredUsers.length === 0 && (
-            <div style={{ padding: 16, textAlign: 'center',
-              color: C.textTertiary, fontSize: 13 }}>
-              No employees found
+      {/* Applies To */}
+      <div style={{ border: `1px solid ${C.borderLight}`, borderRadius: 10,
+        padding: 14, marginBottom: 12 }}>
+        <div style={{ fontWeight: 500, fontSize: 13, color: C.text, marginBottom: 10 }}>
+          Applies To
+        </div>
+        <div style={S.grid2}>
+          <div>
+            <label style={S.label}>Target</label>
+            <select style={S.input} value={appliesTo}
+              onChange={e => changeAppliesTo(e.target.value)}>
+              {APPLIES_TO_OPTS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+          {appliesTo === 'group' && (
+            <div>
+              <label style={S.label}>Custom Group</label>
+              <select style={S.input} value={groupId}
+                onChange={e => setGroupId(e.target.value)}>
+                <option value="">Select group…</option>
+                {groups.map((g: any) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
             </div>
           )}
-          {filteredUsers.map((u: any, i: number) => (
-            <div key={u.id}
-              onClick={() => toggleUser(u.id)}
-              style={{ display: 'flex', alignItems: 'center', gap: 10,
-                padding: '8px 12px', cursor: 'pointer',
-                borderBottom: i < filteredUsers.length - 1
-                  ? '0.5px solid var(--color-border-tertiary)' : 'none',
-                background: selected.includes(u.id)
-                  ? '#f0fdf4' : 'transparent' }}
-              onMouseEnter={e => {
-                if (!selected.includes(u.id))
-                  e.currentTarget.style.background =
-                    C.bgSecondary;
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background =
-                  selected.includes(u.id) ? '#f0fdf4' : 'transparent';
-              }}>
-              <input type="checkbox" readOnly
-                checked={selected.includes(u.id)}
-                style={{ flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500,
-                  color: C.text }}>
-                  {u.full_name}
-                </div>
-                <div style={{ fontSize: 11,
-                  color: C.textSecond }}>
-                  {u.employee_id}
-                  {u.position_title ? ` · ${u.position_title}` : ''}
-                </div>
-              </div>
-              {selected.includes(u.id) && (
-                <span style={{ fontSize: 11, color: '#166534',
-                  fontWeight: 500 }}>✓</span>
-              )}
+          {appliesTo === 'hierarchy' && (
+            <div>
+              <label style={S.label}>Hierarchy</label>
+              <input style={S.input} value={hierarchy}
+                onChange={e => setHierarchy(e.target.value)}
+                placeholder="e.g. Apex-1" />
             </div>
-          ))}
-        </div>
-
-        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-          <button style={S.btnSm}
-            onClick={() => setSelected(filteredUsers.map(u => u.id))}>
-            Select all
-          </button>
-          <button style={S.btnSm} onClick={() => setSelected([])}>
-            Clear
-          </button>
+          )}
+          {appliesTo === 'category' && (
+            <div>
+              <label style={S.label}>Employee Category</label>
+              <input style={S.input} value={userCategory}
+                onChange={e => setUserCategory(e.target.value)}
+                placeholder="e.g. Corporate Staff" />
+            </div>
+          )}
+          {appliesTo === 'department' && (
+            <div>
+              <label style={S.label}>Department</label>
+              <select style={S.input} value={departmentId}
+                onChange={e => setDepartmentId(e.target.value)}>
+                <option value="">Select department…</option>
+                {depts.map((d: any) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {appliesTo === 'grade' && (
+            <div>
+              <label style={S.label}>Job Grade</label>
+              <input style={S.input} value={jobGrade}
+                onChange={e => setJobGrade(e.target.value)}
+                placeholder="e.g. G2" />
+            </div>
+          )}
         </div>
       </div>
 
+      {/* Individual employees (expandable, secondary) */}
+      <div style={{ marginBottom: 12 }}>
+        <button onClick={() => setShowIndividual(p => !p)}
+          style={{ ...S.btnSm, width: '100%', display: 'flex',
+            justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>
+            Also include specific employees
+            {selected.length > 0 && (
+              <span style={{ marginLeft: 6, fontWeight: 600,
+                color: C.text }}>{selected.length} selected</span>
+            )}
+          </span>
+          <span style={{ fontSize: 10 }}>{showIndividual ? '▲' : '▼'}</span>
+        </button>
+        {showIndividual && (
+          <div style={{ marginTop: 8, border: `1px solid ${C.borderLight}`,
+            borderRadius: 10, padding: 12 }}>
+            <input style={{ ...S.input, marginBottom: 8 }}
+              placeholder="Search by name, code, or department..."
+              value={search} onChange={e => setSearch(e.target.value)} />
+            <div style={{ border: `0.5px solid ${C.border}`,
+              borderRadius: 8, maxHeight: 220, overflowY: 'auto' }}>
+              {filteredUsers.length === 0 && (
+                <div style={{ padding: 16, textAlign: 'center',
+                  color: C.textTertiary, fontSize: 13 }}>No employees found</div>
+              )}
+              {filteredUsers.map((u: any, i: number) => (
+                <div key={u.id} onClick={() => toggleUser(u.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '8px 12px', cursor: 'pointer',
+                    borderBottom: i < filteredUsers.length - 1
+                      ? `0.5px solid ${C.borderLight}` : 'none',
+                    background: selected.includes(u.id) ? '#f0fdf4' : 'transparent' }}>
+                  <input type="checkbox" readOnly
+                    checked={selected.includes(u.id)} style={{ flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: C.text }}>
+                      {u.full_name}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.textSecond }}>
+                      {u.employee_id}{u.position_title ? ` · ${u.position_title}` : ''}
+                    </div>
+                  </div>
+                  {selected.includes(u.id) && (
+                    <span style={{ fontSize: 11, color: '#166534', fontWeight: 500 }}>✓</span>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+              <button style={S.btnSm}
+                onClick={() => setSelected(filteredUsers.map((u: any) => u.id))}>
+                Select all
+              </button>
+              <button style={S.btnSm} onClick={() => setSelected([])}>Clear</button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {result && (
-        <div style={{ marginTop: 12, padding: '8px 12px',
-          background: '#dcfce7', borderRadius: 8,
-          fontSize: 12, color: '#166534' }}>
+        <div style={{ marginBottom: 12, padding: '8px 12px',
+          background: '#dcfce7', borderRadius: 8, fontSize: 12, color: '#166534' }}>
           ✓ {result.message}
         </div>
       )}
 
       {cascadeMutation.isError && (
-        <div style={{ marginTop: 12, padding: '8px 12px',
-          background: '#fee2e2', borderRadius: 8,
-          fontSize: 12, color: '#991b1b' }}>
+        <div style={{ marginBottom: 12, padding: '8px 12px',
+          background: '#fee2e2', borderRadius: 8, fontSize: 12, color: '#991b1b' }}>
           {(cascadeMutation.error as any)?.response?.data?.detail || 'Failed to cascade'}
         </div>
       )}
 
-      <button
-        onClick={() => cascadeMutation.mutate()}
-        disabled={!name || !target || selected.length === 0
-          || cascadeMutation.isPending}
-        style={{ ...S.btnPrimary, marginTop: 12,
-          opacity: (!name || !target || selected.length === 0) ? 0.5 : 1 }}>
-        {cascadeMutation.isPending
-          ? 'Cascading...'
-          : `Cascade to ${selected.length} employee(s)`}
+      <button onClick={() => cascadeMutation.mutate()}
+        disabled={!canCascade}
+        style={{ ...S.btnPrimary, opacity: !canCascade ? 0.5 : 1 }}>
+        {cascadeMutation.isPending ? 'Cascading...' : 'Cascade KPI'}
       </button>
     </div>
   );
@@ -1121,9 +1182,9 @@ function appliesLabel(t: any): string {
 }
 
 function KpiTemplatesPanel({
-  cycleId, groups,
+  cycleId, groups, depts,
 }: {
-  cycleId: string; groups: any[];
+  cycleId: string; groups: any[]; depts: any[];
 }) {
   const qc = useQueryClient();
   const [name,        setName]        = useState('');
@@ -1176,10 +1237,24 @@ function KpiTemplatesPanel({
     onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpi-templates', cycleId] }),
   });
 
-  async function handleCascade(id: string) {
-    setCascading(id);
+  async function handleCascade(t: any) {
+    setCascading(t.id);
     try {
-      const res = await kpisApi.cascadeTemplate(id);
+      const res = await kpisApi.cascade({
+        cycle_id:      cycleId,
+        name:          t.name,
+        description:   t.description,
+        kpi_dimension: t.kpi_dimension,
+        weight:        t.weight,
+        target:        t.target,
+        measurement:   t.measurement,
+        employee_ids:  [],
+        group_id:      null,
+        hierarchy:     null,
+        user_category: null,
+        department_id: t.department_id || null,
+        job_grade:     t.job_grade     || null,
+      });
       qc.invalidateQueries({ queryKey: ['kpis'] });
       alert(res.data.message);
     } catch (e: any) {
@@ -1229,7 +1304,7 @@ function KpiTemplatesPanel({
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            <button onClick={() => handleCascade(t.id)}
+            <button onClick={() => handleCascade(t)}
               disabled={cascading === t.id} style={S.btnPrimary}>
               {cascading === t.id ? 'Cascading…' : 'Cascade Now'}
             </button>
@@ -1304,10 +1379,14 @@ function KpiTemplatesPanel({
             )}
             {appliesTo === 'department' && (
               <div>
-                <label style={S.label}>Department ID</label>
-                <input style={S.input} value={deptId}
-                  onChange={e => setDeptId(e.target.value)}
-                  placeholder="Department UUID" />
+                <label style={S.label}>Department</label>
+                <select style={S.input} value={deptId}
+                  onChange={e => setDeptId(e.target.value)}>
+                  <option value="">Select department…</option>
+                  {depts.map((d: any) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
               </div>
             )}
             {appliesTo === 'grade' && (
@@ -1495,6 +1574,8 @@ export default function KpiSettingPage() {
               cycleId={cycleId}
               users={users as any[]}
               currentUserId={user.id}
+              groups={groups as any[]}
+              depts={depts as any[]}
             />
           )}
 
@@ -1518,6 +1599,7 @@ export default function KpiSettingPage() {
             <KpiTemplatesPanel
               cycleId={cycleId}
               groups={groups as any[]}
+              depts={depts as any[]}
             />
           )}
         </>
