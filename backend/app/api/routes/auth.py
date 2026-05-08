@@ -45,6 +45,17 @@ async def _resolve_permissions_and_derived(db: AsyncSession, user: User):
     )
     permissions = sorted({p for (p,) in perm_result.all()})
 
+    log.info("=== RBAC DEBUG: user_id=%s permissions=%d user_roles_check below ===", str(user.id), len(permissions))
+    ur_result = await db.execute(select(UserRole).where(UserRole.user_id == user.id))
+    ur_rows = ur_result.scalars().all()
+    log.info("=== RBAC DEBUG: user_roles rows=%d ===", len(ur_rows))
+    cr_result = await db.execute(select(CustomRole))
+    cr_rows = cr_result.scalars().all()
+    log.info("=== RBAC DEBUG: custom_roles total=%d names=%s ===", len(cr_rows), [r.name for r in cr_rows])
+    rp_result = await db.execute(select(RolePermission))
+    rp_rows = rp_result.scalars().all()
+    log.info("=== RBAC DEBUG: role_permissions total=%d ===", len(rp_rows))
+
     log.info("PERMISSIONS DEBUG: user_id=%s found %d permissions", user.id, len(permissions))
 
     ur_count = await db.execute(select(func.count()).select_from(UserRole).where(UserRole.user_id == user.id))
@@ -89,6 +100,7 @@ async def login(
     form: OAuth2PasswordRequestForm = Depends(),
     db:   AsyncSession              = Depends(get_db),
 ):
+    log.info("=== LOGIN CALLED for: %s ===", form.username if form else "unknown")
     typed = (form.username or "").strip()
     typed_lower = typed.lower()
 
