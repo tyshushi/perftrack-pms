@@ -174,10 +174,11 @@ function EmployeeScorecard({
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 12, color: C.textSecond, marginTop: 2 }}>
-                    Target: {kpi.target}
-                    {kpi.measurement ? ` · ${kpi.measurement}` : ''}
-                  </div>
+                  {kpi.measurement && (
+                    <div style={{ fontSize: 12, color: C.textSecond, marginTop: 2 }}>
+                      Measurement: {kpi.measurement}
+                    </div>
+                  )}
                   {kpi.description && (
                     <div style={{ fontSize: 12, color: C.textTertiary, marginTop: 2 }}>{kpi.description}</div>
                   )}

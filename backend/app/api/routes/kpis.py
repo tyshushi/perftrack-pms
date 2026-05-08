@@ -22,7 +22,7 @@ class KpiCreate(BaseModel):
     description:   Optional[str] = None
     kpi_dimension: str
     weight:        int
-    target:        str
+    target:        str = ''
     measurement:   Optional[str] = None
     template_id:   Optional[UUID] = None
 
@@ -53,7 +53,7 @@ class CascadeKpiRequest(BaseModel):
     description:   Optional[str] = None
     kpi_dimension: str
     weight:        int
-    target:        str
+    target:        str = ''
     measurement:   Optional[str] = None
     employee_ids:  List[UUID]    = []
     group_id:      Optional[UUID] = None
@@ -343,7 +343,7 @@ class TemplateCreate(BaseModel):
     kpi_dimension: str
     min_weight:    int = 0
     max_weight:    int = 100
-    target:        str
+    target:        str = ''
     measurement:   Optional[str] = None
     group_id:      Optional[UUID] = None
     hierarchy:     Optional[str]  = None

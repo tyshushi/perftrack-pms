@@ -134,7 +134,6 @@ export default function KpiTemplatesPage() {
   const [category,    setCategory]    = useState('');
   const [minWeight,   setMinWeight]   = useState(0);
   const [maxWeight,   setMaxWeight]   = useState(100);
-  const [target,      setTarget]      = useState('');
   const [measurement, setMeasurement] = useState('');
   const [cascading,   setCascading]   = useState<string | null>(null);
   const [adding,      setAdding]      = useState(false);
@@ -151,7 +150,7 @@ export default function KpiTemplatesPage() {
       kpi_dimension: dimension,
       min_weight:    minWeight,
       max_weight:    maxWeight,
-      target, measurement,
+      target: '', measurement,
       group_id:      appliesTo === 'group'      ? groupId   || null : null,
       department_id: appliesTo === 'department' ? deptId    || null : null,
       job_grade:     appliesTo === 'grade'      ? jobGrade  || null : null,
@@ -161,7 +160,7 @@ export default function KpiTemplatesPage() {
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['kpi-templates', cycleId] });
-      setName(''); setDescription(''); setTarget(''); setMeasurement('');
+      setName(''); setDescription(''); setMeasurement('');
       setMinWeight(0); setMaxWeight(100); setGroupId(''); setDeptId('');
       setJobGrade(''); setHierarchy(''); setCategory('');
       setAppliesTo('everyone'); setAdding(false);
@@ -266,8 +265,12 @@ export default function KpiTemplatesPage() {
                   <span>{t.kpi_dimension}</span>
                   <span>·</span>
                   <span>{t.weight}–{t.max_weight ?? t.weight}%</span>
-                  <span>·</span>
-                  <span>Target: {t.target}</span>
+                  {t.measurement && (
+                    <>
+                      <span>·</span>
+                      <span>Measurement: {t.measurement}</span>
+                    </>
+                  )}
                   <span>·</span>
                   <span style={{ color: C.textTertiary }}>{appliesLabel(t)}</span>
                 </div>
@@ -369,13 +372,13 @@ export default function KpiTemplatesPage() {
                   <label style={S.label}>Max Weight %</label>
                   <input style={S.input} type="number" min={0} max={100} value={maxWeight} onChange={e => setMaxWeight(Number(e.target.value))} />
                 </div>
-                <div>
-                  <label style={S.label}>Target</label>
-                  <input style={S.input} value={target} onChange={e => setTarget(e.target.value)} placeholder="e.g. ≥ 90% satisfaction" />
-                </div>
-                <div>
+                <div style={{ gridColumn: '1 / -1' }}>
                   <label style={S.label}>Measurement</label>
-                  <input style={S.input} value={measurement} onChange={e => setMeasurement(e.target.value)} placeholder="e.g. Monthly survey score" />
+                  <input style={S.input} value={measurement} onChange={e => setMeasurement(e.target.value)}
+                    placeholder="e.g. Monthly sales report, Annual financial audit, 360° feedback survey, System-generated data from Salesforce, Manager observation and quarterly review" />
+                  <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 4 }}>
+                    Describe how achievement will be tracked and verified
+                  </div>
                 </div>
               </div>
 
@@ -433,8 +436,8 @@ export default function KpiTemplatesPage() {
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button
                   onClick={() => createMutation.mutate()}
-                  disabled={!name || !target || !hasCompleteTargets(inlineTargets, currentCycle) || createMutation.isPending}
-                  style={{ ...S.btnPrimary, opacity: (!name || !target || !hasCompleteTargets(inlineTargets, currentCycle)) ? 0.5 : 1 }}>
+                  disabled={!name || !hasCompleteTargets(inlineTargets, currentCycle) || createMutation.isPending}
+                  style={{ ...S.btnPrimary, opacity: (!name || !hasCompleteTargets(inlineTargets, currentCycle)) ? 0.5 : 1 }}>
                   {createMutation.isPending ? 'Creating…' : 'Create Template'}
                 </button>
                 <button onClick={() => setAdding(false)} style={S.btnSm}>Cancel</button>

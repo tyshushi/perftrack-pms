@@ -125,7 +125,6 @@ export default function QuickCascadePage() {
   const [description,  setDescription]  = useState('');
   const [kpiDimension, setKpiDimension] = useState('Financials');
   const [weight,       setWeight]       = useState(0);
-  const [target,       setTarget]       = useState('');
   const [measurement,  setMeasurement]  = useState('');
   const [appliesTo,    setAppliesTo]    = useState('everyone');
   const [groupId,      setGroupId]      = useState('');
@@ -181,7 +180,7 @@ export default function QuickCascadePage() {
           cycle_id:      cycleId,
           name, description,
           kpi_dimension: kpiDimension,
-          weight, target, measurement,
+          weight, target: '', measurement,
           employee_ids:  selected,
           group_id:      appliesTo === 'group'      ? groupId      || null : null,
           hierarchy:     appliesTo === 'hierarchy'  ? hierarchy    || null : null,
@@ -204,7 +203,7 @@ export default function QuickCascadePage() {
     onSuccess: (res) => {
       setResult(res.data);
       qc.invalidateQueries({ queryKey: ['kpis'] });
-      setName(''); setDescription(''); setTarget(''); setMeasurement('');
+      setName(''); setDescription(''); setMeasurement('');
       setWeight(0); setSelected([]); setSearch('');
       setAppliesTo('everyone'); setGroupId(''); setHierarchy('');
       setUserCategory(''); setDepartmentId(''); setJobGrade('');
@@ -213,7 +212,7 @@ export default function QuickCascadePage() {
   });
 
   const targetsComplete = hasCompleteTargets(inlineTargets, currentCycle);
-  const canCascade = !!name && !!target && !!cycleId && !cascadeMutation.isPending &&
+  const canCascade = !!name && !!cycleId && !cascadeMutation.isPending &&
     targetsComplete &&
     (isHrAdmin || selected.length > 0);
 
@@ -293,17 +292,14 @@ export default function QuickCascadePage() {
               <input style={S.input} type="number" min={0} max={100}
                 value={weight} onChange={e => setWeight(Number(e.target.value))} />
             </div>
-            <div>
-              <label style={S.label}>Target</label>
-              <input style={S.input} value={target}
-                onChange={e => setTarget(e.target.value)}
-                placeholder="e.g. ≥ 90% satisfaction" />
-            </div>
-            <div>
+            <div style={{ gridColumn: '1 / -1' }}>
               <label style={S.label}>Measurement</label>
               <input style={S.input} value={measurement}
                 onChange={e => setMeasurement(e.target.value)}
-                placeholder="e.g. Monthly survey score" />
+                placeholder="e.g. Monthly sales report, Annual financial audit, 360° feedback survey, System-generated data from Salesforce, Manager observation and quarterly review" />
+              <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 4 }}>
+                Describe how achievement will be tracked and verified
+              </div>
             </div>
           </div>
 

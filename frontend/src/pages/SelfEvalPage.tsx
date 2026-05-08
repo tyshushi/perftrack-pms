@@ -215,7 +215,9 @@ export default function SelfEvalPage() {
                   <span style={S.dimBadge}>{kpi.kpi_dimension}</span>
                   <span style={{ fontSize: 12, color: C.textSecond }}>{kpi.weight}%</span>
                 </div>
-                <div style={{ fontSize: 12, color: C.textSecond }}>Target: {kpi.target}</div>
+                {kpi.measurement && (
+                  <div style={{ fontSize: 12, color: C.textSecond }}>Measurement: {kpi.measurement}</div>
+                )}
               </div>
               {kpi.status === 'SELF_EVALUATED' && (
                 <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#dcfce7', color: '#166534', fontWeight: 500 }}>

@@ -267,8 +267,8 @@ function KpiCard({
             <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 4 }}>{kpi.description}</div>
           )}
           <div style={{ fontSize: 12, color: C.textSecond }}>
-            {kpi.kpi_dimension} · Target: {kpi.target}
-            {kpi.measurement ? ` · ${kpi.measurement}` : ''}
+            {kpi.kpi_dimension}
+            {kpi.measurement ? ` · Measurement: ${kpi.measurement}` : ''}
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0, marginLeft: 12 }}>
@@ -370,7 +370,6 @@ export default function KpiSettingPage() {
   const [desc,    setDesc]    = useState('');
   const [cat,     setCat]     = useState('Financials');
   const [weight,  setWeight]  = useState(0);
-  const [target,  setTarget]  = useState('');
   const [meas,    setMeas]    = useState('');
   const [inlineTargets, setInlineTargets] = useState<any[]>([]);
 
@@ -404,7 +403,7 @@ export default function KpiSettingPage() {
     mutationFn: async () => {
       const res = await kpisApi.create({
         cycle_id: cycleId, name, description: desc,
-        kpi_dimension: cat, weight, target, measurement: meas,
+        kpi_dimension: cat, weight, target: '', measurement: meas,
       });
       const newId = res.data?.id;
       if (newId && inlineTargets.length > 0) {
@@ -415,7 +414,7 @@ export default function KpiSettingPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] });
       setAdding(false);
-      setName(''); setDesc(''); setTarget(''); setMeas(''); setWeight(0);
+      setName(''); setDesc(''); setMeas(''); setWeight(0);
       setInlineTargets(buildEmptyTargetRows(currentCycle));
     },
   });
@@ -635,17 +634,14 @@ export default function KpiSettingPage() {
                   <input style={S.input} type="number" min={0} max={100}
                     value={weight} onChange={e => setWeight(Number(e.target.value))} />
                 </div>
-                <div>
-                  <label style={S.label}>Target</label>
-                  <input style={S.input} value={target}
-                    onChange={e => setTarget(e.target.value)}
-                    placeholder="e.g. Pass exam by Q3" />
-                </div>
-                <div>
+                <div style={{ gridColumn: '1 / -1' }}>
                   <label style={S.label}>Measurement</label>
                   <input style={S.input} value={meas}
                     onChange={e => setMeas(e.target.value)}
-                    placeholder="e.g. Certificate obtained" />
+                    placeholder="e.g. Monthly sales report, Annual financial audit, 360° feedback survey, System-generated data from Salesforce, Manager observation and quarterly review" />
+                  <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 4 }}>
+                    Describe how achievement will be tracked and verified
+                  </div>
                 </div>
               </div>
 
@@ -697,8 +693,8 @@ export default function KpiSettingPage() {
 
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button onClick={() => createMutation.mutate()}
-                  disabled={!name || !target || !hasCompleteTargets(inlineTargets, currentCycle) || createMutation.isPending}
-                  style={{ ...S.btnPrimary, opacity: (!name || !target || !hasCompleteTargets(inlineTargets, currentCycle)) ? 0.5 : 1 }}>
+                  disabled={!name || !hasCompleteTargets(inlineTargets, currentCycle) || createMutation.isPending}
+                  style={{ ...S.btnPrimary, opacity: (!name || !hasCompleteTargets(inlineTargets, currentCycle)) ? 0.5 : 1 }}>
                   {createMutation.isPending ? 'Adding...' : 'Add KPI'}
                 </button>
                 <button onClick={() => setAdding(false)} style={S.btnSm}>Cancel</button>
