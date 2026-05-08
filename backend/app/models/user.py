@@ -99,6 +99,7 @@ class PerformanceCycle(Base):
     rating_type         = Column(String(20), default='NUMERIC')
     rating_scale_max    = Column(Integer, default=5)
     rating_levels       = Column(JSON)
+    approval_chain      = Column(String(20), default='DM_ONLY')
     created_by          = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at          = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at          = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -310,6 +311,40 @@ class GroupMember(Base):
     group      = relationship("Group", back_populates="members")
     user       = relationship("User", foreign_keys=[user_id])
     __table_args__ = (UniqueConstraint("group_id", "user_id"),)
+
+
+class CustomRole(Base):
+    __tablename__ = "custom_roles"
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name        = Column(String(100), nullable=False, unique=True)
+    description = Column(Text)
+    is_system   = Column(Boolean, default=False)
+    created_by  = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    created_at  = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at  = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    permissions = relationship("RolePermission", back_populates="role", cascade="all, delete-orphan")
+    user_roles  = relationship("UserRole", back_populates="role", cascade="all, delete-orphan")
+
+
+class RolePermission(Base):
+    __tablename__ = "role_permissions"
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    role_id    = Column(UUID(as_uuid=True), ForeignKey("custom_roles.id", ondelete="CASCADE"), nullable=False)
+    permission = Column(String(100), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    role       = relationship("CustomRole", back_populates="permissions")
+    __table_args__ = (UniqueConstraint("role_id", "permission"),)
+
+
+class UserRole(Base):
+    __tablename__ = "user_roles"
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id     = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role_id     = Column(UUID(as_uuid=True), ForeignKey("custom_roles.id", ondelete="CASCADE"), nullable=False)
+    assigned_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    created_at  = Column(DateTime(timezone=True), default=datetime.utcnow)
+    role        = relationship("CustomRole", back_populates="user_roles")
+    __table_args__ = (UniqueConstraint("user_id", "role_id"),)
 
 
 

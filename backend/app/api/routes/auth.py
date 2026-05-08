@@ -5,24 +5,72 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, or_
 from pydantic import BaseModel
 from datetime import datetime
+from typing import List, Optional, Any, Dict
 
 from app.db.session import get_db
 from app.core.security import (
     verify_password, create_access_token, create_refresh_token, get_current_user
 )
-from app.models.user import User
+from app.models.user import User, UserRole, CustomRole, RolePermission
 
 router = APIRouter()
 log = logging.getLogger("auth")
+
+
+class UserOut(BaseModel):
+    id:             str
+    full_name:      str
+    email:          str
+    role:           str
+    derived_roles:  List[str]
+    permissions:    List[str]
 
 
 class TokenOut(BaseModel):
     access_token:  str
     refresh_token: str
     token_type:    str = "bearer"
+    user:          Optional[Dict[str, Any]] = None
+
+
+async def _resolve_permissions_and_derived(db: AsyncSession, user: User):
+    perm_result = await db.execute(
+        select(RolePermission.permission)
+        .join(CustomRole, CustomRole.id == RolePermission.role_id)
+        .join(UserRole, UserRole.role_id == CustomRole.id)
+        .where(UserRole.user_id == user.id)
+    )
+    permissions = sorted({p for (p,) in perm_result.all()})
+
+    direct_count_result = await db.execute(
+        select(func.count(User.id)).where(
+            User.is_active == True,
+            or_(
+                User.direct_manager_id    == user.id,
+                User.reviewing_manager_id == user.id,
+            ),
+        )
+    )
+    direct_count = direct_count_result.scalar() or 0
+
+    hod_count_result = await db.execute(
+        select(func.count(User.id)).where(
+            User.is_active == True,
+            User.hod_id == user.id,
+        )
+    )
+    hod_count = hod_count_result.scalar() or 0
+
+    derived_roles: List[str] = []
+    if direct_count > 0:
+        derived_roles.append("MANAGER")
+    if hod_count > 0:
+        derived_roles.append("HOD")
+
+    return permissions, derived_roles
 
 
 @router.post("/login", response_model=TokenOut)
@@ -57,14 +105,28 @@ async def login(
 
     await db.execute(update(User).where(User.id == user.id).values(last_login=datetime.utcnow()))
 
+    permissions, derived_roles = await _resolve_permissions_and_derived(db, user)
+
     return TokenOut(
         access_token  = create_access_token({"sub": str(user.id), "role": user.role}),
         refresh_token = create_refresh_token({"sub": str(user.id)}),
+        user = {
+            "id":            str(user.id),
+            "full_name":     user.full_name,
+            "email":         user.email,
+            "role":          user.role,
+            "derived_roles": derived_roles,
+            "permissions":   permissions,
+        },
     )
 
 
 @router.get("/me")
-async def me(current_user: User = Depends(get_current_user)):
+async def me(
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    permissions, derived_roles = await _resolve_permissions_and_derived(db, current_user)
     return {
         "id":            str(current_user.id),
         "employee_id":   current_user.employee_id,
@@ -74,5 +136,7 @@ async def me(current_user: User = Depends(get_current_user)):
         "job_grade":     current_user.job_grade,
         "department_id": str(current_user.department_id) if current_user.department_id else None,
         "manager_id":    str(current_user.manager_id) if current_user.manager_id else None,
+        "derived_roles": derived_roles,
+        "permissions":   permissions,
     }
 
