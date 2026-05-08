@@ -142,9 +142,9 @@ async def list_kpis(
         if user_id:
             q = q.where(Kpi.user_id == user_id)
     elif current_user.role in ["MANAGER", "MGR2", "HOD"]:
-        if user_id and str(user_id) != str(current_user.id):
+        if user_id:
             q = q.where(Kpi.user_id == user_id)
-        elif not user_id:
+        else:
             q = q.where(Kpi.user_id == current_user.id)
     else:
         q = q.where(Kpi.user_id == current_user.id)
