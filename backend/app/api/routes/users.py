@@ -204,7 +204,7 @@ async def create_user(
     from app.core.security import hash_password
     user = User(
         employee_id     = body.employee_id,
-        email           = body.email,
+        email           = (body.email or "").strip().lower(),
         full_name       = body.full_name,
         role            = body.role,
         job_grade       = body.job_grade,
@@ -575,8 +575,10 @@ async def import_confirm(
     db:   AsyncSession         = Depends(get_db),
     _:    User                 = Depends(require_hr_admin),
 ):
+    import logging
     from app.core.security import hash_password
     from datetime import datetime as dt
+    log = logging.getLogger("users.import")
 
     result = await db.execute(select(User))
     all_users  = result.scalars().all()
@@ -600,7 +602,12 @@ async def import_confirm(
             if row.employee_code in by_code:
                 skipped += 1
                 continue
-            email_value = (row.email or "").strip() or f"{row.employee_code.lower()}@company.local"
+            raw_email   = (row.email or "").strip()
+            email_value = raw_email.lower() or f"{row.employee_code.lower()}@company.local"
+            log.info(
+                "IMPORT create: employee_id=%r raw_email=%r stored_email=%r password=%r",
+                row.employee_code, raw_email, email_value, "Welcome@1234",
+            )
             db.add(User(
                 employee_id          = row.employee_code,
                 email                = email_value,
@@ -632,7 +639,7 @@ async def import_confirm(
                 skipped += 1
                 continue
             if row.name:            user.full_name        = row.name
-            if row.email:           user.email             = row.email.strip()
+            if row.email:           user.email             = row.email.strip().lower()
             if row.grade:           user.job_grade         = row.grade
             if row.role:            user.role              = normalize_role(row.role)
             if row.position:        user.position_title    = row.position
