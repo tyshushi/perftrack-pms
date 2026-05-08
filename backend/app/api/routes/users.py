@@ -568,9 +568,10 @@ async def import_confirm(
             if row.employee_code in by_code:
                 skipped += 1
                 continue
+            email_value = (row.email or "").strip() or f"{row.employee_code.lower()}@company.local"
             db.add(User(
                 employee_id          = row.employee_code,
-                email                = row.email,
+                email                = email_value,
                 full_name            = row.name,
                 role                 = normalize_role(row.role or "STAFF"),
                 job_grade            = row.grade,
@@ -599,6 +600,7 @@ async def import_confirm(
                 skipped += 1
                 continue
             if row.name:            user.full_name        = row.name
+            if row.email:           user.email             = row.email.strip()
             if row.grade:           user.job_grade         = row.grade
             if row.role:            user.role              = normalize_role(row.role)
             if row.position:        user.position_title    = row.position

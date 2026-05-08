@@ -304,9 +304,11 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
                 <td style={S.td}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Avatar name={u.full_name} />
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 500, color: C.text }}>{u.full_name}</div>
-                      <div style={{ fontSize: 11, color: C.textSecond }}>{u.email}</div>
+                      <div style={{ fontSize: 11, color: C.textSecond,
+                        whiteSpace: 'nowrap', overflow: 'visible',
+                        wordBreak: 'break-all' }}>{u.email}</div>
                     </div>
                   </div>
                 </td>

@@ -544,6 +544,28 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
             <>
               {/* Personal details */}
               <div style={S.sectionLabel}>Personal Details</div>
+              <div style={{ display: 'flex',
+                justifyContent: 'space-between', alignItems: 'center',
+                padding: '11px 12px', marginBottom: 4,
+                background: '#e0f2fe', borderRadius: 8,
+                border: '1px solid #bae6fd' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#0c4a6e', fontSize: 13,
+                    fontWeight: 600 }}>Email</span>
+                  <span style={{ fontSize: 9, fontWeight: 700,
+                    padding: '2px 6px', borderRadius: 4,
+                    background: '#0369a1', color: '#ffffff',
+                    textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Login ID
+                  </span>
+                </div>
+                <span style={{ fontWeight: 600, fontSize: 13,
+                  color: '#0c4a6e', textAlign: 'right',
+                  maxWidth: 240, wordBreak: 'break-all',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                  {profile.email || '—'}
+                </span>
+              </div>
               {[
                 ['Employee Code',   profile.employee_id],
                 ['Position',        profile.position_title  || '—'],
