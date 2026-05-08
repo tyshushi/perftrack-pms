@@ -16,6 +16,7 @@ from app.api.routes.increments import router as increments_router
 from app.api.routes.notifications import router as notifications_router
 from app.api.routes.admin import router as admin_router
 from app.api.routes.groups import router as groups_router
+from app.api.routes.roles import router as roles_router
 
 MIGRATIONS = """
     DO $$ BEGIN ALTER TABLE users ADD COLUMN employment_unit VARCHAR(100);
@@ -176,6 +177,133 @@ DO $$ BEGIN ALTER TABLE kpis ADD COLUMN self_remarks TEXT;
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE kpi_templates ADD COLUMN rating_targets JSONB;
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TABLE IF NOT EXISTS custom_roles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    is_system BOOLEAN DEFAULT FALSE,
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+EXCEPTION WHEN duplicate_table THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TABLE IF NOT EXISTS role_permissions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    role_id UUID NOT NULL REFERENCES custom_roles(id) ON DELETE CASCADE,
+    permission VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(role_id, permission)
+  );
+EXCEPTION WHEN duplicate_table THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TABLE IF NOT EXISTS user_roles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role_id UUID NOT NULL REFERENCES custom_roles(id) ON DELETE CASCADE,
+    assigned_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, role_id)
+  );
+EXCEPTION WHEN duplicate_table THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE performance_cycles ADD COLUMN approval_chain VARCHAR(20) DEFAULT 'DM_ONLY';
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE users ADD COLUMN base_role VARCHAR(50) DEFAULT 'STAFF';
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN
+  UPDATE users SET role = 'MANAGER' WHERE role = 'MGR2';
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  INSERT INTO custom_roles (name, description, is_system) VALUES
+    ('SUPER_ADMIN', 'Full system access including role management', TRUE),
+    ('HR_ADMIN', 'Full HR operations access', TRUE),
+    ('MANAGER', 'Team management and scorecard approval', TRUE),
+    ('HOD', 'Department head access', TRUE),
+    ('STAFF', 'Standard employee access', TRUE)
+  ON CONFLICT (name) DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  INSERT INTO role_permissions (role_id, permission)
+  SELECT id, unnest(ARRAY[
+    'view_employees', 'edit_employee_profiles', 'manage_reporting_lines',
+    'deactivate_employees', 'create_employees',
+    'view_own_scorecard', 'view_team_scorecards', 'view_all_scorecards',
+    'approve_scorecards', 'reject_scorecards', 'reset_scorecards',
+    'view_cycles', 'manage_cycles',
+    'manage_templates', 'cascade_kpis', 'manage_weight_rules',
+    'view_groups', 'manage_groups',
+    'view_team_dashboard', 'view_org_dashboard',
+    'manage_roles'
+  ])
+  FROM custom_roles WHERE name = 'HR_ADMIN'
+  ON CONFLICT DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  INSERT INTO role_permissions (role_id, permission)
+  SELECT id, unnest(ARRAY[
+    'view_employees', 'edit_employee_profiles', 'manage_reporting_lines',
+    'deactivate_employees', 'create_employees',
+    'view_own_scorecard', 'view_team_scorecards', 'view_all_scorecards',
+    'approve_scorecards', 'reject_scorecards', 'reset_scorecards', 'delete_scorecards',
+    'view_cycles', 'manage_cycles',
+    'manage_templates', 'cascade_kpis', 'manage_weight_rules',
+    'view_groups', 'manage_groups',
+    'view_team_dashboard', 'view_org_dashboard',
+    'manage_roles', 'manage_custom_roles'
+  ])
+  FROM custom_roles WHERE name = 'SUPER_ADMIN'
+  ON CONFLICT DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  INSERT INTO role_permissions (role_id, permission)
+  SELECT id, unnest(ARRAY[
+    'view_own_scorecard', 'view_team_scorecards',
+    'approve_scorecards', 'reject_scorecards',
+    'cascade_kpis',
+    'view_team_dashboard'
+  ])
+  FROM custom_roles WHERE name = 'MANAGER'
+  ON CONFLICT DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  INSERT INTO role_permissions (role_id, permission)
+  SELECT id, unnest(ARRAY[
+    'view_own_scorecard', 'view_team_scorecards', 'view_all_scorecards',
+    'approve_scorecards', 'reject_scorecards',
+    'view_team_dashboard', 'view_org_dashboard'
+  ])
+  FROM custom_roles WHERE name = 'HOD'
+  ON CONFLICT DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  INSERT INTO role_permissions (role_id, permission)
+  SELECT id, unnest(ARRAY[
+    'view_own_scorecard'
+  ])
+  FROM custom_roles WHERE name = 'STAFF'
+  ON CONFLICT DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  INSERT INTO user_roles (user_id, role_id)
+  SELECT u.id, r.id
+  FROM users u
+  JOIN custom_roles r ON r.name = UPPER(u.role)
+  ON CONFLICT DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
 """
 
 
@@ -243,6 +371,7 @@ app.include_router(increments_router,    prefix="/api/v1/increments",    tags=["
 app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["Notifications"])
 app.include_router(admin_router,         prefix="/api/v1/admin",         tags=["Admin"])
 app.include_router(groups_router,        prefix="/api/v1/groups",        tags=["Groups"])
+app.include_router(roles_router,         prefix="/api/v1/roles",         tags=["Roles"])
 
 
 @app.get("/health")

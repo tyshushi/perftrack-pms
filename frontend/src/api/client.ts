@@ -106,6 +106,18 @@ export const userProfileApi = {
   updateManagers: (id: string, data: any) => api.patch(`/users/${id}/managers`, data),
 };
 
+export const rolesApi = {
+  list:        ()                     => api.get('/roles/'),
+  create:      (data: any)            => api.post('/roles/', data),
+  update:      (id: string, data: any) => api.patch(`/roles/${id}`, data),
+  delete:      (id: string)           => api.delete(`/roles/${id}`),
+  getUsers:    (id: string)           => api.get(`/roles/${id}/users`),
+  assignUsers: (id: string, userIds: string[]) =>
+    api.post(`/roles/${id}/users`, { user_ids: userIds }),
+  removeUser:  (roleId: string, userId: string) =>
+    api.delete(`/roles/${roleId}/users/${userId}`),
+};
+
 export const groupsApi = {
   list:          (cycleId?: string) =>
     api.get('/groups/', { params: cycleId ? { cycle_id: cycleId } : {} }),
