@@ -577,11 +577,22 @@ async def admin_delete_scorecard(
     db:   AsyncSession = Depends(get_db),
     _:    User         = Depends(require_hr_admin),
 ):
+    from app.models.user import KpiAuditLog
+
     res = await db.execute(
         select(Kpi).where(Kpi.cycle_id == body.cycle_id, Kpi.user_id == body.employee_id)
     )
     kpis = res.scalars().all()
     count = len(kpis)
+
+    if kpis:
+        audit_result = await db.execute(
+            select(KpiAuditLog).where(KpiAuditLog.kpi_id.in_([k.id for k in kpis]))
+        )
+        for log in audit_result.scalars().all():
+            await db.delete(log)
+        await db.flush()
+
     for kpi in kpis:
         await db.delete(kpi)
     await db.flush()
