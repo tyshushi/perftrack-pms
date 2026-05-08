@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, func, or_
+from sqlalchemy import select, update, func, or_, text
 from pydantic import BaseModel
 from datetime import datetime
 from typing import List, Optional, Any, Dict
@@ -37,62 +37,57 @@ class TokenOut(BaseModel):
 
 
 async def _resolve_permissions_and_derived(db: AsyncSession, user: User):
-    perm_result = await db.execute(
-        select(RolePermission.permission)
-        .join(CustomRole, CustomRole.id == RolePermission.role_id)
-        .join(UserRole, UserRole.role_id == CustomRole.id)
-        .where(UserRole.user_id == user.id)
-    )
-    permissions = sorted({p for (p,) in perm_result.all()})
+    # Get permissions from explicitly assigned roles
+    raw = await db.execute(text("""
+        SELECT rp.permission
+        FROM user_roles ur
+        JOIN role_permissions rp ON rp.role_id = ur.role_id
+        WHERE ur.user_id = :user_id
+    """), {"user_id": str(user.id)})
+    explicit_permissions = {row[0] for row in raw.all()}
 
-    log.info("=== RBAC DEBUG: user_id=%s permissions=%d user_roles_check below ===", str(user.id), len(permissions))
-    ur_result = await db.execute(select(UserRole).where(UserRole.user_id == user.id))
-    ur_rows = ur_result.scalars().all()
-    log.info("=== RBAC DEBUG: user_roles rows=%d ===", len(ur_rows))
-    cr_result = await db.execute(select(CustomRole))
-    cr_rows = cr_result.scalars().all()
-    log.info("=== RBAC DEBUG: custom_roles total=%d names=%s ===", len(cr_rows), [r.name for r in cr_rows])
-    rp_result = await db.execute(select(RolePermission))
-    rp_rows = rp_result.scalars().all()
-    log.info("=== RBAC DEBUG: role_permissions total=%d ===", len(rp_rows))
+    # Count direct reports to derive MANAGER role
+    direct_result = await db.execute(text("""
+        SELECT COUNT(*) FROM users
+        WHERE is_active = true
+        AND (direct_manager_id = :uid OR reviewing_manager_id = :uid)
+    """), {"uid": str(user.id)})
+    direct_count = direct_result.scalar() or 0
 
-    log.info("PERMISSIONS DEBUG: user_id=%s found %d permissions", user.id, len(permissions))
-
-    ur_count = await db.execute(select(func.count()).select_from(UserRole).where(UserRole.user_id == user.id))
-    log.info("USER_ROLES DEBUG: user_id=%s has %d role assignments", user.id, ur_count.scalar())
-
-    cr_count = await db.execute(select(func.count()).select_from(CustomRole))
-    log.info("CUSTOM_ROLES DEBUG: total %d custom roles in DB", cr_count.scalar())
-
-    rp_count = await db.execute(select(func.count()).select_from(RolePermission))
-    log.info("ROLE_PERMISSIONS DEBUG: total %d permission rows in DB", rp_count.scalar())
-
-    direct_count_result = await db.execute(
-        select(func.count(User.id)).where(
-            User.is_active == True,
-            or_(
-                User.direct_manager_id    == user.id,
-                User.reviewing_manager_id == user.id,
-            ),
-        )
-    )
-    direct_count = direct_count_result.scalar() or 0
-
-    hod_count_result = await db.execute(
-        select(func.count(User.id)).where(
-            User.is_active == True,
-            User.hod_id == user.id,
-        )
-    )
-    hod_count = hod_count_result.scalar() or 0
+    # Count HOD reports
+    hod_result = await db.execute(text("""
+        SELECT COUNT(*) FROM users
+        WHERE is_active = true AND hod_id = :uid
+    """), {"uid": str(user.id)})
+    hod_count = hod_result.scalar() or 0
 
     derived_roles: List[str] = []
+    derived_permissions = set()
+
     if direct_count > 0:
         derived_roles.append("MANAGER")
+        mgr_perms = await db.execute(text("""
+            SELECT rp.permission
+            FROM custom_roles cr
+            JOIN role_permissions rp ON rp.role_id = cr.id
+            WHERE cr.name = 'MANAGER'
+        """))
+        derived_permissions.update(row[0] for row in mgr_perms.all())
+
     if hod_count > 0:
         derived_roles.append("HOD")
+        hod_perms = await db.execute(text("""
+            SELECT rp.permission
+            FROM custom_roles cr
+            JOIN role_permissions rp ON rp.role_id = cr.id
+            WHERE cr.name = 'HOD'
+        """))
+        derived_permissions.update(row[0] for row in hod_perms.all())
 
-    return permissions, derived_roles
+    # Merge explicit + derived permissions
+    all_permissions = sorted(explicit_permissions | derived_permissions)
+
+    return all_permissions, derived_roles
 
 
 @router.post("/login", response_model=TokenOut)
