@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
 import { kpisApi, cyclesApi, usersApi } from '../api/client';
 
@@ -29,6 +29,38 @@ const CYCLE_STATUS_STYLE: Record<string, { bg: string; color: string; label: str
   ACTIVE: { bg: '#dcfce7', color: '#166534', label: 'Active' },
   CLOSED: { bg: '#fee2e2', color: '#991b1b', label: 'Closed' },
 };
+
+type ReportStatus =
+  | 'NOT_STARTED'
+  | 'DRAFT'
+  | 'PENDING_YOURS'
+  | 'PENDING_RM'
+  | 'PENDING_HOD'
+  | 'LOCKED'
+  | 'REJECTED'
+  | 'SELF_EVAL';
+
+const REPORT_STATUS_STYLE: Record<ReportStatus, { bg: string; color: string; label: string }> = {
+  NOT_STARTED:   { bg: '#efefec', color: '#6b6b6b', label: 'Not Started' },
+  DRAFT:         { bg: '#fef9c3', color: '#854d0e', label: 'Draft' },
+  PENDING_YOURS: { bg: '#e0f2fe', color: '#0369a1', label: 'Pending Your Approval' },
+  PENDING_RM:    { bg: '#f3e8ff', color: '#6b21a8', label: 'Pending RM Approval' },
+  PENDING_HOD:   { bg: '#ffedd5', color: '#9a3412', label: 'Pending HOD Approval' },
+  LOCKED:        { bg: '#dcfce7', color: '#166534', label: 'Approved & Locked' },
+  REJECTED:      { bg: '#fee2e2', color: '#991b1b', label: 'Rejected' },
+  SELF_EVAL:     { bg: '#ccfbf1', color: '#115e59', label: 'Self Evaluation' },
+};
+
+function computeReportStatus(kpis: any[], employee: any, currentUserId: string): ReportStatus {
+  if (!kpis || kpis.length === 0) return 'NOT_STARTED';
+  if (kpis.some(k => k.status === 'REJECTED')) return 'REJECTED';
+  if (kpis.some(k => k.status === 'PENDING_DM') && employee.direct_manager_id === currentUserId) return 'PENDING_YOURS';
+  if (kpis.some(k => k.status === 'PENDING_RM')) return 'PENDING_RM';
+  if (kpis.some(k => k.status === 'PENDING_HOD')) return 'PENDING_HOD';
+  if (kpis.length > 0 && kpis.every(k => k.status === 'LOCKED')) return 'LOCKED';
+  if (kpis.some(k => k.status === 'DRAFT')) return 'DRAFT';
+  return 'DRAFT';
+}
 
 function ratingLabelFor(value: any, cycle: any): string {
   const levels: any[] = Array.isArray(cycle?.rating_levels) ? cycle.rating_levels : [];
@@ -99,26 +131,24 @@ function EmployeeScorecard({
   cycleId,
   cycle,
   currentUserId,
+  kpis,
+  isLoading,
   onDone,
 }: {
   employee:      any;
   cycleId:       string;
   cycle:         any;
   currentUserId: string;
+  kpis:          any[];
+  isLoading:     boolean;
   onDone:        () => void;
 }) {
   const qc = useQueryClient();
   const [showReject, setShowReject] = useState(false);
   const [comment,    setComment]    = useState('');
 
-  const { data: kpis = [], isLoading } = useQuery({
-    queryKey: ['kpis', cycleId, employee.id],
-    queryFn:  () => kpisApi.list(cycleId, employee.id).then(r => r.data),
-    enabled:  !!cycleId && !!employee,
-  });
-
   const PENDING_STATES = ['PENDING_DM', 'PENDING_RM', 'PENDING_HOD'] as const;
-  const pendingKpis = (kpis as any[]).filter(k => (PENDING_STATES as readonly string[]).includes(k.status));
+  const pendingKpis = kpis.filter(k => (PENDING_STATES as readonly string[]).includes(k.status));
 
   // Determine which level the current user is approving at, based on
   // the pending status and the matching manager field on the employee.
@@ -152,7 +182,7 @@ function EmployeeScorecard({
 
   const kpisByDimension = CATEGORIES.map(cat => ({
     cat,
-    kpis: pendingKpis.filter((k: any) => k.kpi_dimension === cat),
+    kpis: kpis.filter((k: any) => k.kpi_dimension === cat),
   })).filter(g => g.kpis.length > 0);
 
   if (isLoading) {
@@ -161,10 +191,10 @@ function EmployeeScorecard({
     );
   }
 
-  if (pendingKpis.length === 0) {
+  if (kpis.length === 0) {
     return (
       <div style={{ padding: '12px 0', color: C.textTertiary, fontSize: 13, fontStyle: 'italic' }}>
-        No KPIs pending your approval
+        No KPIs created yet for this cycle
       </div>
     );
   }
@@ -217,68 +247,76 @@ function EmployeeScorecard({
       {/* Weight total */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', paddingBottom: 12, borderBottom: `0.5px solid ${C.borderLight}`, marginBottom: 12 }}>
         <span style={{ fontSize: 13, color: C.textSecond }}>
-          Total weight: <strong style={{ color: C.text }}>{pendingKpis.reduce((s: number, k: any) => s + k.weight, 0)}%</strong>
+          Total weight: <strong style={{ color: C.text }}>{kpis.reduce((s: number, k: any) => s + (k.weight || 0), 0)}%</strong>
         </span>
       </div>
 
-      {/* Reject comment box */}
-      {showReject && (
-        <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: 12, fontWeight: 500, color: C.textSecond, display: 'block', marginBottom: 4 }}>
-            Rejection reason (required)
-          </label>
-          <textarea
-            value={comment}
-            onChange={e => setComment(e.target.value)}
-            placeholder="Explain why the scorecard is being rejected…"
-            style={{ width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.bg, color: C.text, fontFamily: C.font, outline: 'none', minHeight: 72, resize: 'vertical', boxSizing: 'border-box' }}
-          />
+      {pendingKpis.length === 0 ? (
+        <div style={{ fontSize: 12, color: C.textTertiary, fontStyle: 'italic' }}>
+          No action required at this time.
         </div>
-      )}
+      ) : (
+        <>
+          {/* Reject comment box */}
+          {showReject && (
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 12, fontWeight: 500, color: C.textSecond, display: 'block', marginBottom: 4 }}>
+                Rejection reason (required)
+              </label>
+              <textarea
+                value={comment}
+                onChange={e => setComment(e.target.value)}
+                placeholder="Explain why the scorecard is being rejected…"
+                style={{ width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.bg, color: C.text, fontFamily: C.font, outline: 'none', minHeight: 72, resize: 'vertical', boxSizing: 'border-box' }}
+              />
+            </div>
+          )}
 
-      {/* Action buttons */}
-      {!isMyApproval && (
-        <div style={{ marginBottom: 10, fontSize: 12, color: C.textTertiary, fontStyle: 'italic' }}>
-          You are not the current approver for this scorecard.
-        </div>
-      )}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {!showReject ? (
-          <>
-            <button
-              onClick={() => reviewMutation.mutate({ action: 'approve', comment: '' })}
-              disabled={reviewMutation.isPending || !isMyApproval}
-              style={{ padding: '8px 18px', border: 'none', borderRadius: 8, background: C.text, color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: C.font }}>
-              {reviewMutation.isPending ? 'Approving…' : 'Approve Scorecard'}
-            </button>
-            <button
-              onClick={() => setShowReject(true)}
-              disabled={reviewMutation.isPending || !isMyApproval}
-              style={{ padding: '6px 14px', border: `1px solid #fca5a5`, borderRadius: 8, background: C.bg, color: '#991b1b', fontSize: 12, cursor: isMyApproval ? 'pointer' : 'not-allowed', fontFamily: C.font, opacity: isMyApproval ? 1 : 0.5 }}>
-              Reject Scorecard
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              onClick={() => reviewMutation.mutate({ action: 'reject', comment })}
-              disabled={!comment.trim() || reviewMutation.isPending}
-              style={{ padding: '8px 18px', border: 'none', borderRadius: 8, background: '#991b1b', color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: !comment.trim() ? 'not-allowed' : 'pointer', fontFamily: C.font, opacity: !comment.trim() ? 0.5 : 1 }}>
-              {reviewMutation.isPending ? 'Rejecting…' : 'Confirm Rejection'}
-            </button>
-            <button
-              onClick={() => { setShowReject(false); setComment(''); }}
-              style={{ padding: '6px 10px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font }}>
-              Cancel
-            </button>
-          </>
-        )}
-      </div>
+          {/* Action buttons */}
+          {!isMyApproval && (
+            <div style={{ marginBottom: 10, fontSize: 12, color: C.textTertiary, fontStyle: 'italic' }}>
+              You are not the current approver for this scorecard.
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {!showReject ? (
+              <>
+                <button
+                  onClick={() => reviewMutation.mutate({ action: 'approve', comment: '' })}
+                  disabled={reviewMutation.isPending || !isMyApproval}
+                  style={{ padding: '8px 18px', border: 'none', borderRadius: 8, background: C.text, color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: C.font }}>
+                  {reviewMutation.isPending ? 'Approving…' : 'Approve Scorecard'}
+                </button>
+                <button
+                  onClick={() => setShowReject(true)}
+                  disabled={reviewMutation.isPending || !isMyApproval}
+                  style={{ padding: '6px 14px', border: `1px solid #fca5a5`, borderRadius: 8, background: C.bg, color: '#991b1b', fontSize: 12, cursor: isMyApproval ? 'pointer' : 'not-allowed', fontFamily: C.font, opacity: isMyApproval ? 1 : 0.5 }}>
+                  Reject Scorecard
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => reviewMutation.mutate({ action: 'reject', comment })}
+                  disabled={!comment.trim() || reviewMutation.isPending}
+                  style={{ padding: '8px 18px', border: 'none', borderRadius: 8, background: '#991b1b', color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: !comment.trim() ? 'not-allowed' : 'pointer', fontFamily: C.font, opacity: !comment.trim() ? 0.5 : 1 }}>
+                  {reviewMutation.isPending ? 'Rejecting…' : 'Confirm Rejection'}
+                </button>
+                <button
+                  onClick={() => { setShowReject(false); setComment(''); }}
+                  style={{ padding: '6px 10px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font }}>
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
 
-      {reviewMutation.isError && (
-        <div style={{ marginTop: 8, fontSize: 12, color: '#991b1b' }}>
-          {(reviewMutation.error as any)?.response?.data?.detail || 'Action failed'}
-        </div>
+          {reviewMutation.isError && (
+            <div style={{ marginTop: 8, fontSize: 12, color: '#991b1b' }}>
+              {(reviewMutation.error as any)?.response?.data?.detail || 'Action failed'}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -286,8 +324,9 @@ function EmployeeScorecard({
 
 export default function ManagerApprovalPage() {
   const { user } = useAuthStore();
-  const [cycleId,   setCycleId]   = useState('');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const currentUserId = user?.id ?? '';
+  const [cycleId, setCycleId] = useState('');
+  const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>({});
 
   const { data: cycles = [] } = useQuery({
     queryKey: ['cycles'],
@@ -308,8 +347,39 @@ export default function ManagerApprovalPage() {
     queryFn:  () => usersApi.directReports().then(r => r.data),
   });
 
-  // Reports include anyone for whom the current user is DM, RM, or HOD
   const myReports = (reports as any[]);
+
+  // Fetch each direct report's KPIs separately so we can compute per-employee status
+  const reportKpiQueries = useQueries({
+    queries: myReports.map((r: any) => ({
+      queryKey: ['kpis', cycleId, r.id],
+      queryFn:  () => kpisApi.list(cycleId, r.id).then(res => res.data),
+      enabled:  !!cycleId && !!r.id,
+    })),
+  });
+
+  const reportData = myReports.map((report: any, i: number) => {
+    const q = reportKpiQueries[i];
+    const kpis = (q?.data as any[]) ?? [];
+    const status = computeReportStatus(kpis, report, currentUserId);
+    return { report, kpis, status, isLoading: !!q?.isLoading };
+  });
+
+  const summary = reportData.reduce(
+    (acc, r) => {
+      if (r.status === 'PENDING_YOURS') acc.awaiting += 1;
+      if (r.status === 'LOCKED')        acc.approved += 1;
+      if (r.status === 'NOT_STARTED')   acc.notStarted += 1;
+      return acc;
+    },
+    { awaiting: 0, approved: 0, notStarted: 0 },
+  );
+
+  const isOpen = (id: string, status: ReportStatus) =>
+    expandOverrides[id] !== undefined ? expandOverrides[id] : status === 'PENDING_YOURS';
+
+  const toggle = (id: string, status: ReportStatus) =>
+    setExpandOverrides(prev => ({ ...prev, [id]: !isOpen(id, status) }));
 
   return (
     <div style={{ fontFamily: C.font, color: C.text }}>
@@ -340,7 +410,7 @@ export default function ManagerApprovalPage() {
         </div>
         <select
           value={cycleId}
-          onChange={e => { setCycleId(e.target.value); setExpandedId(null); }}
+          onChange={e => { setCycleId(e.target.value); setExpandOverrides({}); }}
           style={{ width: '100%', padding: '12px 14px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 15, fontWeight: 600, background: C.bg, color: cycleId ? C.text : C.textTertiary, fontFamily: C.font, outline: 'none', cursor: 'pointer' }}>
           <option value="">Select a performance cycle to begin…</option>
           {sortedCycles.map((c: any) => (
@@ -357,34 +427,52 @@ export default function ManagerApprovalPage() {
             </div>
           )}
 
-          {myReports.map((report: any) => {
-            const isExpanded = expandedId === report.id;
+          {myReports.length > 0 && (
+            <div style={{ marginBottom: 12, padding: '10px 14px', background: C.bgSecondary, border: `0.5px solid ${C.borderLight}`, borderRadius: 8, fontSize: 13, color: C.textSecond }}>
+              <strong style={{ color: C.text, fontWeight: 600 }}>{summary.awaiting}</strong> awaiting your approval
+              <span style={{ margin: '0 8px', color: C.textTertiary }}>·</span>
+              <strong style={{ color: C.text, fontWeight: 600 }}>{summary.approved}</strong> approved
+              <span style={{ margin: '0 8px', color: C.textTertiary }}>·</span>
+              <strong style={{ color: C.text, fontWeight: 600 }}>{summary.notStarted}</strong> not started
+            </div>
+          )}
+
+          {reportData.map(({ report, kpis, status, isLoading }) => {
+            const expanded = isOpen(report.id, status);
+            const badge    = REPORT_STATUS_STYLE[status];
             return (
-              <div key={report.id} style={{ background: C.bg, border: `1px solid ${isExpanded ? C.border : C.borderLight}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
+              <div key={report.id} style={{ background: C.bg, border: `1px solid ${expanded ? C.border : C.borderLight}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
                 {/* Employee header row */}
                 <button
-                  onClick={() => setExpandedId(isExpanded ? null : report.id)}
+                  onClick={() => toggle(report.id, status)}
                   style={{ width: '100%', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: C.font, textAlign: 'left' }}>
-                  <div>
-                    <div style={{ fontWeight: 500, fontSize: 14, color: C.text }}>{report.full_name}</div>
-                    {report.position_title && (
-                      <div style={{ fontSize: 12, color: C.textSecond, marginTop: 1 }}>{report.position_title}</div>
-                    )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 500, fontSize: 14, color: C.text }}>{report.full_name}</div>
+                      {report.position_title && (
+                        <div style={{ fontSize: 12, color: C.textSecond, marginTop: 1 }}>{report.position_title}</div>
+                      )}
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 9px', borderRadius: 10, background: badge.bg, color: badge.color, whiteSpace: 'nowrap' }}>
+                      {badge.label}
+                    </span>
                   </div>
-                  <span style={{ fontSize: 14, color: C.textTertiary, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+                  <span style={{ fontSize: 14, color: C.textTertiary, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
                     ▾
                   </span>
                 </button>
 
                 {/* Expanded scorecard */}
-                {isExpanded && (
+                {expanded && (
                   <div style={{ padding: '0 16px 16px' }}>
                     <EmployeeScorecard
                       employee={report}
                       cycleId={cycleId}
                       cycle={currentCycle}
-                      currentUserId={user?.id ?? ''}
-                      onDone={() => setExpandedId(null)}
+                      currentUserId={currentUserId}
+                      kpis={kpis}
+                      isLoading={isLoading}
+                      onDone={() => setExpandOverrides(prev => ({ ...prev, [report.id]: false }))}
                     />
                   </div>
                 )}
