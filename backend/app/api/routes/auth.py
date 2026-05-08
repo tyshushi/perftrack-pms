@@ -45,6 +45,17 @@ async def _resolve_permissions_and_derived(db: AsyncSession, user: User):
     )
     permissions = sorted({p for (p,) in perm_result.all()})
 
+    log.info("PERMISSIONS DEBUG: user_id=%s found %d permissions", user.id, len(permissions))
+
+    ur_count = await db.execute(select(func.count()).select_from(UserRole).where(UserRole.user_id == user.id))
+    log.info("USER_ROLES DEBUG: user_id=%s has %d role assignments", user.id, ur_count.scalar())
+
+    cr_count = await db.execute(select(func.count()).select_from(CustomRole))
+    log.info("CUSTOM_ROLES DEBUG: total %d custom roles in DB", cr_count.scalar())
+
+    rp_count = await db.execute(select(func.count()).select_from(RolePermission))
+    log.info("ROLE_PERMISSIONS DEBUG: total %d permission rows in DB", rp_count.scalar())
+
     direct_count_result = await db.execute(
         select(func.count(User.id)).where(
             User.is_active == True,

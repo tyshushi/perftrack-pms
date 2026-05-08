@@ -388,8 +388,11 @@ DO $$ BEGIN
 EXCEPTION WHEN others THEN NULL; END $$;
 
 DO $$ BEGIN
-  -- Re-assign user_roles for all existing users
-  DELETE FROM user_roles WHERE role_id IN (SELECT id FROM custom_roles WHERE is_system = TRUE);
+  -- Force re-populate user_roles for system roles
+  DELETE FROM user_roles ur
+  USING custom_roles cr
+  WHERE ur.role_id = cr.id AND cr.is_system = TRUE;
+
   INSERT INTO user_roles (user_id, role_id)
   SELECT u.id, r.id
   FROM users u
