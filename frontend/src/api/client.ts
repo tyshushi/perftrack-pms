@@ -75,6 +75,8 @@ export const usersApi = {
   list:          (params?: any) => api.get('/users/', { params }),
   create:        (data: any)    => api.post('/users/', data),
   directReports: ()             => api.get('/users/direct-reports'),
+  deactivate:    (id: string)   => api.delete(`/users/${id}`),
+  reactivate:    (id: string)   => api.post(`/users/${id}/reactivate`),
 };
 
 export const departmentsApi = {

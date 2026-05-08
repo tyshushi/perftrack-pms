@@ -6,7 +6,7 @@ from sqlalchemy import select
 from pydantic import BaseModel
 import csv
 import io
-from datetime import date
+from datetime import date, datetime
 
 from app.db.session import get_db
 from app.core.security import get_current_user, require_hr_admin
@@ -339,6 +339,42 @@ async def change_password(
     user.hashed_password = hash_password(body.new_password)
     await db.flush()
     return {"message": "Password changed successfully"}
+
+
+# ── Deactivate / reactivate user ───────────────────────────────────────────
+
+@router.delete("/{user_id}")
+async def deactivate_user(
+    user_id: UUID,
+    db:      AsyncSession = Depends(get_db),
+    _:       User         = Depends(require_hr_admin),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    user.is_active = False
+    user.updated_at = datetime.utcnow()
+    await db.flush()
+    return {"message": "User deactivated"}
+
+
+@router.post("/{user_id}/reactivate")
+async def reactivate_user(
+    user_id: UUID,
+    db:      AsyncSession = Depends(get_db),
+    _:       User         = Depends(require_hr_admin),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    user.is_active = True
+    user.updated_at = datetime.utcnow()
+    await db.flush()
+    return {"message": "User reactivated"}
 
 
 # ── CSV import preview ─────────────────────────────────────────────────────
