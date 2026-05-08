@@ -16,6 +16,54 @@ from app.models.user import PerformanceCycle, User, IncrementBand, BellCurveTarg
 router = APIRouter()
 
 
+VALID_APPROVAL_LEVELS = {"DM", "RM", "HOD"}
+
+
+def normalise_approval_chain(value) -> list:
+    """Coerce stored approval_chain (str/list/None) into a clean list."""
+    import json as _json
+    if value is None:
+        return ["DM"]
+    if isinstance(value, list):
+        chain = value
+    elif isinstance(value, str):
+        s = value.strip()
+        if s.startswith("["):
+            try:
+                chain = _json.loads(s)
+            except Exception:
+                chain = ["DM"]
+        elif s == "DM_ONLY" or s == "":
+            chain = ["DM"]
+        else:
+            chain = [p.strip() for p in s.split(",") if p.strip()]
+    else:
+        chain = ["DM"]
+    chain = [str(x).upper() for x in chain if str(x).upper() in VALID_APPROVAL_LEVELS]
+    if not chain or chain[0] != "DM":
+        chain = ["DM"] + [c for c in chain if c != "DM"]
+    seen = []
+    for c in chain:
+        if c not in seen:
+            seen.append(c)
+    return seen
+
+
+def validate_approval_chain(chain: list) -> list:
+    if not chain:
+        raise HTTPException(400, "Approval chain cannot be empty")
+    cleaned = []
+    for level in chain:
+        lv = str(level).upper()
+        if lv not in VALID_APPROVAL_LEVELS:
+            raise HTTPException(400, f"Invalid approval level: {level}")
+        if lv not in cleaned:
+            cleaned.append(lv)
+    if cleaned[0] != "DM":
+        raise HTTPException(400, "DM must always be the first level in the approval chain")
+    return cleaned
+
+
 class CycleCreate(BaseModel):
     name:               str
     year:               int
@@ -34,6 +82,7 @@ class CycleCreate(BaseModel):
     rating_type:        Optional[str]  = "NUMERIC"
     rating_scale_max:   Optional[int]  = 5
     rating_levels:      Optional[list] = None
+    approval_chain:     Optional[List[str]] = None
 
 
 class IncrementBandIn(BaseModel):
@@ -78,9 +127,34 @@ async def list_cycles(
             "rating_type":      c.rating_type or "NUMERIC",
             "rating_scale_max": c.rating_scale_max or 5,
             "rating_levels":    c.rating_levels,
+            "approval_chain":   normalise_approval_chain(c.approval_chain),
         }
         for c in cycles
     ]
+
+
+@router.get("/{cycle_id}")
+async def get_cycle(
+    cycle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _:  User = Depends(get_current_user),
+):
+    result = await db.execute(select(PerformanceCycle).where(PerformanceCycle.id == cycle_id))
+    c = result.scalar_one_or_none()
+    if not c:
+        raise HTTPException(404, "Cycle not found")
+    return {
+        "id": str(c.id), "name": c.name, "year": c.year,
+        "status": c.status,
+        "kpi_setting_start": str(c.kpi_setting_start),
+        "kpi_setting_end": str(c.kpi_setting_end),
+        "self_eval_start": str(c.self_eval_start),
+        "self_eval_end": str(c.self_eval_end),
+        "rating_type":      c.rating_type or "NUMERIC",
+        "rating_scale_max": c.rating_scale_max or 5,
+        "rating_levels":    c.rating_levels,
+        "approval_chain":   normalise_approval_chain(c.approval_chain),
+    }
 
 
 @router.post("/")
@@ -92,11 +166,18 @@ async def create_cycle(
     if current_user.role not in ["HR_ADMIN", "SUPER_ADMIN"]:
         raise HTTPException(403, "HR Admin only")
     data = body.model_dump()
+    chain = validate_approval_chain(data.get("approval_chain") or ["DM"])
+    data["approval_chain"] = chain
     cycle = PerformanceCycle(**data, created_by=current_user.id)
     db.add(cycle)
     await db.flush()
     await db.refresh(cycle)
-    return {"id": str(cycle.id), "name": cycle.name, "status": cycle.status}
+    return {
+        "id": str(cycle.id),
+        "name": cycle.name,
+        "status": cycle.status,
+        "approval_chain": normalise_approval_chain(cycle.approval_chain),
+    }
 
 
 @router.patch("/{cycle_id}/status")
