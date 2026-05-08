@@ -301,7 +301,7 @@ DO $$ BEGIN
   INSERT INTO user_roles (user_id, role_id)
   SELECT u.id, r.id
   FROM users u
-  JOIN custom_roles r ON r.name = UPPER(u.role)
+  JOIN custom_roles r ON r.name = UPPER(u.role::text)
   ON CONFLICT DO NOTHING;
 EXCEPTION WHEN others THEN NULL; END $$;
 
@@ -429,8 +429,8 @@ async def run_schema_and_seed():
                     INSERT INTO user_roles (user_id, role_id)
                     SELECT u.id, r.id
                     FROM users u
-                    JOIN custom_roles r ON r.name = u.role
-                    WHERE u.role IN ('HR_ADMIN', 'SUPER_ADMIN', 'MANAGER', 'HOD', 'STAFF')
+                    JOIN custom_roles r ON r.name = u.role::text
+                    WHERE u.role::text IN ('HR_ADMIN', 'SUPER_ADMIN', 'MANAGER', 'HOD', 'STAFF')
                     ON CONFLICT DO NOTHING
                     RETURNING id
                 )
