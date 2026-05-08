@@ -79,6 +79,22 @@ class ScorecardReviewRequest(BaseModel):
     comment:     str = ""
 
 
+class SelfEvaluationItem(BaseModel):
+    kpi_id:             UUID
+    actual_achievement: str
+    self_rating:        float
+    self_remarks:       Optional[str] = ""
+
+
+class SelfEvaluateAllRequest(BaseModel):
+    cycle_id:    UUID
+    evaluations: List[SelfEvaluationItem]
+
+
+class RatingTargetsRequest(BaseModel):
+    rating_targets: list
+
+
 # ── Helper ─────────────────────────────────────────────────────────────────
 
 def kpi_to_dict(k: Kpi) -> dict:
@@ -104,6 +120,10 @@ def kpi_to_dict(k: Kpi) -> dict:
         "mgr2_comment":  k.mgr2_comment,
         "hod_comment":   k.hod_comment,
         "cascaded_by":   str(k.cascaded_by) if k.cascaded_by else None,
+        "rating_targets":     k.rating_targets,
+        "actual_achievement": k.actual_achievement,
+        "self_rating":        float(k.self_rating) if k.self_rating is not None else None,
+        "self_remarks":       k.self_remarks,
     }
 
 def rule_to_dict(r: WeightRule) -> dict:
@@ -711,6 +731,50 @@ async def review_scorecard(
     return {"updated": len(kpis), "message": msg}
 
 
+# ── Self-evaluation ────────────────────────────────────────────────────────
+
+@router.post("/self-evaluate-all")
+async def self_evaluate_all(
+    body:         SelfEvaluateAllRequest,
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(get_current_user),
+):
+    locked_res = await db.execute(
+        select(Kpi).where(
+            Kpi.cycle_id == body.cycle_id,
+            Kpi.user_id  == current_user.id,
+            Kpi.status.in_(["LOCKED", "SELF_EVALUATED"]),
+        )
+    )
+    locked_kpis = locked_res.scalars().all()
+    locked_ids  = {str(k.id) for k in locked_kpis}
+
+    eval_ids = {str(e.kpi_id) for e in body.evaluations}
+
+    if locked_ids - eval_ids:
+        raise HTTPException(
+            400,
+            "All locked KPIs for this cycle must be evaluated before submission",
+        )
+
+    by_id = {str(k.id): k for k in locked_kpis}
+    count = 0
+    for ev in body.evaluations:
+        kpi = by_id.get(str(ev.kpi_id))
+        if not kpi:
+            raise HTTPException(404, f"KPI {ev.kpi_id} not found or not eligible")
+        if str(kpi.user_id) != str(current_user.id):
+            raise HTTPException(403, "Cannot evaluate KPIs that are not yours")
+        kpi.actual_achievement = ev.actual_achievement
+        kpi.self_rating        = ev.self_rating
+        kpi.self_remarks       = ev.self_remarks or ""
+        kpi.status             = "SELF_EVALUATED"
+        count += 1
+
+    await db.flush()
+    return {"evaluated": count, "message": "Self evaluation submitted"}
+
+
 # ── Parameterised routes ───────────────────────────────────────────────────
 
 @router.patch("/{kpi_id}")
@@ -850,6 +914,27 @@ async def adjust_weight(
 
     kpi.weight = body.weight
     kpi.status = "PENDING_DM"
+    await db.flush()
+    await db.refresh(kpi)
+    return kpi_to_dict(kpi)
+
+
+@router.patch("/{kpi_id}/rating-targets")
+async def update_rating_targets(
+    kpi_id:       UUID,
+    body:         RatingTargetsRequest,
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(get_current_user),
+):
+    result = await db.execute(select(Kpi).where(Kpi.id == kpi_id))
+    kpi = result.scalar_one_or_none()
+    if not kpi:
+        raise HTTPException(404, "KPI not found")
+    if str(kpi.user_id) != str(current_user.id):
+        raise HTTPException(403, "Not your KPI")
+    if kpi.status not in ("DRAFT", "APPROVED"):
+        raise HTTPException(400, "Rating targets can only be set on DRAFT or APPROVED KPIs")
+    kpi.rating_targets = body.rating_targets
     await db.flush()
     await db.refresh(kpi)
     return kpi_to_dict(kpi)

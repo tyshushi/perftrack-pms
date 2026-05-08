@@ -69,19 +69,106 @@ function scorecardStatusSummary(kpis: any[]): { label: string; bg: string; color
   return { label: `Draft — ${total}% set`, bg: '#f5f5f3', color: '#555' };
 }
 
+function RatingTargetsEditor({ kpi, cycle, onSave }: {
+  kpi: any;
+  cycle: any;
+  onSave: (targets: any[]) => void;
+}) {
+  const ratingType = cycle?.rating_type || 'NUMERIC';
+  const scaleMax   = cycle?.rating_scale_max || 5;
+  const levels: any[] = cycle?.rating_levels || [];
+
+  const initial = (() => {
+    const existing: any[] = Array.isArray(kpi.rating_targets) ? kpi.rating_targets : [];
+    if (ratingType === 'NUMERIC') {
+      const ordered = levels.length
+        ? [...levels].sort((a, b) => b.value - a.value)
+        : Array.from({ length: scaleMax }, (_, i) => ({ value: scaleMax - i, label: `Level ${scaleMax - i}`, description: '' }));
+      return ordered.map((lv: any) => {
+        const found = existing.find(t => Number(t.value) === Number(lv.value));
+        return { value: lv.value, label: lv.label, target: found?.target || '' };
+      });
+    }
+    if (ratingType === 'MET_NOT_MET') {
+      const ordered = levels.length
+        ? levels
+        : [{ value: 'Met', label: 'Met' }, { value: 'Not Met', label: 'Not Met' }];
+      return ordered.map((lv: any) => {
+        const found = existing.find(t => t.value === lv.value);
+        return { value: lv.value, label: lv.label || lv.value, target: found?.target || '' };
+      });
+    }
+    // OKR
+    const found = existing[0];
+    return [{ value: 'OKR', label: 'OKR', target: found?.target || '' }];
+  })();
+
+  const [rows, setRows] = useState(initial);
+
+  const updateRow = (idx: number, val: string) => {
+    setRows(prev => prev.map((r, i) => i === idx ? { ...r, target: val } : r));
+  };
+
+  return (
+    <div style={{ marginTop: 10, padding: 12, background: '#f7f7f5', borderRadius: 8, border: `0.5px solid ${C.borderLight}` }}>
+      <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 8 }}>
+        Define what achievement looks like for each rating level
+      </div>
+      {ratingType === 'OKR' ? (
+        <div>
+          <label style={S.label}>Describe how 0-100% achievement will be measured</label>
+          <input style={S.input} value={rows[0].target}
+            onChange={e => updateRow(0, e.target.value)}
+            placeholder="e.g. % of project milestones completed" />
+        </div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: C.textSecond, fontWeight: 600, width: 180 }}>Rating</th>
+              <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: C.textSecond, fontWeight: 600 }}>Target Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={String(r.value)}>
+                <td style={{ padding: '6px 8px', fontSize: 13, color: C.text }}>
+                  <strong>{r.value}</strong> — {r.label}
+                </td>
+                <td style={{ padding: '6px 8px' }}>
+                  <input style={S.input} value={r.target}
+                    onChange={e => updateRow(i, e.target.value)}
+                    placeholder="What achievement looks like for this rating" />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div style={{ marginTop: 10 }}>
+        <button onClick={() => onSave(rows)} style={S.btnPrimary}>Save Targets</button>
+      </div>
+    </div>
+  );
+}
+
 function KpiCard({
-  kpi, weightRules, onDelete, onAdjustWeight,
+  kpi, weightRules, cycle, onDelete, onAdjustWeight, onSaveTargets,
 }: {
   kpi:            any;
   weightRules:    any[];
+  cycle:          any;
   onDelete:       () => void;
   onAdjustWeight: (w: number) => void;
+  onSaveTargets:  (targets: any[]) => void;
 }) {
   const [editWeight, setEditWeight] = useState(false);
   const [newWeight,  setNewWeight]  = useState(kpi.weight);
+  const [showTargets, setShowTargets] = useState(false);
   const rule    = weightRules.find((r: any) => r.kpi_dimension === kpi.kpi_dimension);
   const isFixed = kpi.kpi_type === 'FIXED';
   const canDelete = kpi.status === 'DRAFT' && !isFixed;
+  const canSetTargets = (kpi.status === 'DRAFT' || kpi.status === 'APPROVED') && !!cycle;
 
   return (
     <div style={{ ...S.card, marginBottom: 8 }}>
@@ -160,6 +247,24 @@ function KpiCard({
           Awaiting manager approval…
         </div>
       )}
+
+      {canSetTargets && (
+        <div style={{ marginTop: 10 }}>
+          <button onClick={() => setShowTargets(s => !s)}
+            style={{ ...S.btnSm, fontSize: 11 }}>
+            {showTargets ? '▾ Hide Rating Targets' : '▸ Set Rating Targets'}
+            {Array.isArray(kpi.rating_targets) && kpi.rating_targets.length > 0 && (
+              <span style={{ marginLeft: 6, color: '#166534' }}>✓ defined</span>
+            )}
+          </button>
+          {showTargets && (
+            <RatingTargetsEditor
+              kpi={kpi}
+              cycle={cycle}
+              onSave={onSaveTargets} />
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -228,6 +333,12 @@ export default function KpiSettingPage() {
   const submitScorecardMutation = useMutation({
     mutationFn: () => kpisApi.submitScorecard(cycleId),
     onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] }),
+  });
+
+  const ratingTargetsMutation = useMutation({
+    mutationFn: ({ id, targets }: { id: string; targets: any[] }) =>
+      kpisApi.updateRatingTargets(id, targets),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] }),
   });
 
   const totalWeight = (kpis as any[]).reduce((sum, k) => sum + k.weight, 0);
@@ -325,14 +436,53 @@ export default function KpiSettingPage() {
             </div>
           </div>
 
+          {/* Rating framework reference */}
+          {currentCycle && (
+            <div style={{ ...S.card, background: C.bgInfo, borderColor: '#bae6fd' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: C.textInfo, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                Rating Framework
+              </div>
+              <div style={{ fontSize: 13, color: C.text, marginBottom: 6 }}>
+                This cycle uses{' '}
+                <strong>
+                  {currentCycle.rating_type === 'NUMERIC'
+                    ? `Numeric 1–${currentCycle.rating_scale_max || 5}`
+                    : currentCycle.rating_type === 'MET_NOT_MET'
+                    ? 'Met / Not Met'
+                    : currentCycle.rating_type === 'OKR'
+                    ? 'OKR (0-100%)'
+                    : 'Numeric'}
+                </strong>
+              </div>
+              {Array.isArray(currentCycle.rating_levels) && currentCycle.rating_levels.length > 0 && (
+                <div style={{ fontSize: 12, color: C.textSecond }}>
+                  {currentCycle.rating_levels.map((lv: any, idx: number) => (
+                    <span key={String(lv.value)}>
+                      <strong>{lv.value}</strong>={lv.label}
+                      {lv.description ? ` (${lv.description})` : ''}
+                      {idx < currentCycle.rating_levels.length - 1 ? ' · ' : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {currentCycle.rating_type === 'OKR' && (
+                <div style={{ fontSize: 12, color: C.textSecond }}>
+                  Staff will enter 0-100% achievement against each KPI
+                </div>
+              )}
+            </div>
+          )}
+
           {/* KPI list */}
           {(kpis as any[]).map((kpi: any) => (
             <KpiCard
               key={kpi.id}
               kpi={kpi}
               weightRules={weightRules as any[]}
+              cycle={currentCycle}
               onDelete={() => deleteMutation.mutate(kpi.id)}
               onAdjustWeight={w => adjustMutation.mutate({ id: kpi.id, weight: w })}
+              onSaveTargets={targets => ratingTargetsMutation.mutate({ id: kpi.id, targets })}
             />
           ))}
 
