@@ -155,6 +155,10 @@ EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 
 DO $$ BEGIN ALTER TABLE kpi_templates ADD COLUMN cascaded_by UUID REFERENCES users(id);
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN
+  DELETE FROM kpi_audit_log WHERE kpi_id IS NULL;
+EXCEPTION WHEN others THEN NULL; END $$;
 """
 
 
