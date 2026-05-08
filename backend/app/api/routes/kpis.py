@@ -735,18 +735,34 @@ async def review_scorecard(
         raise HTTPException(404, "Employee not found")
 
     chain = await get_cycle_chain(db, body.cycle_id)
+    is_admin = current_user.role in ["HR_ADMIN", "SUPER_ADMIN"]
 
-    pending_statuses = [PENDING_STATUS_FOR_LEVEL[lv] for lv in chain]
+    # Resolve which pending status applies to the current user for this employee.
+    user_levels: list[str] = []
+    if "DM"  in chain and employee.direct_manager_id    and str(employee.direct_manager_id)    == str(current_user.id):
+        user_levels.append("DM")
+    if "RM"  in chain and employee.reviewing_manager_id and str(employee.reviewing_manager_id) == str(current_user.id):
+        user_levels.append("RM")
+    if "HOD" in chain and employee.hod_id               and str(employee.hod_id)               == str(current_user.id):
+        user_levels.append("HOD")
+
+    if is_admin:
+        candidate_statuses = [PENDING_STATUS_FOR_LEVEL[lv] for lv in chain]
+    elif user_levels:
+        candidate_statuses = [PENDING_STATUS_FOR_LEVEL[lv] for lv in user_levels]
+    else:
+        raise HTTPException(403, "You are not an approver for this employee")
+
     kpis_res = await db.execute(
         select(Kpi).where(
             Kpi.cycle_id == body.cycle_id,
             Kpi.user_id  == body.employee_id,
-            Kpi.status.in_(pending_statuses),
+            Kpi.status.in_(candidate_statuses),
         )
     )
     kpis = kpis_res.scalars().all()
     if not kpis:
-        raise HTTPException(404, "No KPIs pending approval for this employee")
+        raise HTTPException(404, "No KPIs pending approval for this employee at your approval level")
 
     statuses = {k.status for k in kpis}
     if len(statuses) != 1:
@@ -755,16 +771,6 @@ async def review_scorecard(
     current_level  = LEVEL_FOR_PENDING_STATUS.get(current_status)
     if current_level is None:
         raise HTTPException(400, "Unknown approval stage")
-
-    is_admin = current_user.role in ["HR_ADMIN", "SUPER_ADMIN"]
-    if not is_admin:
-        approver_id = {
-            "DM":  employee.direct_manager_id,
-            "RM":  employee.reviewing_manager_id,
-            "HOD": employee.hod_id,
-        }.get(current_level)
-        if not approver_id or str(approver_id) != str(current_user.id):
-            raise HTTPException(403, f"You are not the {current_level} approver for this employee")
 
     from app.models.user import KpiAuditLog, Notification
 
