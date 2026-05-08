@@ -214,6 +214,15 @@ EXCEPTION WHEN duplicate_table THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE performance_cycles ADD COLUMN approval_chain VARCHAR(20) DEFAULT 'DM_ONLY';
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 
+DO $$ BEGIN
+  ALTER TABLE performance_cycles ALTER COLUMN approval_chain TYPE TEXT USING approval_chain::text;
+  ALTER TABLE performance_cycles ALTER COLUMN approval_chain SET DEFAULT '["DM"]';
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  UPDATE performance_cycles SET approval_chain = '["DM"]' WHERE approval_chain IS NULL OR approval_chain = 'DM_ONLY';
+EXCEPTION WHEN others THEN NULL; END $$;
+
 DO $$ BEGIN ALTER TABLE users ADD COLUMN base_role VARCHAR(50) DEFAULT 'STAFF';
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 

@@ -45,6 +45,8 @@ export const cyclesApi = {
 export const kpisApi = {
   list:         (cycleId: string, userId?: string) =>
     api.get('/kpis/', { params: { cycle_id: cycleId, user_id: userId } }),
+  listPendingForMe: (cycleId: string) =>
+    api.get('/kpis/', { params: { cycle_id: cycleId, pending_for_me: true } }),
   create:       (data: any)  => api.post('/kpis/', data),
   update:       (id: string, data: any) => api.patch(`/kpis/${id}`, data),
   delete:       (id: string) => api.delete(`/kpis/${id}`),

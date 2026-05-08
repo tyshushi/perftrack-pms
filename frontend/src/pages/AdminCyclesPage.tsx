@@ -72,6 +72,8 @@ export default function AdminCyclesPage() {
   const [numericLevels, setNumericLevels] =
     useState(defaultNumericLevels(5));
   const [metLevels, setMetLevels]   = useState(MET_NOT_MET_DEFAULT);
+  const [includeRM,  setIncludeRM]  = useState(false);
+  const [includeHOD, setIncludeHOD] = useState(false);
 
   const { data: cycles = [] } = useQuery({
     queryKey: ['cycles'],
@@ -87,6 +89,8 @@ export default function AdminCyclesPage() {
       setScaleMax(5);
       setNumericLevels(defaultNumericLevels(5));
       setMetLevels(MET_NOT_MET_DEFAULT);
+      setIncludeRM(false);
+      setIncludeHOD(false);
     },
   });
 
@@ -105,6 +109,9 @@ export default function AdminCyclesPage() {
   };
 
   const onSubmit = (formData: any) => {
+    const approvalChain = ['DM'];
+    if (includeRM)  approvalChain.push('RM');
+    if (includeHOD) approvalChain.push('HOD');
     const payload: any = {
       ...formData,
       year: Number(formData.year),
@@ -114,6 +121,7 @@ export default function AdminCyclesPage() {
         ratingType === 'NUMERIC'    ? numericLevels :
         ratingType === 'MET_NOT_MET' ? metLevels :
         null,
+      approval_chain: approvalChain,
     };
     createCycle.mutate(payload);
   };
@@ -176,6 +184,35 @@ export default function AdminCyclesPage() {
               <label style={S.label}>Manager Eval End</label>
               <input style={S.input} type="date"
                 {...rc('mgr_eval_end', { required: true })} />
+            </div>
+          </div>
+
+          {/* Approval Chain */}
+          <div style={{ borderTop: `1px solid ${C.borderLight}`, paddingTop: 14, marginTop: 6, marginBottom: 14 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4, color: C.text }}>
+              Approval Chain
+            </div>
+            <div style={{ fontSize: 12, color: C.textTertiary, marginBottom: 10 }}>
+              DM approval is always required
+            </div>
+            <div style={S.radioRow}>
+              <label style={{ ...S.radioOpt, opacity: 0.7, cursor: 'not-allowed' }}>
+                <input type="checkbox" checked disabled />
+                Direct Manager (DM)
+              </label>
+              <label style={S.radioOpt}>
+                <input type="checkbox" checked={includeRM}
+                  onChange={e => setIncludeRM(e.target.checked)} />
+                Reviewing Manager (RM)
+              </label>
+              <label style={S.radioOpt}>
+                <input type="checkbox" checked={includeHOD}
+                  onChange={e => setIncludeHOD(e.target.checked)} />
+                HOD
+              </label>
+            </div>
+            <div style={S.note}>
+              Order: DM{includeRM ? ' → RM' : ''}{includeHOD ? ' → HOD' : ''}
             </div>
           </div>
 
@@ -293,7 +330,7 @@ export default function AdminCyclesPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: C.bgSecondary }}>
-                {['Name', 'Year', 'Status', 'KPI Window', 'Rating'].map(h => (
+                {['Name', 'Year', 'Status', 'KPI Window', 'Rating', 'Approval Chain'].map(h => (
                   <th key={h} style={S.th}>{h}</th>
                 ))}
               </tr>
@@ -301,7 +338,7 @@ export default function AdminCyclesPage() {
             <tbody>
               {(cycles as any[]).length === 0 && (
                 <tr>
-                  <td colSpan={5} style={{ padding: 24, textAlign: 'center', color: C.textSecond }}>
+                  <td colSpan={6} style={{ padding: 24, textAlign: 'center', color: C.textSecond }}>
                     No cycles yet
                   </td>
                 </tr>
@@ -330,6 +367,11 @@ export default function AdminCyclesPage() {
                       : c.rating_type === 'OKR'
                       ? 'OKR (0-100%)'
                       : c.rating_type || '—'}
+                  </td>
+                  <td style={{ ...S.td, borderBottom: i < arr.length - 1 ? `1px solid ${C.borderLight}` : 'none' }}>
+                    {Array.isArray(c.approval_chain) && c.approval_chain.length > 0
+                      ? c.approval_chain.join(' → ')
+                      : 'DM'}
                   </td>
                 </tr>
               ))}

@@ -8,10 +8,39 @@ from decimal import Decimal
 
 from app.db.session import get_db
 from app.core.security import get_current_user, require_hr_admin
-from app.models.user import Kpi, User, WeightRule
+from app.models.user import Kpi, User, WeightRule, PerformanceCycle
 from app.services.kpi_workflow import KpiWorkflowService
+from app.api.routes.cycles import normalise_approval_chain
 
 router = APIRouter()
+
+
+PENDING_STATUS_FOR_LEVEL = {
+    "DM":  "PENDING_DM",
+    "RM":  "PENDING_RM",
+    "HOD": "PENDING_HOD",
+}
+LEVEL_FOR_PENDING_STATUS = {v: k for k, v in PENDING_STATUS_FOR_LEVEL.items()}
+
+
+def next_pending_status(chain: list, current_status: str) -> Optional[str]:
+    """Given the cycle approval chain and the current PENDING_* status,
+    return the next PENDING_* status, or None if this is the final step."""
+    current_level = LEVEL_FOR_PENDING_STATUS.get(current_status)
+    if current_level is None or current_level not in chain:
+        return None
+    idx = chain.index(current_level)
+    if idx + 1 >= len(chain):
+        return None
+    return PENDING_STATUS_FOR_LEVEL[chain[idx + 1]]
+
+
+async def get_cycle_chain(db: AsyncSession, cycle_id: UUID) -> list:
+    res = await db.execute(select(PerformanceCycle).where(PerformanceCycle.id == cycle_id))
+    cycle = res.scalar_one_or_none()
+    if not cycle:
+        raise HTTPException(404, "Cycle not found")
+    return normalise_approval_chain(cycle.approval_chain)
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────
@@ -154,12 +183,26 @@ async def list_kpis(
     cycle_id:     UUID,
     user_id:      Optional[UUID] = None,
     status:       Optional[str]  = None,
+    pending_for_me: bool         = False,
     db:           AsyncSession   = Depends(get_db),
     current_user: User           = Depends(get_current_user),
 ):
     q = select(Kpi).where(Kpi.cycle_id == cycle_id)
 
-    if current_user.role in ["HR_ADMIN", "SUPER_ADMIN"]:
+    if pending_for_me:
+        # Show KPIs awaiting approval at this manager's level in the chain
+        sub_dm = select(User.id).where(User.direct_manager_id    == current_user.id)
+        sub_rm = select(User.id).where(User.reviewing_manager_id == current_user.id)
+        sub_hd = select(User.id).where(User.hod_id               == current_user.id)
+        from sqlalchemy import or_, and_
+        q = q.where(or_(
+            and_(Kpi.status == "PENDING_DM",  Kpi.user_id.in_(sub_dm)),
+            and_(Kpi.status == "PENDING_RM",  Kpi.user_id.in_(sub_rm)),
+            and_(Kpi.status == "PENDING_HOD", Kpi.user_id.in_(sub_hd)),
+        ))
+        if user_id:
+            q = q.where(Kpi.user_id == user_id)
+    elif current_user.role in ["HR_ADMIN", "SUPER_ADMIN"]:
         if user_id:
             q = q.where(Kpi.user_id == user_id)
     elif current_user.role in ["MANAGER", "MGR2", "HOD"]:
@@ -634,6 +677,15 @@ async def submit_scorecard(
     db:           AsyncSession = Depends(get_db),
     current_user: User         = Depends(get_current_user),
 ):
+    chain = await get_cycle_chain(db, body.cycle_id)
+
+    if "DM" in chain and not current_user.direct_manager_id:
+        raise HTTPException(400, "Direct Manager not assigned. Contact HR.")
+    if "RM" in chain and not current_user.reviewing_manager_id:
+        raise HTTPException(400, "Reviewing Manager not assigned. Contact HR.")
+    if "HOD" in chain and not current_user.hod_id:
+        raise HTTPException(400, "HOD not assigned. Contact HR.")
+
     all_res = await db.execute(
         select(Kpi).where(Kpi.cycle_id == body.cycle_id, Kpi.user_id == current_user.id)
     )
@@ -682,39 +734,90 @@ async def review_scorecard(
     if not employee:
         raise HTTPException(404, "Employee not found")
 
-    if current_user.role not in ["HR_ADMIN", "SUPER_ADMIN"]:
-        if not employee.direct_manager_id or \
-                str(employee.direct_manager_id) != str(current_user.id):
-            raise HTTPException(403, "You are not the direct manager of this employee")
+    chain = await get_cycle_chain(db, body.cycle_id)
 
+    pending_statuses = [PENDING_STATUS_FOR_LEVEL[lv] for lv in chain]
     kpis_res = await db.execute(
         select(Kpi).where(
             Kpi.cycle_id == body.cycle_id,
             Kpi.user_id  == body.employee_id,
-            Kpi.status   == "PENDING_DM",
+            Kpi.status.in_(pending_statuses),
         )
     )
     kpis = kpis_res.scalars().all()
     if not kpis:
         raise HTTPException(404, "No KPIs pending approval for this employee")
 
+    statuses = {k.status for k in kpis}
+    if len(statuses) != 1:
+        raise HTTPException(400, "Scorecard KPIs are at mixed approval stages")
+    current_status = next(iter(statuses))
+    current_level  = LEVEL_FOR_PENDING_STATUS.get(current_status)
+    if current_level is None:
+        raise HTTPException(400, "Unknown approval stage")
+
+    is_admin = current_user.role in ["HR_ADMIN", "SUPER_ADMIN"]
+    if not is_admin:
+        approver_id = {
+            "DM":  employee.direct_manager_id,
+            "RM":  employee.reviewing_manager_id,
+            "HOD": employee.hod_id,
+        }.get(current_level)
+        if not approver_id or str(approver_id) != str(current_user.id):
+            raise HTTPException(403, f"You are not the {current_level} approver for this employee")
+
     from app.models.user import KpiAuditLog, Notification
 
     if body.action == "approve":
-        for kpi in kpis:
-            old = kpi.status
-            kpi.status = "LOCKED"
-            db.add(KpiAuditLog(
-                kpi_id=kpi.id, actor_id=current_user.id,
-                from_status=old, to_status="LOCKED", comment=body.comment or None,
+        next_status = next_pending_status(chain, current_status)
+        if next_status is None:
+            for kpi in kpis:
+                old = kpi.status
+                kpi.status = "APPROVED"
+                db.add(KpiAuditLog(
+                    kpi_id=kpi.id, actor_id=current_user.id,
+                    from_status=old, to_status="APPROVED", comment=body.comment or None,
+                ))
+                kpi.status = "LOCKED"
+                db.add(KpiAuditLog(
+                    kpi_id=kpi.id, actor_id=current_user.id,
+                    from_status="APPROVED", to_status="LOCKED", comment=body.comment or None,
+                ))
+            db.add(Notification(
+                user_id=employee.id,
+                title="Scorecard Approved",
+                body=f"Your scorecard has been approved and locked by {current_user.full_name}.",
+                type="KPI_APPROVED",
             ))
-        db.add(Notification(
-            user_id=employee.id,
-            title="Scorecard Approved",
-            body=f"Your scorecard has been approved and locked by {current_user.full_name}.",
-            type="KPI_APPROVED",
-        ))
-        msg = f"Scorecard approved and locked for {employee.full_name}"
+            msg = f"Scorecard approved and locked for {employee.full_name}"
+        else:
+            for kpi in kpis:
+                old = kpi.status
+                kpi.status = next_status
+                db.add(KpiAuditLog(
+                    kpi_id=kpi.id, actor_id=current_user.id,
+                    from_status=old, to_status=next_status, comment=body.comment or None,
+                ))
+            next_level   = LEVEL_FOR_PENDING_STATUS[next_status]
+            next_user_id = {
+                "DM":  employee.direct_manager_id,
+                "RM":  employee.reviewing_manager_id,
+                "HOD": employee.hod_id,
+            }.get(next_level)
+            if next_user_id:
+                db.add(Notification(
+                    user_id=next_user_id,
+                    title="Scorecard Pending Your Approval",
+                    body=f"{employee.full_name}'s scorecard has been forwarded for your review.",
+                    type="KPI_PENDING",
+                ))
+            db.add(Notification(
+                user_id=employee.id,
+                title="Scorecard Forwarded",
+                body=f"Your scorecard was approved by {current_user.full_name} and forwarded to the next approver.",
+                type="KPI_FORWARDED",
+            ))
+            msg = f"Scorecard forwarded to {next_level} for {employee.full_name}"
     else:
         if not body.comment:
             raise HTTPException(400, "A comment is required when rejecting a scorecard")

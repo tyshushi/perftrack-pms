@@ -99,7 +99,7 @@ class PerformanceCycle(Base):
     rating_type         = Column(String(20), default='NUMERIC')
     rating_scale_max    = Column(Integer, default=5)
     rating_levels       = Column(JSON)
-    approval_chain      = Column(String(20), default='DM_ONLY')
+    approval_chain      = Column(JSON, default=lambda: ["DM"])
     created_by          = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at          = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at          = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

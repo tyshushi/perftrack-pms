@@ -117,7 +117,22 @@ function EmployeeScorecard({
     enabled:  !!cycleId && !!employee,
   });
 
-  const pendingKpis = (kpis as any[]).filter(k => k.status === 'PENDING_DM');
+  const PENDING_STATES = ['PENDING_DM', 'PENDING_RM', 'PENDING_HOD'] as const;
+  const pendingKpis = (kpis as any[]).filter(k => (PENDING_STATES as readonly string[]).includes(k.status));
+
+  // Determine which level the current user is approving at, based on
+  // the pending status and the matching manager field on the employee.
+  const pendingStatus: string | null = pendingKpis.length > 0 ? pendingKpis[0].status : null;
+  const stageLabel: string =
+    pendingStatus === 'PENDING_DM'  ? 'Awaiting Direct Manager Approval' :
+    pendingStatus === 'PENDING_RM'  ? 'Awaiting Reviewing Manager Approval' :
+    pendingStatus === 'PENDING_HOD' ? 'Awaiting HOD Approval' : '';
+
+  const isMyApproval = (
+    (pendingStatus === 'PENDING_DM'  && employee.direct_manager_id    === currentUserId) ||
+    (pendingStatus === 'PENDING_RM'  && employee.reviewing_manager_id === currentUserId) ||
+    (pendingStatus === 'PENDING_HOD' && employee.hod_id               === currentUserId)
+  );
 
   const reviewMutation = useMutation({
     mutationFn: ({ action, comment }: { action: string; comment: string }) =>
@@ -156,6 +171,12 @@ function EmployeeScorecard({
 
   return (
     <div>
+      {stageLabel && (
+        <div style={{ marginBottom: 10, padding: '6px 10px', borderRadius: 8, background: C.bgInfo, color: C.textInfo, fontSize: 12, fontWeight: 500, display: 'inline-block' }}>
+          {stageLabel}
+        </div>
+      )}
+
       {/* KPIs grouped by dimension */}
       {kpisByDimension.map(({ cat, kpis: dimKpis }) => (
         <div key={cat} style={{ marginBottom: 12 }}>
@@ -216,19 +237,24 @@ function EmployeeScorecard({
       )}
 
       {/* Action buttons */}
+      {!isMyApproval && (
+        <div style={{ marginBottom: 10, fontSize: 12, color: C.textTertiary, fontStyle: 'italic' }}>
+          You are not the current approver for this scorecard.
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {!showReject ? (
           <>
             <button
               onClick={() => reviewMutation.mutate({ action: 'approve', comment: '' })}
-              disabled={reviewMutation.isPending}
+              disabled={reviewMutation.isPending || !isMyApproval}
               style={{ padding: '8px 18px', border: 'none', borderRadius: 8, background: C.text, color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: C.font }}>
               {reviewMutation.isPending ? 'Approving…' : 'Approve Scorecard'}
             </button>
             <button
               onClick={() => setShowReject(true)}
-              disabled={reviewMutation.isPending}
-              style={{ padding: '6px 14px', border: `1px solid #fca5a5`, borderRadius: 8, background: C.bg, color: '#991b1b', fontSize: 12, cursor: 'pointer', fontFamily: C.font }}>
+              disabled={reviewMutation.isPending || !isMyApproval}
+              style={{ padding: '6px 14px', border: `1px solid #fca5a5`, borderRadius: 8, background: C.bg, color: '#991b1b', fontSize: 12, cursor: isMyApproval ? 'pointer' : 'not-allowed', fontFamily: C.font, opacity: isMyApproval ? 1 : 0.5 }}>
               Reject Scorecard
             </button>
           </>
@@ -282,7 +308,8 @@ export default function ManagerApprovalPage() {
     queryFn:  () => usersApi.directReports().then(r => r.data),
   });
 
-  const myReports = (reports as any[]).filter((r: any) => r.direct_manager_id === user?.id);
+  // Reports include anyone for whom the current user is DM, RM, or HOD
+  const myReports = (reports as any[]);
 
   return (
     <div style={{ fontFamily: C.font, color: C.text }}>
@@ -291,7 +318,7 @@ export default function ManagerApprovalPage() {
           Approve Scorecards
         </h1>
         <p style={{ fontSize: 13, color: C.textSecond }}>
-          Review and approve scorecards submitted by your direct reports
+          Review and approve scorecards awaiting your action as DM, RM, or HOD
         </p>
       </div>
 
