@@ -70,10 +70,10 @@ class PasswordChange(BaseModel):
 # ── Constants ──────────────────────────────────────────────────────────────
 
 REQUIRED_COLUMNS = {
-    "Employee Code", "Name", "Employment Unit", "Department",
-    "Division", "Section", "Position Title", "Grade", "Category",
-    "Country", "Work Location", "Employee Type", "Hire Date",
-    "Gender", "ROLE",
+    "employee code", "name", "employment unit", "department",
+    "division", "section", "position title", "grade", "category",
+    "country", "work location", "employee type", "hire date",
+    "gender", "role",
 }
 
 
@@ -360,13 +360,19 @@ async def import_preview(
     if not reader.fieldnames:
         raise HTTPException(400, "CSV file is empty or unreadable")
 
-    missing_cols = REQUIRED_COLUMNS - set(reader.fieldnames)
+    normalized_fieldnames = {(fn or "").strip().lower() for fn in reader.fieldnames}
+    missing_cols = REQUIRED_COLUMNS - normalized_fieldnames
     if missing_cols:
         raise HTTPException(400, f"Missing columns: {', '.join(sorted(missing_cols))}")
 
-    rows = list(reader)
-    if not rows:
+    raw_rows = list(reader)
+    if not raw_rows:
         raise HTTPException(400, "CSV has no data rows")
+
+    rows = [
+        {((k or "").strip().lower()): v for k, v in r.items()}
+        for r in raw_rows
+    ]
 
     result = await db.execute(select(User))
     existing_users = result.scalars().all()
@@ -377,25 +383,25 @@ async def import_preview(
     preview   = []
 
     for i, row in enumerate(rows, start=2):
-        emp_code = row.get("Employee Code", "").strip()
-        name     = row.get("Name", "").strip()
-        email    = row.get("Email", row.get("email", "")).strip()
-        dept     = row.get("Department", "").strip()
-        division = row.get("Division", "").strip()
-        section  = row.get("Section", "").strip()
-        position = row.get("Position Title", "").strip()
-        grade    = row.get("Grade", "").strip()
-        role     = normalize_role(row.get("ROLE", ""))
-        hire_date = row.get("Hire Date", "").strip()
-        gender   = row.get("Gender", "").strip()
-        country  = row.get("Country", "").strip()
-        work_loc = row.get("Work Location", "").strip()
-        emp_type = row.get("Employee Type", "").strip()
-        category = row.get("Category", "").strip()
-        emp_unit = row.get("Employment Unit", "").strip()
-        dm_code  = row.get("Direct Manager Code", row.get("Manager Code", "")).strip()
-        rm_code  = row.get("Reviewing Manager Code", "").strip()
-        hod_code = row.get("HOD Code", "").strip()
+        emp_code = (row.get("employee code") or "").strip()
+        name     = (row.get("name") or "").strip()
+        email    = (row.get("email") or "").strip()
+        dept     = (row.get("department") or "").strip()
+        division = (row.get("division") or "").strip()
+        section  = (row.get("section") or "").strip()
+        position = (row.get("position title") or "").strip()
+        grade    = (row.get("grade") or "").strip()
+        role     = normalize_role(row.get("role") or "")
+        hire_date = (row.get("hire date") or "").strip()
+        gender   = (row.get("gender") or "").strip()
+        country  = (row.get("country") or "").strip()
+        work_loc = (row.get("work location") or "").strip()
+        emp_type = (row.get("employee type") or "").strip()
+        category = (row.get("category") or "").strip()
+        emp_unit = (row.get("employment unit") or "").strip()
+        dm_code  = (row.get("direct manager code") or row.get("manager code") or "").strip()
+        rm_code  = (row.get("reviewing manager code") or "").strip()
+        hod_code = (row.get("hod code") or "").strip()
 
         if not email and emp_code:
             email = f"{emp_code.lower()}@company.local"
@@ -530,7 +536,7 @@ async def import_confirm(
                 employee_id          = row.employee_code,
                 email                = row.email,
                 full_name            = row.name,
-                role                 = row.role or "STAFF",
+                role                 = normalize_role(row.role or "STAFF"),
                 job_grade            = row.grade,
                 employment_unit      = row.employment_unit,
                 department_id        = dept_id,
@@ -558,7 +564,7 @@ async def import_confirm(
                 continue
             if row.name:            user.full_name        = row.name
             if row.grade:           user.job_grade         = row.grade
-            if row.role:            user.role              = row.role
+            if row.role:            user.role              = normalize_role(row.role)
             if row.position:        user.position_title    = row.position
             if row.division:        user.division          = row.division
             if row.section:         user.section           = row.section
