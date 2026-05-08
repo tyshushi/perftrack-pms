@@ -387,19 +387,6 @@ DO $$ BEGIN
   ON CONFLICT DO NOTHING;
 EXCEPTION WHEN others THEN NULL; END $$;
 
-DO $$ BEGIN
-  -- Force re-populate user_roles for system roles
-  DELETE FROM user_roles ur
-  USING custom_roles cr
-  WHERE ur.role_id = cr.id AND cr.is_system = TRUE;
-
-  INSERT INTO user_roles (user_id, role_id)
-  SELECT u.id, r.id
-  FROM users u
-  JOIN custom_roles r ON r.name = u.role
-  WHERE u.role IN ('HR_ADMIN', 'SUPER_ADMIN', 'MANAGER', 'HOD', 'STAFF')
-  ON CONFLICT DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
 """
 
 
@@ -414,6 +401,63 @@ async def run_schema_and_seed():
         conn = await asyncpg.connect(url)
         await conn.execute(MIGRATIONS)
         print("==> Schema migrations complete.")
+
+        # Explicit RBAC seeding with visible errors
+        try:
+            # Count check
+            cr_count = await conn.fetchval("SELECT COUNT(*) FROM custom_roles")
+            print(f"==> RBAC: custom_roles count = {cr_count}")
+            rp_count = await conn.fetchval("SELECT COUNT(*) FROM role_permissions")
+            print(f"==> RBAC: role_permissions count = {rp_count}")
+            ur_count = await conn.fetchval("SELECT COUNT(*) FROM user_roles")
+            print(f"==> RBAC: user_roles count = {ur_count}")
+
+            # Force user_roles population
+            inserted = await conn.fetchval("""
+                WITH deleted AS (
+                    DELETE FROM user_roles ur
+                    USING custom_roles cr
+                    WHERE ur.role_id = cr.id AND cr.is_system = TRUE
+                    RETURNING ur.id
+                )
+                SELECT COUNT(*) FROM deleted
+            """)
+            print(f"==> RBAC: deleted {inserted} old user_roles")
+
+            inserted = await conn.fetchval("""
+                WITH ins AS (
+                    INSERT INTO user_roles (user_id, role_id)
+                    SELECT u.id, r.id
+                    FROM users u
+                    JOIN custom_roles r ON r.name = u.role
+                    WHERE u.role IN ('HR_ADMIN', 'SUPER_ADMIN', 'MANAGER', 'HOD', 'STAFF')
+                    ON CONFLICT DO NOTHING
+                    RETURNING id
+                )
+                SELECT COUNT(*) FROM ins
+            """)
+            print(f"==> RBAC: inserted {inserted} user_roles")
+
+            # Verify
+            ur_count_after = await conn.fetchval("SELECT COUNT(*) FROM user_roles")
+            print(f"==> RBAC: user_roles count after = {ur_count_after}")
+
+            # Sample check
+            sample = await conn.fetch("""
+                SELECT u.email, u.role, r.name as role_name
+                FROM users u
+                JOIN user_roles ur ON ur.user_id = u.id
+                JOIN custom_roles r ON r.id = ur.role_id
+                LIMIT 5
+            """)
+            for row in sample:
+                print(f"==> RBAC sample: {row['email']} role={row['role']} custom_role={row['role_name']}")
+
+        except Exception as rbac_e:
+            import traceback
+            print(f"==> RBAC seeding ERROR: {rbac_e}")
+            traceback.print_exc()
+
         exists = await conn.fetchval(
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='users')"
         )
@@ -426,7 +470,9 @@ async def run_schema_and_seed():
         else:
             print("==> Database already initialised, skipping seed.")
     except Exception as e:
-        print(f"==> DB init warning: {e}")
+        import traceback
+        print(f"==> DB init ERROR: {e}")
+        traceback.print_exc()
     finally:
         if conn:
             await conn.close()
