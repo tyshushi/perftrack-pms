@@ -31,6 +31,9 @@ class CycleCreate(BaseModel):
     hod_eval_end:       Optional[date] = None
     calibration_start:  Optional[date] = None
     calibration_end:    Optional[date] = None
+    rating_type:        Optional[str]  = "NUMERIC"
+    rating_scale_max:   Optional[int]  = 5
+    rating_levels:      Optional[list] = None
 
 
 class IncrementBandIn(BaseModel):
@@ -72,6 +75,9 @@ async def list_cycles(
             "kpi_setting_end": str(c.kpi_setting_end),
             "self_eval_start": str(c.self_eval_start),
             "self_eval_end": str(c.self_eval_end),
+            "rating_type":      c.rating_type or "NUMERIC",
+            "rating_scale_max": c.rating_scale_max or 5,
+            "rating_levels":    c.rating_levels,
         }
         for c in cycles
     ]

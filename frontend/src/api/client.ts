@@ -69,6 +69,9 @@ export const kpisApi = {
     api.post('/kpis/admin/reset-scorecard', { cycle_id: cycleId, employee_id: employeeId }),
   deleteScorecard:  (cycleId: string, employeeId: string) =>
     api.delete('/kpis/admin/delete-scorecard', { data: { cycle_id: cycleId, employee_id: employeeId } }),
+  selfEvaluateAll:  (data: any) => api.post('/kpis/self-evaluate-all', data),
+  updateRatingTargets: (kpiId: string, ratingTargets: any[]) =>
+    api.patch(`/kpis/${kpiId}/rating-targets`, { rating_targets: ratingTargets }),
 };
 
 export const usersApi = {

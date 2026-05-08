@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import (
-    Column, String, Boolean, Integer, Numeric, Text,
+    Column, String, Boolean, Integer, Numeric, Text, JSON,
     ForeignKey, DateTime, Date, UniqueConstraint, CheckConstraint
 )
 from sqlalchemy.dialects.postgresql import UUID, ENUM as PgEnum
@@ -96,6 +96,9 @@ class PerformanceCycle(Base):
     hod_eval_end        = Column(Date)
     calibration_start   = Column(Date)
     calibration_end     = Column(Date)
+    rating_type         = Column(String(20), default='NUMERIC')
+    rating_scale_max    = Column(Integer, default=5)
+    rating_levels       = Column(JSON)
     created_by          = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at          = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at          = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -185,6 +188,10 @@ class Kpi(Base):
     mgr_comment     = Column(Text)
     mgr2_comment    = Column(Text)
     hod_comment     = Column(Text)
+    rating_targets     = Column(JSON)
+    actual_achievement = Column(Text)
+    self_rating        = Column(Numeric(4, 2))
+    self_remarks       = Column(Text)
     status          = Column(String(20), default="DRAFT", nullable=False)
     created_at      = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at      = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

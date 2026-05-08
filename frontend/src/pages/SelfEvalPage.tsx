@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { kpisApi, cyclesApi } from '../api/client';
+
 const C = {
   bg:           '#ffffff',
   bgSecondary:  '#f7f7f5',
@@ -17,111 +18,335 @@ const C = {
   font:         '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
 };
 
+const S: Record<string, React.CSSProperties> = {
+  card:       { background: C.bg, border: `1px solid ${C.borderLight}`, borderRadius: 10, padding: 16, marginBottom: 12 },
+  label:      { fontSize: 12, fontWeight: 500, color: C.textSecond, display: 'block', marginBottom: 4 },
+  input:      { width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.bg, color: C.text, fontFamily: C.font, outline: 'none' },
+  textarea:   { width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.bg, color: C.text, fontFamily: C.font, outline: 'none', minHeight: 70, resize: 'vertical' as const },
+  btnPrimary: { padding: '10px 18px', border: 'none', borderRadius: 8, background: C.text, color: '#ffffff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
+  pillBtn:    { padding: '8px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.text, fontSize: 12, cursor: 'pointer', fontFamily: C.font },
+  dimBadge:   { fontSize: 11, padding: '2px 8px', borderRadius: 10, background: C.bgInfo, color: C.textInfo, fontWeight: 500 },
+};
+
+type Eval = { actual_achievement: string; self_rating: number | string | null; self_remarks: string };
+
 export default function SelfEvalPage() {
-  const [cycleId, setCycleId] = useState('');
-  const [scores, setScores] = useState<Record<string, number>>({});
-  const [comments, setComments] = useState<Record<string, string>>({});
   const qc = useQueryClient();
+  const [cycleId, setCycleId] = useState('');
+  const [evals, setEvals] = useState<Record<string, Eval>>({});
 
   const { data: cycles = [] } = useQuery({
-    queryKey: ['cycles'], queryFn: () => cyclesApi.list().then(r => r.data),
-    onSuccess: (d: any[]) => { if (d.length && !cycleId) setCycleId(d[0].id); }
+    queryKey: ['cycles'],
+    queryFn:  () => cyclesApi.list().then(r => r.data),
   });
 
-  const { data: kpis = [] } = useQuery({
+  const sortedCycles = useMemo(
+    () => [...(cycles as any[])].sort((a, b) => (b.year || 0) - (a.year || 0)),
+    [cycles]
+  );
+
+  useEffect(() => {
+    if (!cycleId && sortedCycles.length) setCycleId(sortedCycles[0].id);
+  }, [sortedCycles, cycleId]);
+
+  const currentCycle = sortedCycles.find((c: any) => c.id === cycleId) || null;
+  const ratingType   = currentCycle?.rating_type || 'NUMERIC';
+  const scaleMax     = currentCycle?.rating_scale_max || 5;
+  const cycleLevels: any[] = currentCycle?.rating_levels || [];
+
+  const { data: allKpis = [] } = useQuery({
     queryKey: ['kpis', cycleId],
-    queryFn: () => kpisApi.list(cycleId).then(r => r.data),
-    enabled: !!cycleId,
-    select: (d: any[]) => d.filter(k => k.status !== 'DRAFT'),
+    queryFn:  () => kpisApi.list(cycleId).then(r => r.data),
+    enabled:  !!cycleId,
   });
 
-  const evalMutation = useMutation({
-    mutationFn: ({ id }: { id: string }) =>
-      kpisApi.selfEvaluate(id, scores[id], comments[id] || ''),
-    onSuccess: () => qc.invalidateQueries(['kpis']),
+  const lockedKpis = useMemo(
+    () => (allKpis as any[]).filter(k => k.status === 'LOCKED' || k.status === 'SELF_EVALUATED'),
+    [allKpis]
+  );
+
+  // Initialize eval state when KPIs change
+  useEffect(() => {
+    setEvals(prev => {
+      const next: Record<string, Eval> = { ...prev };
+      lockedKpis.forEach((k: any) => {
+        if (!next[k.id]) {
+          next[k.id] = {
+            actual_achievement: k.actual_achievement || '',
+            self_rating:        k.self_rating ?? null,
+            self_remarks:       k.self_remarks || '',
+          };
+        }
+      });
+      return next;
+    });
+  }, [lockedKpis]);
+
+  const submitMutation = useMutation({
+    mutationFn: (payload: any) => kpisApi.selfEvaluateAll(payload),
+    onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpis', cycleId] }),
   });
 
-  const RATINGS = [1,2,3,4,5];
-  const LABELS  = ['','Unsatisfactory','Needs Improvement','Meets Expectations','Exceeds Expectations','Outstanding'];
+  const updateEval = (id: string, patch: Partial<Eval>) => {
+    setEvals(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  };
 
-  const done    = kpis.filter((k: any) => k.self_score !== null).length;
-  const total   = kpis.length;
+  const numericLevels = useMemo(() => {
+    if (cycleLevels.length) return [...cycleLevels].sort((a, b) => Number(a.value) - Number(b.value));
+    return Array.from({ length: scaleMax }, (_, i) => ({ value: i + 1, label: `Level ${i + 1}`, description: '' }));
+  }, [cycleLevels, scaleMax]);
+
+  const metLevels = useMemo(() => {
+    if (cycleLevels.length) return cycleLevels;
+    return [
+      { value: 'Met',     label: 'Met',     description: 'Achievement meets the target' },
+      { value: 'Not Met', label: 'Not Met', description: 'Achievement does not meet the target' },
+    ];
+  }, [cycleLevels]);
+
+  const allValid = lockedKpis.length > 0 && lockedKpis.every((k: any) => {
+    const e = evals[k.id];
+    if (!e) return false;
+    if (!e.actual_achievement || e.actual_achievement.trim() === '') return false;
+    if (e.self_rating === null || e.self_rating === undefined || e.self_rating === '') return false;
+    return true;
+  });
+
+  const handleSubmit = () => {
+    const payload = {
+      cycle_id: cycleId,
+      evaluations: lockedKpis.map((k: any) => ({
+        kpi_id:             k.id,
+        actual_achievement: evals[k.id].actual_achievement,
+        self_rating:        ratingType === 'MET_NOT_MET'
+          ? (evals[k.id].self_rating === 'Met' ? 1 : 0)
+          : Number(evals[k.id].self_rating),
+        self_remarks:       evals[k.id].self_remarks || '',
+      })),
+    };
+    submitMutation.mutate(payload);
+  };
+
+  const numericLabelFor = (val: number | null | string) => {
+    if (val === null || val === '' || val === undefined) return '';
+    const lv = numericLevels.find(l => Number(l.value) === Number(val));
+    return lv?.label || '';
+  };
 
   return (
-    <div>
-      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:20 }}>
-        <div><h1 style={{ fontSize:20, fontWeight:500 }}>Self Evaluation</h1><p style={{ fontSize:13, color:'#888' }}>Rate your own performance against each KPI</p></div>
-        <select style={S.select} value={cycleId} onChange={e => setCycleId(e.target.value)}>
-          {(cycles as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+    <div style={{ fontFamily: C.font, color: C.text }}>
+      <div style={{ marginBottom: 16 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 4, color: C.text }}>Self Evaluation</h1>
+        <p style={{ fontSize: 13, color: C.textSecond }}>Rate your own performance against each KPI</p>
+      </div>
+
+      {/* Cycle selector */}
+      <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+          <span style={{ fontSize: 13, color: C.textSecond }}>◈</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: C.textSecond, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Performance Cycle
+          </span>
+        </div>
+        <select
+          value={cycleId}
+          onChange={e => setCycleId(e.target.value)}
+          style={{ width: '100%', padding: '12px 14px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 15, fontWeight: 600, background: C.bg, color: cycleId ? C.text : C.textTertiary, fontFamily: C.font, outline: 'none', cursor: 'pointer' }}>
+          <option value="">Select a performance cycle…</option>
+          {sortedCycles.map((c: any) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
         </select>
       </div>
 
-      <div style={{ background:'#fff', border:'0.5px solid #e5e4df', borderRadius:10, padding:14, marginBottom:16 }}>
-        <div style={{ fontSize:12, color:'#888', marginBottom:6 }}>Completion</div>
-        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-          <div style={{ flex:1, height:6, background:'#f0f0ee', borderRadius:3, overflow:'hidden' }}>
-            <div style={{ height:'100%', width:`${total ? done/total*100 : 0}%`, background:'#166534', borderRadius:3 }} />
+      {currentCycle && (
+        <div style={{ ...S.card, background: C.bgInfo, borderColor: '#bae6fd' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: C.textInfo, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+            Rating Scale Reference
           </div>
-          <span style={{ fontSize:13, fontWeight:500 }}>{done} / {total}</span>
-        </div>
-      </div>
-
-      {(kpis as any[]).map((kpi: any) => (
-        <div key={kpi.id} style={S.card}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
-            <div>
-              <div style={{ fontWeight:500, fontSize:14 }}>{kpi.name}</div>
-              <div style={{ fontSize:12, color:'#888', marginTop:2 }}>Target: {kpi.target} · Weight: {kpi.weight}%</div>
-            </div>
-            {kpi.self_score !== null && <span style={{ fontSize:12, background:'#dcfce7', color:'#166534', padding:'3px 8px', borderRadius:8 }}>Saved: {kpi.self_score} — {LABELS[kpi.self_score]}</span>}
-          </div>
-
-          <div style={{ marginBottom:10 }}>
-            <div style={{ fontSize:12, fontWeight:500, color:'#666', marginBottom:6 }}>Your Rating</div>
-            <div style={{ display:'flex', gap:6 }}>
-              {RATINGS.map(n => (
-                <button key={n} disabled={kpi.status === 'LOCKED'} onClick={() => setScores(p => ({...p, [kpi.id]: n}))}
-                  style={{ width:34, height:34, borderRadius:'50%', border:`0.5px solid ${scores[kpi.id]===n||kpi.self_score===n?'#1a1a18':'#d0d0cc'}`,
-                    background: scores[kpi.id]===n ? '#1a1a18' : 'transparent',
-                    color: scores[kpi.id]===n ? '#fff' : '#444', fontSize:12, cursor:'pointer' }}>
-                  {n}
-                </button>
+          {ratingType === 'NUMERIC' && (
+            <div style={{ fontSize: 13, color: C.text }}>
+              {numericLevels.map((lv: any, i: number) => (
+                <div key={String(lv.value)} style={{ paddingLeft: 4, marginBottom: i < numericLevels.length - 1 ? 4 : 0 }}>
+                  <strong>{lv.value} = {lv.label}</strong>
+                  {lv.description ? <span style={{ color: C.textSecond }}> — {lv.description}</span> : null}
+                </div>
               ))}
-              {scores[kpi.id] && <span style={{ fontSize:11, color:'#888', alignSelf:'center' }}>{LABELS[scores[kpi.id]]}</span>}
+            </div>
+          )}
+          {ratingType === 'MET_NOT_MET' && (
+            <div style={{ fontSize: 13, color: C.text }}>
+              {metLevels.map((lv: any, i: number) => (
+                <div key={String(lv.value)} style={{ paddingLeft: 4, marginBottom: i < metLevels.length - 1 ? 4 : 0 }}>
+                  <strong>{lv.label || lv.value}</strong>
+                  {lv.description ? <span style={{ color: C.textSecond }}> — {lv.description}</span> : null}
+                </div>
+              ))}
+            </div>
+          )}
+          {ratingType === 'OKR' && (
+            <div style={{ fontSize: 13, color: C.text }}>
+              Enter a 0–100% achievement value against each KPI's target.
+            </div>
+          )}
+        </div>
+      )}
+
+      {cycleId && lockedKpis.length === 0 && (
+        <div style={{ ...S.card, textAlign: 'center', padding: 32, color: C.textSecond, fontSize: 13 }}>
+          No KPIs ready for self evaluation. Your scorecard must be approved and locked by your manager first.
+        </div>
+      )}
+
+      {lockedKpis.map((kpi: any) => {
+        const e = evals[kpi.id] || { actual_achievement: '', self_rating: null, self_remarks: '' };
+        const targets: any[] = Array.isArray(kpi.rating_targets) ? kpi.rating_targets : [];
+
+        return (
+          <div key={kpi.id} style={S.card}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 12 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 500, fontSize: 14 }}>{kpi.name}</span>
+                  <span style={S.dimBadge}>{kpi.kpi_dimension}</span>
+                  <span style={{ fontSize: 12, color: C.textSecond }}>{kpi.weight}%</span>
+                </div>
+                <div style={{ fontSize: 12, color: C.textSecond }}>Target: {kpi.target}</div>
+              </div>
+              {kpi.status === 'SELF_EVALUATED' && (
+                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#dcfce7', color: '#166534', fontWeight: 500 }}>
+                  Submitted
+                </span>
+              )}
+            </div>
+
+            {/* Rating targets reference */}
+            {targets.length > 0 && (
+              <div style={{ background: C.bgSecondary, border: `0.5px solid ${C.borderLight}`, borderRadius: 8, padding: 10, marginBottom: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: C.textSecond, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>
+                  Rating Targets
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <tbody>
+                    {targets.map((t: any) => (
+                      <tr key={String(t.value)}>
+                        <td style={{ padding: '4px 8px', width: 140, color: C.text }}>
+                          <strong>{t.value}</strong>{t.label ? ` — ${t.label}` : ''}
+                        </td>
+                        <td style={{ padding: '4px 8px', color: C.textSecond }}>{t.target || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Actual Achievement */}
+            <div style={{ marginBottom: 10 }}>
+              <label style={S.label}>Actual Achievement *</label>
+              <textarea style={S.textarea}
+                value={e.actual_achievement}
+                onChange={ev => updateEval(kpi.id, { actual_achievement: ev.target.value })}
+                placeholder="Describe what you actually delivered against this KPI" />
+            </div>
+
+            {/* Self Rating */}
+            <div style={{ marginBottom: 10 }}>
+              <label style={S.label}>Self Rating *</label>
+              {ratingType === 'NUMERIC' && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {numericLevels.map((lv: any) => {
+                    const selected = Number(e.self_rating) === Number(lv.value);
+                    return (
+                      <button key={String(lv.value)}
+                        onClick={() => updateEval(kpi.id, { self_rating: Number(lv.value) })}
+                        style={{
+                          ...S.pillBtn,
+                          background: selected ? C.text : C.bg,
+                          color: selected ? '#fff' : C.text,
+                          borderColor: selected ? C.text : C.border,
+                        }}>
+                        {lv.value} - {lv.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {ratingType === 'MET_NOT_MET' && (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {['Met', 'Not Met'].map(opt => {
+                    const selected = e.self_rating === opt;
+                    return (
+                      <button key={opt}
+                        onClick={() => updateEval(kpi.id, { self_rating: opt })}
+                        style={{
+                          ...S.pillBtn,
+                          background: selected ? C.text : C.bg,
+                          color: selected ? '#fff' : C.text,
+                          borderColor: selected ? C.text : C.border,
+                        }}>
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {ratingType === 'OKR' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="number" min={0} max={100}
+                    style={{ ...S.input, width: 100 }}
+                    value={e.self_rating === null ? '' : (e.self_rating as number)}
+                    onChange={ev => {
+                      const v = ev.target.value;
+                      updateEval(kpi.id, { self_rating: v === '' ? null : Math.max(0, Math.min(100, Number(v))) });
+                    }} />
+                  <span style={{ fontSize: 13, color: C.textSecond }}>%</span>
+                </div>
+              )}
+              {ratingType === 'NUMERIC' && e.self_rating !== null && e.self_rating !== '' && (
+                <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 4 }}>
+                  {numericLabelFor(e.self_rating)}
+                </div>
+              )}
+            </div>
+
+            {/* Remarks */}
+            <div>
+              <label style={S.label}>Remarks (optional)</label>
+              <textarea style={S.textarea}
+                value={e.self_remarks}
+                onChange={ev => updateEval(kpi.id, { self_remarks: ev.target.value })}
+                placeholder="Additional context, evidence, or notes" />
             </div>
           </div>
+        );
+      })}
 
-          <textarea placeholder="Describe your achievements, evidence, and context..."
-            value={comments[kpi.id] ?? kpi.self_comment ?? ''}
-            onChange={e => setComments(p => ({...p, [kpi.id]: e.target.value}))}
-            disabled={kpi.status === 'LOCKED'}
-            style={{ ...S.input, minHeight:70, resize:'vertical', width:'100%', marginBottom:10 }} />
-
-          {kpi.mgr_score !== null && (
-            <div style={S.evalNote}>Manager's score: {kpi.mgr_score}/5 — {kpi.mgr_comment || 'No comment'}</div>
-          )}
-
-          <button disabled={!scores[kpi.id] || kpi.status === 'LOCKED'}
-            onClick={() => evalMutation.mutate({ id: kpi.id })}
-            style={{ ...S.btnPrimary, opacity: !scores[kpi.id] ? 0.5 : 1 }}>
-            Save Self Evaluation
+      {lockedKpis.length > 0 && (
+        <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.borderLight}` }}>
+          <button
+            onClick={handleSubmit}
+            disabled={!allValid || submitMutation.isPending}
+            style={{ ...S.btnPrimary, opacity: !allValid ? 0.5 : 1, cursor: !allValid ? 'not-allowed' : 'pointer' }}>
+            {submitMutation.isPending ? 'Submitting…' : 'Submit Self Evaluation'}
           </button>
-        </div>
-      ))}
-
-      {total === 0 && (
-        <div style={{ textAlign:'center', padding:40, color:'#888' }}>
-          No KPIs ready for self-evaluation. Submit your KPIs first.
+          {!allValid && (
+            <div style={{ marginTop: 6, fontSize: 12, color: C.textDanger }}>
+              All KPIs must have an Actual Achievement and a Self Rating before you can submit.
+            </div>
+          )}
+          {submitMutation.isSuccess && (
+            <div style={{ marginTop: 6, fontSize: 12, color: '#166534', fontWeight: 500 }}>
+              ✓ Self evaluation submitted
+            </div>
+          )}
+          {submitMutation.isError && (
+            <div style={{ marginTop: 6, fontSize: 12, color: C.textDanger }}>
+              {(submitMutation.error as any)?.response?.data?.detail || 'Submission failed'}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
-
-const S: Record<string, React.CSSProperties> = {
-  card:      { background:'#fff', border:'0.5px solid #e5e4df', borderRadius:10, padding:16, marginBottom:12 },
-  select:    { padding:'7px 12px', border:'0.5px solid #d0d0cc', borderRadius:8, fontSize:13, background:'#fff', cursor:'pointer' },
-  input:     { padding:'7px 10px', border:'0.5px solid #d0d0cc', borderRadius:8, fontSize:13, background:'#fff', color:'#1a1a18', fontFamily:'inherit', outline:'none' },
-  btnPrimary:{ padding:'6px 14px', border:'none', borderRadius:8, background:'#1a1a18', color:'#fff', fontSize:12, cursor:'pointer' },
-  evalNote:  { fontSize:12, padding:'8px 10px', background:'#f9f9f7', borderRadius:6, color:'#555', marginBottom:10 },
-};

@@ -159,6 +159,21 @@ EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 DO $$ BEGIN
   DELETE FROM kpi_audit_log WHERE kpi_id IS NULL;
 EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE performance_cycles ADD COLUMN rating_type VARCHAR(20) DEFAULT 'NUMERIC';
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE performance_cycles ADD COLUMN rating_scale_max INT DEFAULT 5;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE performance_cycles ADD COLUMN rating_levels JSONB;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE kpis ADD COLUMN rating_targets JSONB;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE kpis ADD COLUMN actual_achievement TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE kpis ADD COLUMN self_rating NUMERIC(4,2);
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE kpis ADD COLUMN self_remarks TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 """
 
 
