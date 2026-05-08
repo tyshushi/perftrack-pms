@@ -159,6 +159,7 @@ class KpiTemplate(Base):
     department_id   = Column(UUID(as_uuid=True), ForeignKey("departments.id"))
     job_grade       = Column(String(20))
     cascaded_by     = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    rating_targets  = Column(JSON)
     is_active       = Column(Boolean, default=True)
     created_at      = Column(DateTime(timezone=True), default=datetime.utcnow)
     cycle           = relationship("PerformanceCycle", back_populates="kpi_templates")

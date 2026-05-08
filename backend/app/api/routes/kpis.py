@@ -62,6 +62,7 @@ class CascadeKpiRequest(BaseModel):
     department_id: Optional[UUID] = None
     job_grade:     Optional[str]  = None
     restrict_to_reports: bool     = False
+    rating_targets: Optional[list] = None
 
 
 class WeightAdjustRequest(BaseModel):
@@ -317,6 +318,7 @@ async def cascade_kpi(
             measurement   = body.measurement,
             status        = "APPROVED",
             cascaded_by   = current_user.id,
+            rating_targets = body.rating_targets,
         )
         db.add(kpi)
         created.append(str(emp_id))
@@ -348,6 +350,7 @@ class TemplateCreate(BaseModel):
     user_category: Optional[str]  = None
     department_id: Optional[UUID] = None
     job_grade:     Optional[str]  = None
+    rating_targets: Optional[list] = None
 
 
 def template_to_dict(t) -> dict:
@@ -363,6 +366,7 @@ def template_to_dict(t) -> dict:
         "department_id": str(t.department_id) if t.department_id else None,
         "job_grade":     t.job_grade,
         "is_active":     t.is_active,
+        "rating_targets": t.rating_targets,
     }
 
 
@@ -399,6 +403,7 @@ async def create_template(
         measurement   = body.measurement,
         department_id = body.department_id,
         job_grade     = body.job_grade,
+        rating_targets = body.rating_targets,
     )
     db.add(t)
     await db.flush()
@@ -474,6 +479,7 @@ async def cascade_template(
             existing.measurement   = t.measurement
             existing.status        = "APPROVED"
             existing.cascaded_by   = current_user.id
+            existing.rating_targets = t.rating_targets
             updated += 1
         else:
             db.add(Kpi(
@@ -490,6 +496,7 @@ async def cascade_template(
                 measurement   = t.measurement,
                 status        = "APPROVED",
                 cascaded_by   = current_user.id,
+                rating_targets = t.rating_targets,
             ))
             created += 1
 
@@ -932,6 +939,8 @@ async def update_rating_targets(
         raise HTTPException(404, "KPI not found")
     if str(kpi.user_id) != str(current_user.id):
         raise HTTPException(403, "Not your KPI")
+    if kpi.kpi_type == "FIXED":
+        raise HTTPException(403, "Rating targets for cascaded KPIs cannot be modified by staff")
     if kpi.status not in ("DRAFT", "APPROVED"):
         raise HTTPException(400, "Rating targets can only be set on DRAFT or APPROVED KPIs")
     kpi.rating_targets = body.rating_targets

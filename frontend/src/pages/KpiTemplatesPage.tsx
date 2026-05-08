@@ -1,6 +1,40 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { kpisApi, cyclesApi, groupsApi, departmentsApi } from '../api/client';
+
+function buildEmptyTargetRows(cycle: any) {
+  const ratingType = cycle?.rating_type || 'NUMERIC';
+  const scaleMax   = cycle?.rating_scale_max || 5;
+  const levels: any[] = cycle?.rating_levels || [];
+  if (ratingType === 'NUMERIC') {
+    const ordered = levels.length
+      ? [...levels].sort((a, b) => Number(b.value) - Number(a.value))
+      : Array.from({ length: scaleMax }, (_, i) => ({ value: scaleMax - i, label: `Level ${scaleMax - i}`, description: '' }));
+    return ordered.map((lv: any) => ({ value: lv.value, label: lv.label, target: '' }));
+  }
+  if (ratingType === 'MET_NOT_MET') {
+    const ordered = levels.length
+      ? levels
+      : [{ value: 'Met', label: 'Met' }, { value: 'Not Met', label: 'Not Met' }];
+    return ordered.map((lv: any) => ({ value: lv.value, label: lv.label || lv.value, target: '' }));
+  }
+  return [{ value: 'OKR', label: 'OKR', target: '' }];
+}
+
+function hasCompleteTargets(rawTargets: any, cycle: any): boolean {
+  const targets = Array.isArray(rawTargets) ? rawTargets : [];
+  if (targets.length === 0) return false;
+  const ratingType = cycle?.rating_type || 'NUMERIC';
+  const scaleMax   = cycle?.rating_scale_max || 5;
+  if (ratingType === 'NUMERIC') {
+    if (targets.length !== scaleMax) return false;
+  } else if (ratingType === 'MET_NOT_MET') {
+    if (targets.length !== 2) return false;
+  } else {
+    if (targets.length !== 1) return false;
+  }
+  return targets.every((t: any) => typeof t.target === 'string' && t.target.trim().length > 0);
+}
 
 const C = {
   bg:           '#ffffff',
@@ -104,6 +138,11 @@ export default function KpiTemplatesPage() {
   const [measurement, setMeasurement] = useState('');
   const [cascading,   setCascading]   = useState<string | null>(null);
   const [adding,      setAdding]      = useState(false);
+  const [inlineTargets, setInlineTargets] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (adding) setInlineTargets(buildEmptyTargetRows(currentCycle));
+  }, [adding, cycleId]);
 
   const createMutation = useMutation({
     mutationFn: () => kpisApi.createTemplate({
@@ -118,6 +157,7 @@ export default function KpiTemplatesPage() {
       job_grade:     appliesTo === 'grade'      ? jobGrade  || null : null,
       hierarchy:     appliesTo === 'hierarchy'  ? hierarchy || null : null,
       user_category: appliesTo === 'category'   ? category  || null : null,
+      rating_targets: inlineTargets,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['kpi-templates', cycleId] });
@@ -125,6 +165,7 @@ export default function KpiTemplatesPage() {
       setMinWeight(0); setMaxWeight(100); setGroupId(''); setDeptId('');
       setJobGrade(''); setHierarchy(''); setCategory('');
       setAppliesTo('everyone'); setAdding(false);
+      setInlineTargets(buildEmptyTargetRows(currentCycle));
     },
   });
 
@@ -150,6 +191,7 @@ export default function KpiTemplatesPage() {
         user_category: null,
         department_id: t.department_id || null,
         job_grade:     t.job_grade     || null,
+        rating_targets: t.rating_targets || null,
       });
       qc.invalidateQueries({ queryKey: ['kpis'] });
       alert(res.data.message);
@@ -336,20 +378,72 @@ export default function KpiTemplatesPage() {
                   <input style={S.input} value={measurement} onChange={e => setMeasurement(e.target.value)} placeholder="e.g. Monthly survey score" />
                 </div>
               </div>
+
+              {/* Rating Targets */}
+              {currentCycle && (
+                <div style={{ marginTop: 8, padding: 12, background: C.bgSecondary, borderRadius: 8, border: `0.5px solid ${C.borderLight}` }}>
+                  <div style={{ fontWeight: 500, fontSize: 13, color: C.text, marginBottom: 4 }}>
+                    Rating Targets <span style={{ color: C.textDanger }}>*</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 8 }}>
+                    Define what achievement looks like for each rating level. Required before this template can be created.
+                  </div>
+                  {(currentCycle.rating_type || 'NUMERIC') === 'OKR' ? (
+                    <div>
+                      <label style={S.label}>Measurement description</label>
+                      <input style={S.input}
+                        value={inlineTargets[0]?.target || ''}
+                        onChange={e => setInlineTargets(prev => prev.length
+                          ? prev.map((r, i) => i === 0 ? { ...r, target: e.target.value } : r)
+                          : [{ value: 'OKR', label: 'OKR', target: e.target.value }])}
+                        placeholder="e.g. % of project milestones completed" />
+                    </div>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: C.textSecond, fontWeight: 600, width: 180 }}>Rating</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: C.textSecond, fontWeight: 600 }}>Target Description</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {inlineTargets.map((r, i) => (
+                          <tr key={String(r.value)}>
+                            <td style={{ padding: '6px 8px', fontSize: 13, color: C.text }}>
+                              <strong>{r.value}</strong>{r.label ? ` — ${r.label}` : ''}
+                            </td>
+                            <td style={{ padding: '6px 8px' }}>
+                              <input style={S.input} value={r.target}
+                                onChange={e => setInlineTargets(prev => prev.map((row, idx) => idx === i ? { ...row, target: e.target.value } : row))}
+                                placeholder="What achievement looks like for this rating" />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+
               {createMutation.isError && (
                 <div style={{ fontSize: 12, color: '#991b1b', marginBottom: 8 }}>
                   {(createMutation.error as any)?.response?.data?.detail || 'Failed to create template'}
                 </div>
               )}
-              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button
                   onClick={() => createMutation.mutate()}
-                  disabled={!name || !target || createMutation.isPending}
-                  style={{ ...S.btnPrimary, opacity: !name || !target ? 0.5 : 1 }}>
+                  disabled={!name || !target || !hasCompleteTargets(inlineTargets, currentCycle) || createMutation.isPending}
+                  style={{ ...S.btnPrimary, opacity: (!name || !target || !hasCompleteTargets(inlineTargets, currentCycle)) ? 0.5 : 1 }}>
                   {createMutation.isPending ? 'Creating…' : 'Create Template'}
                 </button>
                 <button onClick={() => setAdding(false)} style={S.btnSm}>Cancel</button>
               </div>
+              {!hasCompleteTargets(inlineTargets, currentCycle) && (
+                <div style={{ marginTop: 6, fontSize: 12, color: C.textDanger }}>
+                  Fill in all rating target descriptions before creating the template.
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -174,6 +174,8 @@ DO $$ BEGIN ALTER TABLE kpis ADD COLUMN self_rating NUMERIC(4,2);
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE kpis ADD COLUMN self_remarks TEXT;
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE kpi_templates ADD COLUMN rating_targets JSONB;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 """
 
 

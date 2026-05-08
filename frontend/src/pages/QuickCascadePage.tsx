@@ -1,7 +1,41 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore, isHR } from '../store/auth';
 import { kpisApi, cyclesApi, usersApi, groupsApi, departmentsApi } from '../api/client';
+
+function buildEmptyTargetRows(cycle: any) {
+  const ratingType = cycle?.rating_type || 'NUMERIC';
+  const scaleMax   = cycle?.rating_scale_max || 5;
+  const levels: any[] = cycle?.rating_levels || [];
+  if (ratingType === 'NUMERIC') {
+    const ordered = levels.length
+      ? [...levels].sort((a, b) => Number(b.value) - Number(a.value))
+      : Array.from({ length: scaleMax }, (_, i) => ({ value: scaleMax - i, label: `Level ${scaleMax - i}`, description: '' }));
+    return ordered.map((lv: any) => ({ value: lv.value, label: lv.label, target: '' }));
+  }
+  if (ratingType === 'MET_NOT_MET') {
+    const ordered = levels.length
+      ? levels
+      : [{ value: 'Met', label: 'Met' }, { value: 'Not Met', label: 'Not Met' }];
+    return ordered.map((lv: any) => ({ value: lv.value, label: lv.label || lv.value, target: '' }));
+  }
+  return [{ value: 'OKR', label: 'OKR', target: '' }];
+}
+
+function hasCompleteTargets(rawTargets: any, cycle: any): boolean {
+  const targets = Array.isArray(rawTargets) ? rawTargets : [];
+  if (targets.length === 0) return false;
+  const ratingType = cycle?.rating_type || 'NUMERIC';
+  const scaleMax   = cycle?.rating_scale_max || 5;
+  if (ratingType === 'NUMERIC') {
+    if (targets.length !== scaleMax) return false;
+  } else if (ratingType === 'MET_NOT_MET') {
+    if (targets.length !== 2) return false;
+  } else {
+    if (targets.length !== 1) return false;
+  }
+  return targets.every((t: any) => typeof t.target === 'string' && t.target.trim().length > 0);
+}
 
 const C = {
   bg:           '#ffffff',
@@ -103,6 +137,11 @@ export default function QuickCascadePage() {
   const [search,       setSearch]       = useState('');
   const [selected,     setSelected]     = useState<string[]>([]);
   const [result,       setResult]       = useState<any>(null);
+  const [inlineTargets, setInlineTargets] = useState<any[]>([]);
+
+  useEffect(() => {
+    setInlineTargets(buildEmptyTargetRows(currentCycle));
+  }, [cycleId]);
 
   // For managers: direct reports only. For HR: all active users except self.
   const directReports = useMemo(() => {
@@ -149,6 +188,7 @@ export default function QuickCascadePage() {
           user_category: appliesTo === 'category'   ? userCategory || null : null,
           department_id: appliesTo === 'department' ? departmentId || null : null,
           job_grade:     appliesTo === 'grade'      ? jobGrade     || null : null,
+          rating_targets: inlineTargets,
         });
       }
       // Manager: pass selected employee_ids directly, no target fields
@@ -158,6 +198,7 @@ export default function QuickCascadePage() {
         kpi_dimension: kpiDimension,
         weight, target, measurement,
         employee_ids: selected,
+        rating_targets: inlineTargets,
       });
     },
     onSuccess: (res) => {
@@ -167,10 +208,13 @@ export default function QuickCascadePage() {
       setWeight(0); setSelected([]); setSearch('');
       setAppliesTo('everyone'); setGroupId(''); setHierarchy('');
       setUserCategory(''); setDepartmentId(''); setJobGrade('');
+      setInlineTargets(buildEmptyTargetRows(currentCycle));
     },
   });
 
+  const targetsComplete = hasCompleteTargets(inlineTargets, currentCycle);
   const canCascade = !!name && !!target && !!cycleId && !cascadeMutation.isPending &&
+    targetsComplete &&
     (isHrAdmin || selected.length > 0);
 
   return (
@@ -262,6 +306,57 @@ export default function QuickCascadePage() {
                 placeholder="e.g. Monthly survey score" />
             </div>
           </div>
+
+          {/* Rating Targets */}
+          {currentCycle && (
+            <div style={{ marginBottom: 12, padding: 12, background: C.bgSecondary, borderRadius: 8, border: `0.5px solid ${C.borderLight}` }}>
+              <div style={{ fontWeight: 500, fontSize: 13, color: C.text, marginBottom: 4 }}>
+                Rating Targets <span style={{ color: C.textDanger }}>*</span>
+              </div>
+              <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 8 }}>
+                Define what achievement looks like for each rating level. Required before cascading.
+              </div>
+              {(currentCycle.rating_type || 'NUMERIC') === 'OKR' ? (
+                <div>
+                  <label style={S.label}>Measurement description</label>
+                  <input style={S.input}
+                    value={inlineTargets[0]?.target || ''}
+                    onChange={e => setInlineTargets(prev => prev.length
+                      ? prev.map((r, i) => i === 0 ? { ...r, target: e.target.value } : r)
+                      : [{ value: 'OKR', label: 'OKR', target: e.target.value }])}
+                    placeholder="e.g. % of project milestones completed" />
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: C.textSecond, fontWeight: 600, width: 180 }}>Rating</th>
+                      <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: C.textSecond, fontWeight: 600 }}>Target Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inlineTargets.map((r, i) => (
+                      <tr key={String(r.value)}>
+                        <td style={{ padding: '6px 8px', fontSize: 13, color: C.text }}>
+                          <strong>{r.value}</strong>{r.label ? ` — ${r.label}` : ''}
+                        </td>
+                        <td style={{ padding: '6px 8px' }}>
+                          <input style={S.input} value={r.target}
+                            onChange={e => setInlineTargets(prev => prev.map((row, idx) => idx === i ? { ...row, target: e.target.value } : row))}
+                            placeholder="What achievement looks like for this rating" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {!targetsComplete && (
+                <div style={{ marginTop: 6, fontSize: 12, color: C.textDanger }}>
+                  Fill in all rating target descriptions before cascading.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── MANAGER: searchable direct-reports checklist ── */}
           {!isHrAdmin && (

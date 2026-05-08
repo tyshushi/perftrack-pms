@@ -103,6 +103,50 @@ function hasCompleteTargets(rawTargets: any, cycle: any): boolean {
   return targets.every((t: any) => typeof t.target === 'string' && t.target.trim().length > 0);
 }
 
+function ReadOnlyTargetsView({ kpi, cycle }: { kpi: any; cycle: any }) {
+  const ratingType = cycle?.rating_type || 'NUMERIC';
+  const targets: any[] = Array.isArray(kpi.rating_targets) ? kpi.rating_targets : [];
+  if (targets.length === 0) {
+    return (
+      <div style={{ marginTop: 10, padding: 10, background: '#f7f7f5', borderRadius: 8, border: `0.5px solid ${C.borderLight}`, fontSize: 12, color: C.textTertiary, fontStyle: 'italic' }}>
+        No rating targets defined by the cascader.
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginTop: 10, padding: 12, background: '#f7f7f5', borderRadius: 8, border: `0.5px solid ${C.borderLight}` }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: C.textSecond, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>
+        Rating Targets (set by cascader)
+      </div>
+      {ratingType === 'OKR' ? (
+        <div style={{ fontSize: 13, color: C.text }}>
+          <div style={{ fontSize: 11, color: C.textSecond, marginBottom: 4, fontWeight: 600 }}>Measurement</div>
+          {targets[0]?.target || '—'}
+        </div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: C.textSecond, fontWeight: 600, width: 180 }}>Rating</th>
+              <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: C.textSecond, fontWeight: 600 }}>Target Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {targets.map((t: any) => (
+              <tr key={String(t.value)}>
+                <td style={{ padding: '6px 8px', fontSize: 13, color: C.text }}>
+                  <strong>{t.value}</strong>{t.label ? ` — ${t.label}` : ''}
+                </td>
+                <td style={{ padding: '6px 8px', color: C.textSecond }}>{t.target || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 function RatingTargetsEditor({ kpi, cycle, onSave }: {
   kpi: any;
   cycle: any;
@@ -198,13 +242,14 @@ function KpiCard({
 }) {
   const targetsComplete = hasCompleteTargets(kpi.rating_targets, cycle);
   const needsTargets = !targetsComplete && (kpi.status === 'DRAFT' || kpi.status === 'REJECTED' || kpi.status === 'APPROVED');
+  const isFixed = kpi.kpi_type === 'FIXED';
   const [editWeight, setEditWeight] = useState(false);
   const [newWeight,  setNewWeight]  = useState(kpi.weight);
-  const [showTargets, setShowTargets] = useState(needsTargets);
+  const [showTargets, setShowTargets] = useState(needsTargets && !isFixed);
   const rule    = weightRules.find((r: any) => r.kpi_dimension === kpi.kpi_dimension);
-  const isFixed = kpi.kpi_type === 'FIXED';
   const canDelete = kpi.status === 'DRAFT' && !isFixed;
-  const canSetTargets = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED' || kpi.status === 'APPROVED') && !!cycle;
+  const showTargetsSection = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED' || kpi.status === 'APPROVED') && !!cycle;
+  const canEditTargets = showTargetsSection && !isFixed;
 
   return (
     <div style={{ ...S.card, marginBottom: 8 }}>
@@ -284,25 +329,31 @@ function KpiCard({
         </div>
       )}
 
-      {canSetTargets && (
+      {showTargetsSection && (
         <div style={{ marginTop: 10 }}>
           {needsTargets && (
             <div style={{ fontSize: 12, padding: '6px 10px', background: '#fef2f2', color: '#991b1b', borderRadius: 6, marginBottom: 6, fontWeight: 500 }}>
               ⚠ Rating targets not set — required before submission
             </div>
           )}
-          <button onClick={() => setShowTargets(s => !s)}
-            style={{ ...S.btnSm, fontSize: 11 }}>
-            {showTargets ? '▾ Hide Rating Targets' : '▸ Set Rating Targets'}
-            {targetsComplete && (
-              <span style={{ marginLeft: 6, color: '#166534' }}>✓ defined</span>
-            )}
-          </button>
-          {showTargets && (
-            <RatingTargetsEditor
-              kpi={kpi}
-              cycle={cycle}
-              onSave={onSaveTargets} />
+          {isFixed ? (
+            <ReadOnlyTargetsView kpi={kpi} cycle={cycle} />
+          ) : (
+            <>
+              <button onClick={() => setShowTargets(s => !s)}
+                style={{ ...S.btnSm, fontSize: 11 }}>
+                {showTargets ? '▾ Hide Rating Targets' : '▸ Set Rating Targets'}
+                {targetsComplete && (
+                  <span style={{ marginLeft: 6, color: '#166534' }}>✓ defined</span>
+                )}
+              </button>
+              {showTargets && canEditTargets && (
+                <RatingTargetsEditor
+                  kpi={kpi}
+                  cycle={cycle}
+                  onSave={onSaveTargets} />
+              )}
+            </>
           )}
         </div>
       )}
