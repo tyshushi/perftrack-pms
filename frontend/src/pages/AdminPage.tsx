@@ -364,12 +364,34 @@ function CsvImportTab() {
   }
 
   async function handleConfirm() {
-    const rows = preview.filter(r => selected[r.employee_code]).map(r => ({ ...r, action: selected[r.employee_code] }));
+    const rows = preview
+      .filter(r => selected[r.employee_code])
+      .map(r => ({ ...r, action: selected[r.employee_code] }));
     if (!rows.length) { alert('No rows selected'); return; }
+
     setImporting(true);
+    const BATCH_SIZE = 20;
+    let totalCreated = 0;
+    let totalUpdated = 0;
+    let totalDeactivated = 0;
+    let totalSkipped = 0;
+
     try {
-      const res = await api.post('/users/import/confirm', { rows });
-      setResult(res.data);
+      for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+        const batch = rows.slice(i, i + BATCH_SIZE);
+        const res = await api.post('/users/import/confirm', { rows: batch });
+        totalCreated     += res.data.created     || 0;
+        totalUpdated     += res.data.updated      || 0;
+        totalDeactivated += res.data.deactivated  || 0;
+        totalSkipped     += res.data.skipped      || 0;
+      }
+      setResult({
+        created:     totalCreated,
+        updated:     totalUpdated,
+        deactivated: totalDeactivated,
+        skipped:     totalSkipped,
+        message:     `Import complete. New users get temporary password: Welcome@1234`,
+      });
       qc.invalidateQueries({ queryKey: ['users'] });
       setPreview([]); setSummary(null); setSelected({});
     } catch (e: any) {
