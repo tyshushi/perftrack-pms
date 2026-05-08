@@ -756,6 +756,13 @@ async def delete_kpi(
         raise HTTPException(400, "Cannot delete a submitted KPI")
     if kpi.kpi_type == "FIXED":
         raise HTTPException(400, "Cannot delete a cascaded KPI")
+    from app.models.user import KpiAuditLog
+    audit_result = await db.execute(
+        select(KpiAuditLog).where(KpiAuditLog.kpi_id == kpi_id)
+    )
+    for log in audit_result.scalars().all():
+        await db.delete(log)
+    await db.flush()
     await db.delete(kpi)
 
 
