@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useAuthStore, isHR } from '../store/auth';
+import { useAuthStore } from '../store/auth';
 import { kpisApi, cyclesApi, usersApi, groupsApi, departmentsApi } from '../api/client';
 
 function buildEmptyTargetRows(cycle: any) {
@@ -89,7 +89,7 @@ function avatarInitials(name: string) {
 export default function QuickCascadePage() {
   const { user } = useAuthStore();
   const qc = useQueryClient();
-  const isHrAdmin = isHR(user?.role || '');
+  const isHrAdmin = useAuthStore().isHrAdmin();
   const [cycleId, setCycleId] = useState('');
 
   const { data: cycles = [] } = useQuery({

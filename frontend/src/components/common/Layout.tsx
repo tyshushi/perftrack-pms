@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { useAuthStore, ROLE_LABELS, isHR, isMgr } from '../../store/auth';
+import { useAuthStore, ROLE_LABELS } from '../../store/auth';
 
 const C = {
   bg:           '#ffffff',
@@ -32,8 +32,10 @@ export default function Layout() {
   const { user, logout } = useAuthStore();
   const role = user?.role || '';
   const location = useLocation();
-  const isManager = isMgr(role);
-  const isHrAdmin = isHR(role);
+  const isManager = useAuthStore.getState().isManager();
+  const isHod = useAuthStore.getState().isHod();
+  const isHrAdmin = useAuthStore.getState().isHrAdmin();
+  const showManagerSection = isManager || isHod || isHrAdmin;
 
   const [expanded, setExpanded] = useState<Set<string>>(() =>
     getAutoExpanded(location.pathname)
@@ -160,7 +162,7 @@ export default function Layout() {
           )}
 
           {/* Manager's Tray group */}
-          {isManager && (
+          {showManagerSection && (
             <>
               <div style={groupRow} onClick={() => toggle('managers-tray')}>
                 <span>Manager's Tray</span>
@@ -183,7 +185,7 @@ export default function Layout() {
           )}
 
           {/* ── DASHBOARD (level 0 direct link) ── */}
-          {isManager && (
+          {showManagerSection && (
             <>
               <div style={divider} />
               <NavLink to="/dashboard" style={({ isActive }) => l0LinkStyle(isActive)} end>

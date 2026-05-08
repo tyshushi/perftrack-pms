@@ -87,7 +87,7 @@ export default function ManagerEvalPage() {
     if (report.reviewing_manager_id === uid) statuses.push('PENDING_RM');
     if (report.hod_id               === uid) statuses.push('PENDING_HOD');
     // HR Admin can act on all
-    if (['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+    if (useAuthStore.getState().isHrAdmin()) {
       statuses.push('PENDING_DM', 'PENDING_RM', 'PENDING_HOD');
     }
     return [...new Set(statuses)];
@@ -165,7 +165,7 @@ export default function ManagerEvalPage() {
             {selectedReport.direct_manager_id    === user?.id && <span style={S.roleBadge('#0369a1')}>Direct Manager</span>}
             {selectedReport.reviewing_manager_id === user?.id && <span style={S.roleBadge('#6d28d9')}>Reviewing Manager</span>}
             {selectedReport.hod_id               === user?.id && <span style={S.roleBadge('#92400e')}>HOD</span>}
-            {['HR_ADMIN','SUPER_ADMIN'].includes(user?.role || '') && <span style={S.roleBadge('#166534')}>HR Admin (full access)</span>}
+            {useAuthStore.getState().isHrAdmin() && <span style={S.roleBadge('#166534')}>HR Admin (full access)</span>}
           </div>
 
           {/* Tabs */}
