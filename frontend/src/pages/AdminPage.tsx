@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { usersApi, departmentsApi, api } from '../api/client';
 import UserProfileDrawer from '../components/common/UserProfileDrawer';
@@ -91,16 +91,14 @@ function exportCsvTemplate() {
   downloadCsv('employee_import_template.csv', [headers, example]);
 }
 
-function exportReportingLinesTemplate() {
-  const headers = ['Employee Code', 'Name', 'Direct Manager Code', 'Reviewing Manager Code', 'HOD Code'];
-  const example = ['EMP005', 'Aisha Rahman', 'EMP004', 'EMP003', 'EMP002'];
-  downloadCsv('reporting_lines_template.csv', [headers, example]);
-}
-
-function exportReportingLinesAudit(users: any[]) {
+function exportReportingLinesAudit(users: any[], depts: any[]) {
   const userMap = Object.fromEntries(users.map((u: any) => [u.id, u]));
+  const deptMap = Object.fromEntries(depts.map((d: any) => [d.id, d.name]));
   const headers = [
-    'Employee Code', 'Name',
+    'Employee Code', 'Name', 'Email', 'Role', 'Grade', 'Position',
+    'Department', 'Division', 'Section', 'Employment Unit', 'Category',
+    'Hierarchy', 'Country', 'Work Location', 'Employee Type', 'Hire Date',
+    'Gender', 'Status',
     'Direct Manager Code', 'Direct Manager Name',
     'Reviewing Manager Code', 'Reviewing Manager Name',
     'HOD Code', 'HOD Name', 'Approval Levels',
@@ -109,8 +107,19 @@ function exportReportingLinesAudit(users: any[]) {
     const dm  = userMap[u.direct_manager_id];
     const rm  = userMap[u.reviewing_manager_id];
     const hod = userMap[u.hod_id];
+    const hierarchy = [
+      u.department_id ? deptMap[u.department_id] || '' : '',
+      u.division || '', u.section || '',
+    ].filter(Boolean).join(' / ');
     return [
-      u.employee_id, u.full_name,
+      u.employee_id, u.full_name, u.email, u.role,
+      u.job_grade || '', u.position_title || '',
+      u.department_id ? deptMap[u.department_id] || '' : '',
+      u.division || '', u.section || '',
+      u.employment_unit || '', u.category || '', hierarchy,
+      u.country || '', u.work_location || '',
+      u.employee_type || '', u.hire_date || '', u.gender || '',
+      u.is_active !== false ? 'Active' : 'Inactive',
       dm  ? dm.employee_id  : '', dm  ? dm.full_name  : '',
       rm  ? rm.employee_id  : '', rm  ? rm.full_name  : '',
       hod ? hod.employee_id : '', hod ? hod.full_name : '',
@@ -143,6 +152,210 @@ function RolePill({ role }: { role: string }) {
     <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px', borderRadius: 10, background: c.bg, color: c.color }}>
       {ROLE_LABELS[role] || role}
     </span>
+  );
+}
+
+function SavedFlash() {
+  return (
+    <span style={{ marginLeft: 6, color: '#166534', fontSize: 11, fontWeight: 600 }}>✓</span>
+  );
+}
+
+function ManagerCell({
+  userId, managerId, field, users, onSaved,
+}: {
+  userId:    string;
+  managerId: string | null | undefined;
+  field:     'direct_manager_id' | 'reviewing_manager_id' | 'hod_id';
+  users:     any[];
+  onSaved:   () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [query,   setQuery]   = useState('');
+  const [saving,  setSaving]  = useState(false);
+  const [flash,   setFlash]   = useState(false);
+  const inputRef  = useRef<HTMLInputElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const current = users.find(u => u.id === managerId);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  useEffect(() => {
+    if (!editing) return;
+    function onDocClick(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setEditing(false); setQuery('');
+      }
+    }
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [editing]);
+
+  async function select(targetId: string | null) {
+    setSaving(true);
+    try {
+      await api.patch(`/users/${userId}`, { [field]: targetId });
+      setFlash(true);
+      setTimeout(() => setFlash(false), 1200);
+      onSaved();
+      setEditing(false); setQuery('');
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Failed to update');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <span
+        onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+        style={{
+          cursor: 'pointer',
+          color: current ? C.text : C.textTertiary,
+          borderBottom: `1px dashed ${C.border}`,
+          fontStyle: current ? 'normal' : 'italic',
+          fontSize: 12,
+        }}
+        title="Click to edit"
+      >
+        {current ? current.full_name : '— Not assigned —'}
+        {flash && <SavedFlash />}
+      </span>
+    );
+  }
+
+  const q = query.toLowerCase().trim();
+  const matches = users
+    .filter(u => u.id !== userId && u.is_active !== false)
+    .filter(u => !q || [u.full_name, u.employee_id, u.email].some((f: string) => f?.toLowerCase().includes(q)))
+    .slice(0, 6);
+
+  return (
+    <div ref={wrapperRef} style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+      <input
+        ref={inputRef}
+        style={{ ...S.input, padding: '5px 8px', fontSize: 12 }}
+        placeholder="Search name or code..."
+        value={query}
+        disabled={saving}
+        onChange={e => setQuery(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Escape') { setEditing(false); setQuery(''); }
+        }}
+      />
+      <div style={{
+        position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 2,
+        background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
+        boxShadow: '0 4px 12px rgba(0,0,0,0.08)', zIndex: 10, maxHeight: 240, overflowY: 'auto',
+      }}>
+        {current && (
+          <div
+            onClick={() => select(null)}
+            style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 12, color: C.textDanger, borderBottom: `1px solid ${C.borderLight}` }}
+            onMouseEnter={e => (e.currentTarget.style.background = C.bgSecondary)}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+          >
+            ✕ Clear assignment
+          </div>
+        )}
+        {matches.length === 0 && (
+          <div style={{ padding: '8px 10px', fontSize: 12, color: C.textSecond }}>No matches</div>
+        )}
+        {matches.map(u => (
+          <div
+            key={u.id}
+            onClick={() => select(u.id)}
+            style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 12 }}
+            onMouseEnter={e => (e.currentTarget.style.background = C.bgSecondary)}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+          >
+            <div style={{ color: C.text, fontWeight: 500 }}>{u.full_name}</div>
+            <div style={{ color: C.textSecond, fontSize: 11 }}>{u.employee_id} · {u.position_title || u.role}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ApprovalLevelsCell({
+  userId, value, onSaved,
+}: {
+  userId:  string;
+  value:   number;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [saving,  setSaving]  = useState(false);
+  const [flash,   setFlash]   = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!editing) return;
+    function onDocClick(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setEditing(false);
+    }
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [editing]);
+
+  async function select(level: number) {
+    setSaving(true);
+    try {
+      await api.patch(`/users/${userId}`, { approval_levels: level });
+      setFlash(true);
+      setTimeout(() => setFlash(false), 1200);
+      onSaved();
+      setEditing(false);
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Failed to update');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <span
+        onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+        style={{
+          cursor: 'pointer',
+          fontSize: 11, padding: '2px 8px', borderRadius: 10,
+          background: '#ede9fe', color: '#6d28d9', fontWeight: 500,
+          display: 'inline-block',
+        }}
+        title="Click to change"
+      >
+        {value} {value === 1 ? 'lvl' : 'lvls'}
+        {flash && <SavedFlash />}
+      </span>
+    );
+  }
+
+  return (
+    <div ref={wrapperRef} style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
+      {[1, 2, 3].map(n => (
+        <button
+          key={n}
+          disabled={saving}
+          onClick={() => select(n)}
+          style={{
+            ...S.btnSm,
+            padding: '3px 9px',
+            background: n === value ? C.text : C.bg,
+            color:      n === value ? '#ffffff' : C.textSecond,
+            borderColor: n === value ? C.text : C.border,
+            fontWeight: 500,
+          }}
+        >
+          {n}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -252,8 +465,7 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
-            <button style={S.btnSm} onClick={() => exportReportingLinesAudit(users)}>↓ Current Lines</button>
-            <button style={S.btnSm} onClick={exportReportingLinesTemplate}>↓ Template</button>
+            <button style={S.btnSm} onClick={() => exportReportingLinesAudit(users, depts)}>↓ Current Lines</button>
             <input ref={rlFileRef} type="file" accept=".csv" onChange={handleRlUpload} style={{ display: 'none' }} />
             <button style={S.btnPrimary}
               onClick={() => { setRlResult(null); rlFileRef.current?.click(); }}
@@ -282,11 +494,13 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
         )}
       </div>
 
-      <div style={{ background: C.bg, border: `1px solid ${C.borderLight}`, borderRadius: 10, overflow: 'hidden', marginBottom: 12 }}>
+      <div style={{ background: C.bg, border: `1px solid ${C.borderLight}`, borderRadius: 10, overflow: 'visible', marginBottom: 12 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: C.bgSecondary }}>
-              {['Employee', 'Code', 'Position', 'Department', 'Grade', 'Role', 'Status', 'Actions'].map(h => (
+              {['Employee', 'Code', 'Position', 'Department', 'Grade',
+                'Direct Manager', 'Reviewing Manager', 'HOD',
+                'Approval Levels', 'Status', 'Actions'].map(h => (
                 <th key={h} style={S.th}>{h}</th>
               ))}
             </tr>
@@ -294,53 +508,71 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
           <tbody>
             {paginated.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ padding: 32, textAlign: 'center', color: C.textSecond }}>No users found</td>
+                <td colSpan={11} style={{ padding: 32, textAlign: 'center', color: C.textSecond }}>No users found</td>
               </tr>
             )}
-            {paginated.map((u: any) => (
-              <tr key={u.id} onClick={() => setSelected(u)} style={{ cursor: 'pointer', background: C.bg }}
-                onMouseEnter={e => (e.currentTarget.style.background = C.bgSecondary)}
-                onMouseLeave={e => (e.currentTarget.style.background = C.bg)}>
-                <td style={S.td}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Avatar name={u.full_name} />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 500, color: C.text }}>{u.full_name}</div>
-                      <div style={{ fontSize: 11, color: C.textSecond,
-                        whiteSpace: 'nowrap', overflow: 'visible',
-                        wordBreak: 'break-all' }}>{u.email}</div>
+            {paginated.map((u: any) => {
+              const refresh = () => qc.invalidateQueries({ queryKey: ['users'] });
+              return (
+                <tr key={u.id} onClick={() => setSelected(u)} style={{ cursor: 'pointer', background: C.bg }}
+                  onMouseEnter={e => (e.currentTarget.style.background = C.bgSecondary)}
+                  onMouseLeave={e => (e.currentTarget.style.background = C.bg)}>
+                  <td style={S.td}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Avatar name={u.full_name} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 500, color: C.text }}>{u.full_name}</div>
+                        <div style={{ fontSize: 11, color: C.textSecond,
+                          whiteSpace: 'nowrap', overflow: 'visible',
+                          wordBreak: 'break-all' }}>{u.email}</div>
+                      </div>
                     </div>
-                  </div>
-                </td>
-                <td style={S.td}>{u.employee_id}</td>
-                <td style={S.td}>{u.position_title || '—'}</td>
-                <td style={S.td}>{u.department_id ? (Object.fromEntries(depts.map((d: any) => [d.id, d.name]))[u.department_id] || '—') : '—'}</td>
-                <td style={S.td}>{u.job_grade || '—'}</td>
-                <td style={S.td}><RolePill role={u.role} /></td>
-                <td style={S.td}>
-                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, background: u.is_active !== false ? '#dcfce7' : '#fee2e2', color: u.is_active !== false ? '#166534' : '#991b1b' }}>
-                    {u.is_active !== false ? 'Active' : 'Inactive'}
-                  </span>
-                </td>
-                <td style={S.td}>
-                  {u.is_active !== false ? (
-                    <button
-                      style={{ ...S.btnSm, color: '#991b1b', borderColor: '#fca5a5' }}
-                      onClick={(e) => handleDeactivate(u, e)}
-                    >
-                      Deactivate
-                    </button>
-                  ) : (
-                    <button
-                      style={{ ...S.btnSm, color: '#166534', borderColor: '#86efac' }}
-                      onClick={(e) => handleReactivate(u, e)}
-                    >
-                      Reactivate
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td style={S.td}>{u.employee_id}</td>
+                  <td style={S.td}>{u.position_title || '—'}</td>
+                  <td style={S.td}>{u.department_id ? (deptMap[u.department_id] || '—') : '—'}</td>
+                  <td style={S.td}>{u.job_grade || '—'}</td>
+                  <td style={S.td}>
+                    <ManagerCell userId={u.id} managerId={u.direct_manager_id}
+                      field="direct_manager_id" users={users} onSaved={refresh} />
+                  </td>
+                  <td style={S.td}>
+                    <ManagerCell userId={u.id} managerId={u.reviewing_manager_id}
+                      field="reviewing_manager_id" users={users} onSaved={refresh} />
+                  </td>
+                  <td style={S.td}>
+                    <ManagerCell userId={u.id} managerId={u.hod_id}
+                      field="hod_id" users={users} onSaved={refresh} />
+                  </td>
+                  <td style={S.td}>
+                    <ApprovalLevelsCell userId={u.id}
+                      value={u.approval_levels || 3} onSaved={refresh} />
+                  </td>
+                  <td style={S.td}>
+                    <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, background: u.is_active !== false ? '#dcfce7' : '#fee2e2', color: u.is_active !== false ? '#166534' : '#991b1b' }}>
+                      {u.is_active !== false ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td style={S.td}>
+                    {u.is_active !== false ? (
+                      <button
+                        style={{ ...S.btnSm, color: '#991b1b', borderColor: '#fca5a5' }}
+                        onClick={(e) => handleDeactivate(u, e)}
+                      >
+                        Deactivate
+                      </button>
+                    ) : (
+                      <button
+                        style={{ ...S.btnSm, color: '#166534', borderColor: '#86efac' }}
+                        onClick={(e) => handleReactivate(u, e)}
+                      >
+                        Reactivate
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

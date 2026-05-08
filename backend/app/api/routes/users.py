@@ -311,6 +311,38 @@ async def update_managers(
     return {"message": "Managers updated successfully"}
 
 
+# ── Patch user (HR Admin) ─────────────────────────────────────────────────
+
+@router.patch("/{user_id}")
+async def patch_user(
+    user_id: UUID,
+    body:    ManagerUpdate,
+    db:      AsyncSession = Depends(get_db),
+    _:       User         = Depends(require_hr_admin),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    data = body.model_dump(exclude_unset=True)
+
+    if "direct_manager_id" in data:
+        user.direct_manager_id    = data["direct_manager_id"]
+    if "reviewing_manager_id" in data:
+        user.reviewing_manager_id = data["reviewing_manager_id"]
+    if "hod_id" in data:
+        user.hod_id               = data["hod_id"]
+    if "approval_levels" in data and data["approval_levels"] is not None:
+        if data["approval_levels"] not in (1, 2, 3):
+            raise HTTPException(400, "approval_levels must be 1, 2, or 3")
+        user.approval_levels = data["approval_levels"]
+
+    user.updated_at = datetime.utcnow()
+    await db.flush()
+    return {"message": "User updated successfully"}
+
+
 # ── Change password ────────────────────────────────────────────────────────
 
 @router.patch("/{user_id}/password")
