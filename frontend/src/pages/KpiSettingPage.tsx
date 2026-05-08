@@ -193,7 +193,7 @@ export default function KpiSettingPage() {
   const { data: kpis = [] } = useQuery({
     queryKey: ['kpis', cycleId, user?.id],
     queryFn:  () => kpisApi.list(cycleId, user?.id).then(r => r.data),
-    enabled:  !!cycleId && !!user,
+    enabled:  !!cycleId && !!user?.id,
   });
 
   const { data: weightRules = [] } = useQuery({
