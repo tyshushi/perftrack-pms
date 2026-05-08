@@ -1,10 +1,11 @@
 """
 Auth routes: login, refresh, me
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -15,6 +16,7 @@ from app.core.security import (
 from app.models.user import User
 
 router = APIRouter()
+log = logging.getLogger("auth")
 
 
 class TokenOut(BaseModel):
@@ -28,9 +30,29 @@ async def login(
     form: OAuth2PasswordRequestForm = Depends(),
     db:   AsyncSession              = Depends(get_db),
 ):
-    result = await db.execute(select(User).where(User.email == form.username, User.is_active == True))
+    typed = (form.username or "").strip()
+    typed_lower = typed.lower()
+
+    result = await db.execute(
+        select(User).where(func.lower(User.email) == typed_lower)
+    )
     user = result.scalar_one_or_none()
-    if not user or not verify_password(form.password, user.hashed_password):
+
+    if not user:
+        log.warning("LOGIN FAIL: no user matching email=%r (case-insensitive)", typed)
+        raise HTTPException(401, "Invalid credentials")
+
+    log.info(
+        "LOGIN attempt: typed=%r stored_email=%r employee_id=%r is_active=%s",
+        typed, user.email, user.employee_id, user.is_active,
+    )
+
+    if not user.is_active:
+        log.warning("LOGIN FAIL: user %r is inactive", user.email)
+        raise HTTPException(401, "Invalid credentials")
+
+    if not verify_password(form.password, user.hashed_password):
+        log.warning("LOGIN FAIL: bad password for %r", user.email)
         raise HTTPException(401, "Invalid credentials")
 
     await db.execute(update(User).where(User.id == user.id).values(last_login=datetime.utcnow()))
