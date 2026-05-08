@@ -79,12 +79,12 @@ function exportUsersAudit(users: any[], depts: any[]) {
 
 function exportCsvTemplate() {
   const headers = [
-    'Employee Code', 'Name', 'Employment Unit', 'Department',
+    'Employee Code', 'Name', 'Email', 'Employment Unit', 'Department',
     'Division', 'Section', 'Position Title', 'Grade', 'Category',
     'Country', 'Work Location', 'Employee Type', 'Hire Date', 'Gender', 'ROLE',
   ];
   const example = [
-    'EMP001', 'Ahmad bin Ali', 'Corporate', 'Finance',
+    'EMP001', 'Ahmad bin Ali', 'ahmad.ali@company.com', 'Corporate', 'Finance',
     'Financial Control', 'Reporting', 'Finance Executive', 'G3', 'Permanent',
     'Malaysia', 'Kuala Lumpur HQ', 'Full Time', '01/01/2020', 'Male', 'STAFF',
   ];
@@ -173,6 +173,27 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  async function handleDeactivate(u: any, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!window.confirm(`Deactivate ${u.full_name}? They will lose access immediately.`)) return;
+    try {
+      await usersApi.deactivate(u.id);
+      qc.invalidateQueries({ queryKey: ['users'] });
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Failed to deactivate user');
+    }
+  }
+
+  async function handleReactivate(u: any, e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      await usersApi.reactivate(u.id);
+      qc.invalidateQueries({ queryKey: ['users'] });
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Failed to reactivate user');
+    }
+  }
 
   async function handleRlUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -265,7 +286,7 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: C.bgSecondary }}>
-              {['Employee', 'Code', 'Position', 'Department', 'Grade', 'Role', 'Status'].map(h => (
+              {['Employee', 'Code', 'Position', 'Department', 'Grade', 'Role', 'Status', 'Actions'].map(h => (
                 <th key={h} style={S.th}>{h}</th>
               ))}
             </tr>
@@ -273,7 +294,7 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
           <tbody>
             {paginated.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: 32, textAlign: 'center', color: C.textSecond }}>No users found</td>
+                <td colSpan={8} style={{ padding: 32, textAlign: 'center', color: C.textSecond }}>No users found</td>
               </tr>
             )}
             {paginated.map((u: any) => (
@@ -298,6 +319,23 @@ function UserListTab({ users, depts }: { users: any[]; depts: any[] }) {
                   <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, background: u.is_active !== false ? '#dcfce7' : '#fee2e2', color: u.is_active !== false ? '#166534' : '#991b1b' }}>
                     {u.is_active !== false ? 'Active' : 'Inactive'}
                   </span>
+                </td>
+                <td style={S.td}>
+                  {u.is_active !== false ? (
+                    <button
+                      style={{ ...S.btnSm, color: '#991b1b', borderColor: '#fca5a5' }}
+                      onClick={(e) => handleDeactivate(u, e)}
+                    >
+                      Deactivate
+                    </button>
+                  ) : (
+                    <button
+                      style={{ ...S.btnSm, color: '#166534', borderColor: '#86efac' }}
+                      onClick={(e) => handleReactivate(u, e)}
+                    >
+                      Reactivate
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
