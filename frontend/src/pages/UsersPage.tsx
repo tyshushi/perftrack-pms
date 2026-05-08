@@ -229,7 +229,7 @@ function AddUserTab({ depts, users }: { depts: any[]; users: any[] }) {
     },
   });
 
-  const managers = users.filter((u: any) => ['MANAGER', 'MGR2', 'HOD', 'HR_ADMIN', 'SUPER_ADMIN'].includes(u.role));
+  const managers = users.filter((u: any) => ['MANAGER', 'HOD', 'HR_ADMIN', 'SUPER_ADMIN'].includes(u.role));
 
   return (
     <div style={S.card}>

@@ -140,5 +140,5 @@ export const ROLE_LABELS: Record<string, string> = {
 };
 
 export const isHR  = (role: string) => ['HR_ADMIN', 'SUPER_ADMIN'].includes(role);
-export const isMgr = (role: string) => ['MANAGER', 'MGR2', 'HOD', 'HR_ADMIN', 'SUPER_ADMIN'].includes(role);
+export const isMgr = (role: string) => ['MANAGER', 'HOD', 'HR_ADMIN', 'SUPER_ADMIN'].includes(role);
 export const isHOD = (role: string) => ['HOD', 'HR_ADMIN', 'SUPER_ADMIN'].includes(role);

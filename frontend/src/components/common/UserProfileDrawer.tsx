@@ -441,14 +441,13 @@ interface Props {
 
 export default function UserProfileDrawer({ user, users, depts, onClose }: Props) {
   const qc = useQueryClient();
-  const { user: currentUser } = useAuthStore();
   const [editing,     setEditing]     = useState(false);
   const [openSlot,    setOpenSlot]    = useState<SlotKey | null>(null);
   const [assignments, setAssignments] = useState<Record<string, any>>({});
   const [levels,      setLevels]      = useState(3);
   const [saveOk,      setSaveOk]      = useState(false);
 
-  const isHrAdmin = currentUser?.role === 'HR_ADMIN' || currentUser?.role === 'SUPER_ADMIN';
+  const isHrAdmin = useAuthStore.getState().isHrAdmin();
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['user-profile', user.id],

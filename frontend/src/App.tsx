@@ -26,6 +26,25 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RequirePermission({
+  anyOf,
+  children,
+}: {
+  anyOf: string[];
+  children: React.ReactNode;
+}) {
+  const permissions = useAuthStore((s) => s.permissions);
+  const allowed = anyOf.some((p) => permissions.includes(p));
+  if (!allowed) {
+    return (
+      <div style={{ padding: 24, fontSize: 13, color: '#888' }}>
+        You do not have permission to access this page.
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
+
 export default function App() {
   const fetchMe = useAuthStore((s) => s.fetchMe);
 
@@ -43,15 +62,15 @@ export default function App() {
             <Route index element={<Navigate to="/scorecard/setting" replace />} />
             <Route path="scorecard/setting"        element={<KpiSettingPage />} />
             <Route path="scorecard/self-eval"      element={<SelfEvalPage />} />
-            <Route path="tray/approve"             element={<ManagerApprovalPage />} />
+            <Route path="tray/approve"             element={<RequirePermission anyOf={['approve_scorecards']}><ManagerApprovalPage /></RequirePermission>} />
             <Route path="tray/team-eval"           element={<ManagerEvalPage />} />
-            <Route path="tray/cascade"             element={<QuickCascadePage />} />
-            <Route path="dashboard"                element={<DashboardPage />} />
-            <Route path="admin/cycles"             element={<AdminCyclesPage />} />
-            <Route path="admin/users"              element={<AdminPage />} />
-            <Route path="admin/groups"             element={<GroupsPage />} />
-            <Route path="admin/weight-rules"       element={<WeightRulesPage />} />
-            <Route path="admin/kpi-setup/templates" element={<KpiTemplatesPage />} />
+            <Route path="tray/cascade"             element={<RequirePermission anyOf={['cascade_kpis']}><QuickCascadePage /></RequirePermission>} />
+            <Route path="dashboard"                element={<RequirePermission anyOf={['view_team_dashboard', 'view_org_dashboard']}><DashboardPage /></RequirePermission>} />
+            <Route path="admin/cycles"             element={<RequirePermission anyOf={['manage_cycles']}><AdminCyclesPage /></RequirePermission>} />
+            <Route path="admin/users"              element={<RequirePermission anyOf={['view_employees']}><AdminPage /></RequirePermission>} />
+            <Route path="admin/groups"             element={<RequirePermission anyOf={['manage_groups']}><GroupsPage /></RequirePermission>} />
+            <Route path="admin/weight-rules"       element={<RequirePermission anyOf={['manage_weight_rules']}><WeightRulesPage /></RequirePermission>} />
+            <Route path="admin/kpi-setup/templates" element={<RequirePermission anyOf={['manage_templates']}><KpiTemplatesPage /></RequirePermission>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
