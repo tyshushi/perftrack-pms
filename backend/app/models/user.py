@@ -4,9 +4,17 @@ from sqlalchemy import (
     Column, String, Boolean, Integer, Numeric, Text,
     ForeignKey, DateTime, Date, UniqueConstraint, CheckConstraint
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, ENUM as PgEnum
 from sqlalchemy.orm import relationship
 from app.db.session import Base
+
+
+USER_ROLE_VALUES = ("STAFF", "MANAGER", "MGR2", "HOD", "HR_ADMIN", "SUPER_ADMIN")
+user_role_enum = PgEnum(
+    *USER_ROLE_VALUES,
+    name="user_role",
+    create_type=False,
+)
 
 
 class Department(Base):
@@ -27,7 +35,7 @@ class User(Base):
     employee_id          = Column(String(50), unique=True, nullable=False)
     email                = Column(String(255), unique=True, nullable=False)
     full_name            = Column(String(150), nullable=False)
-    role                 = Column(String(20), nullable=False, default="STAFF")
+    role                 = Column(user_role_enum, nullable=False, default="STAFF")
     job_grade            = Column(String(20))
     department_id        = Column(UUID(as_uuid=True), ForeignKey("departments.id"))
 
