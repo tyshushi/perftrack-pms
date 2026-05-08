@@ -99,6 +99,8 @@ MIGRATIONS = """
     EXCEPTION WHEN duplicate_column THEN NULL; END $$;
     DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN created_by UUID REFERENCES users(id);
     EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+    DO $$ BEGIN UPDATE users SET email = lower(email) WHERE email <> lower(email);
+    EXCEPTION WHEN others THEN NULL; END $$;
 
     DO $$ BEGIN
     CREATE TABLE IF NOT EXISTS groups (
