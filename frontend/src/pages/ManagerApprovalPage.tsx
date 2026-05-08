@@ -30,14 +30,80 @@ const CYCLE_STATUS_STYLE: Record<string, { bg: string; color: string; label: str
   CLOSED: { bg: '#fee2e2', color: '#991b1b', label: 'Closed' },
 };
 
+function ratingLabelFor(value: any, cycle: any): string {
+  const levels: any[] = Array.isArray(cycle?.rating_levels) ? cycle.rating_levels : [];
+  const ratingType = cycle?.rating_type || 'NUMERIC';
+  if (ratingType === 'NUMERIC') {
+    const lv = levels.find(l => Number(l.value) === Number(value));
+    return lv?.label || '';
+  }
+  const lv = levels.find(l => l.value === value);
+  return lv?.label || (typeof value === 'string' ? value : '');
+}
+
+function KpiTargetsExpandable({ kpi, cycle }: { kpi: any; cycle: any }) {
+  const [open, setOpen] = useState(false);
+  const targets: any[] = Array.isArray(kpi.rating_targets) ? kpi.rating_targets : [];
+  const ratingType = cycle?.rating_type || 'NUMERIC';
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ padding: '4px 8px', border: `1px solid ${C.border}`, borderRadius: 6, background: C.bg, color: C.textSecond, fontSize: 11, cursor: 'pointer', fontFamily: C.font }}>
+        {open ? '▾ Hide Rating Targets' : '▸ View Rating Targets'}
+        {targets.length === 0 && (
+          <span style={{ marginLeft: 6, color: C.textDanger }}>· not set</span>
+        )}
+      </button>
+      {open && (
+        <div style={{ marginTop: 6, padding: 10, background: C.bg, border: `0.5px solid ${C.borderLight}`, borderRadius: 8 }}>
+          {targets.length === 0 ? (
+            <div style={{ fontSize: 12, color: C.textTertiary, fontStyle: 'italic' }}>
+              No rating targets defined yet.
+            </div>
+          ) : ratingType === 'OKR' ? (
+            <div style={{ fontSize: 12, color: C.text }}>
+              <div style={{ fontSize: 11, color: C.textSecond, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Measurement
+              </div>
+              {targets[0]?.target || '—'}
+            </div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: C.textSecond, fontWeight: 600, width: 80 }}>Rating</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: C.textSecond, fontWeight: 600, width: 160 }}>Label</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: C.textSecond, fontWeight: 600 }}>Target Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                {targets.map((t: any) => (
+                  <tr key={String(t.value)} style={{ borderTop: `0.5px solid ${C.borderLight}` }}>
+                    <td style={{ padding: '6px 8px', color: C.text, fontWeight: 600 }}>{t.value}</td>
+                    <td style={{ padding: '6px 8px', color: C.text }}>{t.label || ratingLabelFor(t.value, cycle) || '—'}</td>
+                    <td style={{ padding: '6px 8px', color: C.textSecond }}>{t.target || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EmployeeScorecard({
   employee,
   cycleId,
+  cycle,
   currentUserId,
   onDone,
 }: {
   employee:      any;
   cycleId:       string;
+  cycle:         any;
   currentUserId: string;
   onDone:        () => void;
 }) {
@@ -120,6 +186,7 @@ function EmployeeScorecard({
                   {kpi.weight}%
                 </div>
               </div>
+              <KpiTargetsExpandable kpi={kpi} cycle={cycle} />
             </div>
           ))}
         </div>
@@ -287,6 +354,7 @@ export default function ManagerApprovalPage() {
                     <EmployeeScorecard
                       employee={report}
                       cycleId={cycleId}
+                      cycle={currentCycle}
                       currentUserId={user?.id ?? ''}
                       onDone={() => setExpandedId(null)}
                     />

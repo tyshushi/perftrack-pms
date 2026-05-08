@@ -201,6 +201,10 @@ export default function SelfEvalPage() {
       {lockedKpis.map((kpi: any) => {
         const e = evals[kpi.id] || { actual_achievement: '', self_rating: null, self_remarks: '' };
         const targets: any[] = Array.isArray(kpi.rating_targets) ? kpi.rating_targets : [];
+        const targetFor = (val: any): string => {
+          const t = targets.find(x => String(x.value) === String(val));
+          return t?.target || '';
+        };
 
         return (
           <div key={kpi.id} style={S.card}>
@@ -254,53 +258,79 @@ export default function SelfEvalPage() {
             <div style={{ marginBottom: 10 }}>
               <label style={S.label}>Self Rating *</label>
               {ratingType === 'NUMERIC' && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
                   {numericLevels.map((lv: any) => {
                     const selected = Number(e.self_rating) === Number(lv.value);
+                    const myTarget = targetFor(lv.value);
                     return (
-                      <button key={String(lv.value)}
-                        onClick={() => updateEval(kpi.id, { self_rating: Number(lv.value) })}
-                        style={{
-                          ...S.pillBtn,
-                          background: selected ? C.text : C.bg,
-                          color: selected ? '#fff' : C.text,
-                          borderColor: selected ? C.text : C.border,
-                        }}>
-                        {lv.value} - {lv.label}
-                      </button>
+                      <div key={String(lv.value)} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <button
+                          onClick={() => updateEval(kpi.id, { self_rating: Number(lv.value) })}
+                          title={myTarget || undefined}
+                          style={{
+                            ...S.pillBtn,
+                            background: selected ? C.text : C.bg,
+                            color: selected ? '#fff' : C.text,
+                            borderColor: selected ? C.text : C.border,
+                            textAlign: 'left',
+                          }}>
+                          {lv.value} - {lv.label}
+                        </button>
+                        {myTarget && (
+                          <div style={{ fontSize: 11, color: C.textSecond, padding: '0 4px', lineHeight: 1.3 }}>
+                            {myTarget}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
               )}
               {ratingType === 'MET_NOT_MET' && (
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   {['Met', 'Not Met'].map(opt => {
                     const selected = e.self_rating === opt;
+                    const myTarget = targetFor(opt);
                     return (
-                      <button key={opt}
-                        onClick={() => updateEval(kpi.id, { self_rating: opt })}
-                        style={{
-                          ...S.pillBtn,
-                          background: selected ? C.text : C.bg,
-                          color: selected ? '#fff' : C.text,
-                          borderColor: selected ? C.text : C.border,
-                        }}>
-                        {opt}
-                      </button>
+                      <div key={opt} style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 160 }}>
+                        <button
+                          onClick={() => updateEval(kpi.id, { self_rating: opt })}
+                          title={myTarget || undefined}
+                          style={{
+                            ...S.pillBtn,
+                            background: selected ? C.text : C.bg,
+                            color: selected ? '#fff' : C.text,
+                            borderColor: selected ? C.text : C.border,
+                          }}>
+                          {opt}
+                        </button>
+                        {myTarget && (
+                          <div style={{ fontSize: 11, color: C.textSecond, padding: '0 4px', lineHeight: 1.3 }}>
+                            {myTarget}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
               )}
               {ratingType === 'OKR' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="number" min={0} max={100}
-                    style={{ ...S.input, width: 100 }}
-                    value={e.self_rating === null ? '' : (e.self_rating as number)}
-                    onChange={ev => {
-                      const v = ev.target.value;
-                      updateEval(kpi.id, { self_rating: v === '' ? null : Math.max(0, Math.min(100, Number(v))) });
-                    }} />
-                  <span style={{ fontSize: 13, color: C.textSecond }}>%</span>
+                <div>
+                  {targets[0]?.target && (
+                    <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 6, padding: '6px 10px', background: C.bgSecondary, borderRadius: 6 }}>
+                      Measurement: {targets[0].target}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input type="number" min={0} max={100}
+                      style={{ ...S.input, width: 100 }}
+                      value={e.self_rating === null ? '' : (e.self_rating as number)}
+                      onChange={ev => {
+                        const v = ev.target.value;
+                        updateEval(kpi.id, { self_rating: v === '' ? null : Math.max(0, Math.min(100, Number(v))) });
+                      }} />
+                    <span style={{ fontSize: 13, color: C.textSecond }}>%</span>
+                  </div>
                 </div>
               )}
               {ratingType === 'NUMERIC' && e.self_rating !== null && e.self_rating !== '' && (
