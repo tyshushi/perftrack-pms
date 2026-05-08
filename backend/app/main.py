@@ -304,6 +304,99 @@ DO $$ BEGIN
   JOIN custom_roles r ON r.name = UPPER(u.role)
   ON CONFLICT DO NOTHING;
 EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  -- Re-seed custom_roles if empty
+  INSERT INTO custom_roles (name, description, is_system) VALUES
+    ('SUPER_ADMIN', 'Full system access including role management', TRUE),
+    ('HR_ADMIN', 'Full HR operations access', TRUE),
+    ('MANAGER', 'Team management and scorecard approval', TRUE),
+    ('HOD', 'Department head access', TRUE),
+    ('STAFF', 'Standard employee access', TRUE)
+  ON CONFLICT (name) DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  -- Re-seed permissions for all system roles
+  DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM custom_roles WHERE is_system = TRUE);
+
+  INSERT INTO role_permissions (role_id, permission)
+  SELECT r.id, p.permission
+  FROM custom_roles r
+  CROSS JOIN (VALUES
+    ('HR_ADMIN', 'view_employees'),
+    ('HR_ADMIN', 'edit_employee_profiles'),
+    ('HR_ADMIN', 'manage_reporting_lines'),
+    ('HR_ADMIN', 'deactivate_employees'),
+    ('HR_ADMIN', 'create_employees'),
+    ('HR_ADMIN', 'view_own_scorecard'),
+    ('HR_ADMIN', 'view_team_scorecards'),
+    ('HR_ADMIN', 'view_all_scorecards'),
+    ('HR_ADMIN', 'approve_scorecards'),
+    ('HR_ADMIN', 'reject_scorecards'),
+    ('HR_ADMIN', 'reset_scorecards'),
+    ('HR_ADMIN', 'view_cycles'),
+    ('HR_ADMIN', 'manage_cycles'),
+    ('HR_ADMIN', 'manage_templates'),
+    ('HR_ADMIN', 'cascade_kpis'),
+    ('HR_ADMIN', 'manage_weight_rules'),
+    ('HR_ADMIN', 'view_groups'),
+    ('HR_ADMIN', 'manage_groups'),
+    ('HR_ADMIN', 'view_team_dashboard'),
+    ('HR_ADMIN', 'view_org_dashboard'),
+    ('HR_ADMIN', 'manage_roles'),
+    ('SUPER_ADMIN', 'view_employees'),
+    ('SUPER_ADMIN', 'edit_employee_profiles'),
+    ('SUPER_ADMIN', 'manage_reporting_lines'),
+    ('SUPER_ADMIN', 'deactivate_employees'),
+    ('SUPER_ADMIN', 'create_employees'),
+    ('SUPER_ADMIN', 'view_own_scorecard'),
+    ('SUPER_ADMIN', 'view_team_scorecards'),
+    ('SUPER_ADMIN', 'view_all_scorecards'),
+    ('SUPER_ADMIN', 'approve_scorecards'),
+    ('SUPER_ADMIN', 'reject_scorecards'),
+    ('SUPER_ADMIN', 'reset_scorecards'),
+    ('SUPER_ADMIN', 'delete_scorecards'),
+    ('SUPER_ADMIN', 'view_cycles'),
+    ('SUPER_ADMIN', 'manage_cycles'),
+    ('SUPER_ADMIN', 'manage_templates'),
+    ('SUPER_ADMIN', 'cascade_kpis'),
+    ('SUPER_ADMIN', 'manage_weight_rules'),
+    ('SUPER_ADMIN', 'view_groups'),
+    ('SUPER_ADMIN', 'manage_groups'),
+    ('SUPER_ADMIN', 'view_team_dashboard'),
+    ('SUPER_ADMIN', 'view_org_dashboard'),
+    ('SUPER_ADMIN', 'manage_roles'),
+    ('SUPER_ADMIN', 'manage_custom_roles'),
+    ('MANAGER', 'view_own_scorecard'),
+    ('MANAGER', 'view_team_scorecards'),
+    ('MANAGER', 'approve_scorecards'),
+    ('MANAGER', 'reject_scorecards'),
+    ('MANAGER', 'cascade_kpis'),
+    ('MANAGER', 'view_team_dashboard'),
+    ('HOD', 'view_own_scorecard'),
+    ('HOD', 'view_team_scorecards'),
+    ('HOD', 'view_all_scorecards'),
+    ('HOD', 'approve_scorecards'),
+    ('HOD', 'reject_scorecards'),
+    ('HOD', 'view_team_dashboard'),
+    ('HOD', 'view_org_dashboard'),
+    ('STAFF', 'view_own_scorecard')
+  ) AS p(role_name, permission)
+  WHERE r.name = p.role_name
+  ON CONFLICT DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  -- Re-assign user_roles for all existing users
+  DELETE FROM user_roles WHERE role_id IN (SELECT id FROM custom_roles WHERE is_system = TRUE);
+  INSERT INTO user_roles (user_id, role_id)
+  SELECT u.id, r.id
+  FROM users u
+  JOIN custom_roles r ON r.name = u.role
+  WHERE u.role IN ('HR_ADMIN', 'SUPER_ADMIN', 'MANAGER', 'HOD', 'STAFF')
+  ON CONFLICT DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
 """
 
 
