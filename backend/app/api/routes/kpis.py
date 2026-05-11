@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from decimal import Decimal
 
 from app.db.session import get_db
-from app.core.security import get_current_user, require_hr_admin
+from app.core.security import get_current_user, require_hr_admin, require_permission
 from app.models.user import Kpi, User, WeightRule, PerformanceCycle
 from app.services.kpi_workflow import KpiWorkflowService
 from app.api.routes.cycles import normalise_approval_chain
@@ -691,7 +691,7 @@ async def list_templates(
 async def create_template(
     body: TemplateCreate,
     db:   AsyncSession = Depends(get_db),
-    _:    User         = Depends(require_hr_admin),
+    _:    User         = Depends(require_permission("manage_templates")),
 ):
     from app.models.user import KpiTemplate, GroupMember  # noqa
     t = KpiTemplate(
@@ -716,7 +716,7 @@ async def create_template(
 async def delete_template(
     template_id: UUID,
     db:          AsyncSession = Depends(get_db),
-    _:           User         = Depends(require_hr_admin),
+    _:           User         = Depends(require_permission("manage_templates")),
 ):
     from app.models.user import KpiTemplate, GroupMember  # noqa
     result = await db.execute(
@@ -733,7 +733,7 @@ async def delete_template(
 async def cascade_template(
     template_id:  UUID,
     db:           AsyncSession = Depends(get_db),
-    current_user: User         = Depends(require_hr_admin),
+    current_user: User         = Depends(require_permission("manage_templates")),
 ):
     from app.models.user import KpiTemplate, GroupMember
 

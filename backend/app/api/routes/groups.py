@@ -6,7 +6,7 @@ from sqlalchemy import select, delete
 from pydantic import BaseModel
 
 from app.db.session import get_db
-from app.core.security import get_current_user, require_hr_admin
+from app.core.security import get_current_user, require_permission
 from app.models.user import Group, GroupMember, User
 
 router = APIRouter()
@@ -62,7 +62,7 @@ async def list_groups(
 async def create_group(
     body:         GroupCreate,
     db:           AsyncSession = Depends(get_db),
-    current_user: User         = Depends(require_hr_admin),
+    current_user: User         = Depends(require_permission("manage_groups")),
 ):
     group = Group(
         name        = body.name,
@@ -87,7 +87,7 @@ async def update_group(
     group_id: UUID,
     body:     GroupUpdate,
     db:       AsyncSession = Depends(get_db),
-    _:        User         = Depends(require_hr_admin),
+    _:        User         = Depends(require_permission("manage_groups")),
 ):
     result = await db.execute(select(Group).where(Group.id == group_id))
     group = result.scalar_one_or_none()
@@ -103,7 +103,7 @@ async def update_group(
 async def delete_group(
     group_id: UUID,
     db:       AsyncSession = Depends(get_db),
-    _:        User         = Depends(require_hr_admin),
+    _:        User         = Depends(require_permission("manage_groups")),
 ):
     result = await db.execute(select(Group).where(Group.id == group_id))
     group = result.scalar_one_or_none()
@@ -147,7 +147,7 @@ async def add_members(
     group_id: UUID,
     body:     AddMembersRequest,
     db:       AsyncSession = Depends(get_db),
-    current_user: User     = Depends(require_hr_admin),
+    current_user: User     = Depends(require_permission("manage_groups")),
 ):
     result = await db.execute(select(Group).where(Group.id == group_id))
     group = result.scalar_one_or_none()
@@ -185,7 +185,7 @@ async def remove_member(
     group_id: UUID,
     user_id:  UUID,
     db:       AsyncSession = Depends(get_db),
-    _:        User         = Depends(require_hr_admin),
+    _:        User         = Depends(require_permission("manage_groups")),
 ):
     result = await db.execute(
         select(GroupMember).where(

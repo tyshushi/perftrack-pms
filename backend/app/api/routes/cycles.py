@@ -10,7 +10,7 @@ from sqlalchemy import select
 from pydantic import BaseModel
 
 from app.db.session import get_db
-from app.core.security import get_current_user, require_hr_admin
+from app.core.security import get_current_user, require_permission
 from app.models.user import PerformanceCycle, User, IncrementBand, BellCurveTarget, RatingScale, WeightRule
 
 router = APIRouter()
@@ -161,10 +161,8 @@ async def get_cycle(
 async def create_cycle(
     body: CycleCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("manage_cycles")),
 ):
-    if current_user.role not in ["HR_ADMIN", "SUPER_ADMIN"]:
-        raise HTTPException(403, "HR Admin only")
     data = body.model_dump()
     chain = validate_approval_chain(data.get("approval_chain") or ["DM"])
     data["approval_chain"] = chain
@@ -185,7 +183,7 @@ async def advance_cycle_status(
     cycle_id: UUID,
     status:   str,
     db:       AsyncSession = Depends(get_db),
-    _:        User         = Depends(require_hr_admin),
+    _:        User         = Depends(require_permission("manage_cycles")),
 ):
     result = await db.execute(select(PerformanceCycle).where(PerformanceCycle.id == cycle_id))
     cycle = result.scalar_one_or_none()
@@ -201,7 +199,7 @@ async def set_increment_bands(
     cycle_id: UUID,
     bands:    List[IncrementBandIn],
     db:       AsyncSession = Depends(get_db),
-    _:        User         = Depends(require_hr_admin),
+    _:        User         = Depends(require_permission("manage_cycles")),
 ):
     # Replace existing bands
     existing = await db.execute(select(IncrementBand).where(IncrementBand.cycle_id == cycle_id))
@@ -230,7 +228,7 @@ async def set_rating_scales(
     cycle_id: UUID,
     scales:   List[RatingScaleIn],
     db:       AsyncSession = Depends(get_db),
-    _:        User         = Depends(require_hr_admin),
+    _:        User         = Depends(require_permission("manage_cycles")),
 ):
     existing = await db.execute(select(RatingScale).where(RatingScale.cycle_id == cycle_id))
     for s in existing.scalars().all():
@@ -246,7 +244,7 @@ async def set_weight_rules(
     cycle_id:     UUID,
     rules:        List[WeightRuleIn],
     db:           AsyncSession = Depends(get_db),
-    current_user: User         = Depends(require_hr_admin),
+    current_user: User         = Depends(require_permission("manage_weight_rules")),
 ):
     existing = await db.execute(select(WeightRule).where(WeightRule.cycle_id == cycle_id))
     for r in existing.scalars().all():
