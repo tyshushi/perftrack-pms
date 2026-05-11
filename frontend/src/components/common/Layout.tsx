@@ -35,6 +35,7 @@ export default function Layout() {
   const isManager = useAuthStore.getState().isManager();
   const isHod = useAuthStore.getState().isHod();
   const isHrAdmin = useAuthStore.getState().isHrAdmin();
+  const hasPermission = useAuthStore.getState().hasPermission;
   const showManagerSection = isManager || isHod || isHrAdmin;
 
   const [expanded, setExpanded] = useState<Set<string>>(() =>
@@ -216,9 +217,11 @@ export default function Layout() {
                   <NavLink to="/admin/groups" style={({ isActive }) => l1LinkStyle(isActive)} end>
                     Groups Management
                   </NavLink>
-                  <NavLink to="/admin/weight-rules" style={({ isActive }) => l1LinkStyle(isActive)} end>
-                    Weight Rules
-                  </NavLink>
+                  {hasPermission('manage_weight_rules') && (
+                    <NavLink to="/admin/weight-rules" style={({ isActive }) => l1LinkStyle(isActive)} end>
+                      Weight Rules
+                    </NavLink>
+                  )}
 
                   {/* KPI Setup sub-group */}
                   <div style={groupRow} onClick={() => toggle('kpi-setup')}>

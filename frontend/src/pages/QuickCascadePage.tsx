@@ -137,6 +137,7 @@ export default function QuickCascadePage() {
   const [selected,     setSelected]     = useState<string[]>([]);
   const [result,       setResult]       = useState<any>(null);
   const [inlineTargets, setInlineTargets] = useState<any[]>([]);
+  const [saveError,    setSaveError]    = useState('');
 
   useEffect(() => {
     setInlineTargets(buildEmptyTargetRows(currentCycle));
@@ -168,6 +169,7 @@ export default function QuickCascadePage() {
   }
 
   function changeAppliesTo(val: string) {
+    setSaveError('');
     setAppliesTo(val);
     setGroupId(''); setHierarchy(''); setUserCategory('');
     setDepartmentId(''); setJobGrade('');
@@ -202,12 +204,16 @@ export default function QuickCascadePage() {
     },
     onSuccess: (res) => {
       setResult(res.data);
+      setSaveError('');
       qc.invalidateQueries({ queryKey: ['kpis'] });
       setName(''); setDescription(''); setMeasurement('');
       setWeight(0); setSelected([]); setSearch('');
       setAppliesTo('everyone'); setGroupId(''); setHierarchy('');
       setUserCategory(''); setDepartmentId(''); setJobGrade('');
       setInlineTargets(buildEmptyTargetRows(currentCycle));
+    },
+    onError: (e: any) => {
+      setSaveError(e?.response?.data?.detail || 'Failed to save due to conflict with cascaded weightage. Please contact HR.');
     },
   });
 
@@ -268,7 +274,7 @@ export default function QuickCascadePage() {
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={S.label}>KPI Name</label>
               <input style={S.input} value={name}
-                onChange={e => setName(e.target.value)}
+                onChange={e => { setSaveError(''); setName(e.target.value); }}
                 placeholder="e.g. Customer Satisfaction Score" />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
@@ -281,7 +287,7 @@ export default function QuickCascadePage() {
             <div>
               <label style={S.label}>KPI Dimension</label>
               <select style={S.input} value={kpiDimension}
-                onChange={e => setKpiDimension(e.target.value)}>
+                onChange={e => { setSaveError(''); setKpiDimension(e.target.value); }}>
                 {DIMENSIONS.map(d => (
                   <option key={d} value={d}>{d}</option>
                 ))}
@@ -290,12 +296,12 @@ export default function QuickCascadePage() {
             <div>
               <label style={S.label}>Weight %</label>
               <input style={S.input} type="number" min={0} max={100}
-                value={weight} onChange={e => setWeight(Number(e.target.value))} />
+                value={weight} onChange={e => { setSaveError(''); setWeight(Number(e.target.value)); }} />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={S.label}>Measurement</label>
               <input style={S.input} value={measurement}
-                onChange={e => setMeasurement(e.target.value)}
+                onChange={e => { setSaveError(''); setMeasurement(e.target.value); }}
                 placeholder="e.g. Monthly sales report, Annual financial audit, 360° feedback survey, System-generated data from Salesforce, Manager observation and quarterly review" />
               <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 4 }}>
                 Describe how achievement will be tracked and verified
@@ -542,12 +548,6 @@ export default function QuickCascadePage() {
             </div>
           )}
 
-          {cascadeMutation.isError && (
-            <div style={{ marginBottom: 12, padding: '8px 12px', background: '#fee2e2', borderRadius: 8, fontSize: 12, color: '#991b1b' }}>
-              {(cascadeMutation.error as any)?.response?.data?.detail || 'Failed to cascade'}
-            </div>
-          )}
-
           <button onClick={() => cascadeMutation.mutate()}
             disabled={!canCascade}
             style={{ ...S.btnPrimary, opacity: !canCascade ? 0.5 : 1 }}>
@@ -557,6 +557,15 @@ export default function QuickCascadePage() {
                 ? 'Cascade KPI'
                 : `Cascade to selected (${selected.length})`}
           </button>
+          {saveError && (
+            <div style={{
+              marginTop: 10, padding: '10px 12px',
+              background: '#fee2e2', border: '1px solid #fca5a5',
+              borderRadius: 8, fontSize: 13, color: '#991b1b',
+            }}>
+              {saveError}
+            </div>
+          )}
         </div>
       )}
     </div>
