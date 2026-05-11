@@ -35,6 +35,7 @@ export default function Layout() {
   const isManager = useAuthStore.getState().isManager();
   const isHod = useAuthStore.getState().isHod();
   const isHrAdmin = useAuthStore.getState().isHrAdmin();
+  const isSuperAdmin = useAuthStore.getState().isSuperAdmin();
   const hasPermission = useAuthStore.getState().hasPermission;
   const showManagerSection = isManager || isHod || isHrAdmin;
 
@@ -220,6 +221,11 @@ export default function Layout() {
                   {hasPermission('manage_weight_rules') && (
                     <NavLink to="/admin/weight-rules" style={({ isActive }) => l1LinkStyle(isActive)} end>
                       Weight Rules
+                    </NavLink>
+                  )}
+                  {isSuperAdmin && (
+                    <NavLink to="/admin/roles" style={({ isActive }) => l1LinkStyle(isActive)} end>
+                      Role Management
                     </NavLink>
                   )}
 

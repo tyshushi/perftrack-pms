@@ -2,7 +2,7 @@ from uuid import UUID
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from pydantic import BaseModel
 
 from app.db.session import get_db
@@ -32,7 +32,7 @@ class AssignUsersRequest(BaseModel):
     user_ids: List[UUID]
 
 
-def _serialize_role(role: CustomRole, permissions: List[str]) -> dict:
+def _serialize_role(role: CustomRole, permissions: List[str], user_count: int = 0) -> dict:
     return {
         "id":          str(role.id),
         "name":        role.name,
@@ -42,6 +42,7 @@ def _serialize_role(role: CustomRole, permissions: List[str]) -> dict:
         "created_at":  role.created_at.isoformat() if role.created_at else None,
         "updated_at":  role.updated_at.isoformat() if role.updated_at else None,
         "permissions": permissions,
+        "user_count":  user_count,
     }
 
 
@@ -58,7 +59,11 @@ async def list_roles(
             select(RolePermission.permission).where(RolePermission.role_id == r.id)
         )
         perms = [p for (p,) in perms_result.all()]
-        out.append(_serialize_role(r, perms))
+        count_result = await db.execute(
+            select(func.count()).select_from(UserRole).where(UserRole.role_id == r.id)
+        )
+        user_count = count_result.scalar() or 0
+        out.append(_serialize_role(r, perms, user_count))
     return out
 
 
@@ -132,6 +137,12 @@ async def delete_role(
         raise HTTPException(404, "Role not found")
     if role.is_system:
         raise HTTPException(400, "Cannot delete system role")
+    count_result = await db.execute(
+        select(func.count()).select_from(UserRole).where(UserRole.role_id == role.id)
+    )
+    assigned = count_result.scalar() or 0
+    if assigned > 0:
+        raise HTTPException(400, f"Cannot delete role: {assigned} user(s) still assigned")
     await db.delete(role)
     await db.flush()
 

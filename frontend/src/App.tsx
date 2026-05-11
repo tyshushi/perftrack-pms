@@ -15,6 +15,7 @@ import AdminPage from './pages/AdminPage';
 import GroupsPage from './pages/GroupsPage';
 import WeightRulesPage from './pages/WeightRulesPage';
 import KpiTemplatesPage from './pages/KpiTemplatesPage';
+import RoleManagementPage from './pages/RoleManagementPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -35,6 +36,26 @@ function RequirePermission({
 }) {
   const permissions = useAuthStore((s) => s.permissions);
   const allowed = anyOf.some((p) => permissions.includes(p));
+  if (!allowed) {
+    return (
+      <div style={{ padding: 24, fontSize: 13, color: '#888' }}>
+        You do not have permission to access this page.
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
+
+function RequireSuperAdminOrPermission({
+  permission,
+  children,
+}: {
+  permission: string;
+  children: React.ReactNode;
+}) {
+  const permissions = useAuthStore((s) => s.permissions);
+  const user = useAuthStore((s) => s.user);
+  const allowed = user?.role === 'SUPER_ADMIN' || permissions.includes(permission);
   if (!allowed) {
     return (
       <div style={{ padding: 24, fontSize: 13, color: '#888' }}>
@@ -71,6 +92,7 @@ export default function App() {
             <Route path="admin/groups"             element={<RequirePermission anyOf={['manage_groups']}><GroupsPage /></RequirePermission>} />
             <Route path="admin/weight-rules"       element={<RequirePermission anyOf={['manage_weight_rules']}><WeightRulesPage /></RequirePermission>} />
             <Route path="admin/kpi-setup/templates" element={<RequirePermission anyOf={['manage_templates']}><KpiTemplatesPage /></RequirePermission>} />
+            <Route path="admin/roles"              element={<RequireSuperAdminOrPermission permission="manage_custom_roles"><RoleManagementPage /></RequireSuperAdminOrPermission>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
