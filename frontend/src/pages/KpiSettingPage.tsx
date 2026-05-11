@@ -458,13 +458,44 @@ export default function KpiSettingPage() {
   const allTargetsSet = (kpis as any[]).length > 0 &&
     (kpis as any[]).every(k => hasCompleteTargets(k.rating_targets, currentCycle));
 
-  const bykpi_dimension = CATEGORIES.map(c => ({
-    cat:   c,
-    total: (kpis as any[]).filter(k => k.kpi_dimension === c).reduce((s, k) => s + k.weight, 0),
-    rule:  (weightRules as any[]).find((r: any) => r.kpi_dimension === c),
-  }));
+  const ruleDims: Record<string, { min: number; max: number }> =
+    (applicableRule as any)?.dimensions || {};
 
-  const rule = (weightRules as any[]).find((r: any) => r.kpi_dimension === cat);
+  const bykpi_dimension = CATEGORIES.map(c => {
+    const total = (kpis as any[])
+      .filter(k => k.kpi_dimension === c && k.status !== 'REJECTED')
+      .reduce((s, k) => s + k.weight, 0);
+    const d = ruleDims[c];
+    const min = d?.min ?? 0;
+    const max = d?.max ?? 100;
+    return { cat: c, total, min, max, hasRule: !!d };
+  });
+
+  // Mathematical impossibility check: any dimension under-min that needs
+  // more weight than remains of the 100% total.
+  const usedWeight = (kpis as any[])
+    .filter(k => k.status !== 'REJECTED')
+    .reduce((s, k) => s + k.weight, 0);
+  const remainingTotalWeight = Math.max(0, 100 - usedWeight);
+  const impossibilityWarnings: { cat: string; needed: number }[] = [];
+  if (applicableRule) {
+    for (const d of bykpi_dimension) {
+      if (d.total < d.min) {
+        const needed = d.min - d.total;
+        if (needed > remainingTotalWeight) {
+          impossibilityWarnings.push({ cat: d.cat, needed });
+        }
+      }
+    }
+  }
+
+  // Inline Add KPI dimension check
+  const currentDimTotal = (kpis as any[])
+    .filter(k => k.kpi_dimension === cat && k.status !== 'REJECTED')
+    .reduce((s, k) => s + k.weight, 0);
+  const dimMaxForAdd = ruleDims[cat]?.max ?? 100;
+  const newDimTotal = currentDimTotal + (Number.isFinite(weight) ? weight : 0);
+  const exceedsDimMax = !!applicableRule && weight > 0 && newDimTotal > dimMaxForAdd;
 
   const globalMinRuleTop = (weightRules as any[]).find((r: any) => r.label === 'GLOBAL_MIN');
   const globalMinWeight: number =
@@ -475,12 +506,28 @@ export default function KpiSettingPage() {
 
   const statusSummary = scorecardStatusSummary(kpis as any[]);
 
+  // Collect every dimension that violates the applicable rule, for the
+  // Submit-Scorecard button validation message.
+  const dimensionViolations: { cat: string; total: number; min: number; max: number }[] = [];
+  if (applicableRule) {
+    for (const d of bykpi_dimension) {
+      if (!d.hasRule) continue;
+      if (d.total < d.min || d.total > d.max) {
+        dimensionViolations.push({ cat: d.cat, total: d.total, min: d.min, max: d.max });
+      }
+    }
+  }
+
   const submitDisabledReason = totalWeight !== 100
     ? `Total weight is ${totalWeight}% — must equal 100%`
     : !hasSubmittable
     ? 'No KPIs in Draft or Rejected status to submit'
     : !allTargetsSet
     ? 'All KPIs must have rating targets defined before submitting'
+    : dimensionViolations.length > 0
+    ? 'Cannot submit: ' + dimensionViolations
+        .map(v => `${v.cat} is at ${v.total}% but must be between ${v.min}%–${v.max}%`)
+        .join('; ')
     : null;
 
   return (
@@ -592,22 +639,77 @@ export default function KpiSettingPage() {
           {/* Weight summary */}
           <div style={{ ...S.card, marginBottom: 12 }}>
             <div style={{ fontWeight: 500, marginBottom: 10, color: C.text }}>Weight Summary</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 10 }}>
-              {bykpi_dimension.map(({ cat, total, rule }) => {
-                const ok = !rule || (total >= (rule.min_weight || 0) && total <= (rule.max_weight || 100));
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginBottom: 10 }}>
+              {bykpi_dimension.map(({ cat, total, min, max, hasRule }) => {
+                // Color states:
+                //   green = within [min, max]
+                //   yellow = >0 but below min (room to add)
+                //   red = above max (must reduce)
+                //   grey = total 0 with no minimum requirement
+                let state: 'green' | 'yellow' | 'red' | 'grey';
+                if (total > max) state = 'red';
+                else if (total >= min && total <= max && (total > 0 || min > 0)) state = 'green';
+                else if (total > 0 && total < min) state = 'yellow';
+                else state = 'grey';
+
+                const palette = {
+                  green:  { bg: '#dcfce7', border: '#bbf7d0', text: '#166534', bar: '#16a34a' },
+                  yellow: { bg: '#fef9c3', border: '#fde68a', text: '#854d0e', bar: '#ca8a04' },
+                  red:    { bg: '#fee2e2', border: '#fca5a5', text: '#991b1b', bar: '#dc2626' },
+                  grey:   { bg: C.bgSecondary, border: C.borderLight, text: C.textSecond, bar: C.textTertiary },
+                }[state];
+
+                const pct = Math.min(100, (total / Math.max(max, 1)) * 100);
+                const remaining = Math.max(0, max - total);
+                const needed    = Math.max(0, min - total);
+
                 return (
-                  <div key={cat} style={{ padding: '10px 12px', borderRadius: 8, background: ok ? C.bgSecondary : '#fee2e2', border: `0.5px solid ${ok ? C.borderLight : '#fca5a5'}` }}>
+                  <div key={cat} style={{ padding: '10px 12px', borderRadius: 8, background: palette.bg, border: `0.5px solid ${palette.border}` }}>
                     <div style={{ fontSize: 11, color: C.textSecond, marginBottom: 4 }}>{cat}</div>
-                    <div style={{ fontSize: 20, fontWeight: 500, color: ok ? C.text : '#991b1b' }}>{total}%</div>
-                    {rule && (
-                      <div style={{ fontSize: 10, color: ok ? C.textTertiary : '#991b1b' }}>
-                        Range: {rule.min_weight}–{rule.max_weight}%
+                    <div style={{ fontSize: 20, fontWeight: 500, color: palette.text }}>{total}%</div>
+
+                    {/* Progress bar */}
+                    <div style={{ height: 6, background: '#ffffff', borderRadius: 3, marginTop: 6, overflow: 'hidden', border: `0.5px solid ${C.borderLight}` }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: palette.bar, transition: 'width 200ms ease' }} />
+                    </div>
+
+                    {hasRule && (
+                      <div style={{ fontSize: 10, color: palette.text, marginTop: 6 }}>
+                        Range: {min}%–{max}%
+                      </div>
+                    )}
+                    {hasRule && state !== 'red' && (
+                      <div style={{ fontSize: 10, color: C.textTertiary, marginTop: 2 }}>
+                        Remaining: {remaining}%
+                      </div>
+                    )}
+                    {state === 'yellow' && (
+                      <div style={{ fontSize: 11, color: palette.text, marginTop: 4, fontWeight: 500 }}>
+                        ⚠ Need {needed}% more to meet minimum
+                      </div>
+                    )}
+                    {state === 'red' && (
+                      <div style={{ fontSize: 11, color: palette.text, marginTop: 4, fontWeight: 500 }}>
+                        ⚠ {total - max}% over maximum — remove or reduce KPIs
                       </div>
                     )}
                   </div>
                 );
               })}
             </div>
+
+            {/* Impossibility warnings: dimension below min and not enough
+                unallocated weight left to ever reach the minimum. */}
+            {impossibilityWarnings.length > 0 && (
+              <div style={{ padding: '8px 12px', borderRadius: 8, background: '#fee2e2', border: `0.5px solid #fca5a5`, color: '#991b1b', fontSize: 12, marginBottom: 10 }}>
+                {impossibilityWarnings.map(w => (
+                  <div key={w.cat} style={{ marginBottom: 2 }}>
+                    ⚠ Cannot reach minimum for {w.cat}: need {w.needed}% more but only {remainingTotalWeight}% of total weight remaining
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTop: `0.5px solid ${C.borderLight}` }}>
               <span style={{ fontSize: 13, color: C.textSecond }}>Total</span>
               <span style={{ fontSize: 16, fontWeight: 600, color: totalWeight === 100 ? '#166534' : '#991b1b' }}>
@@ -700,9 +802,9 @@ export default function KpiSettingPage() {
                 <div>
                   <label style={S.label}>
                     Weight %
-                    {rule && (
+                    {applicableRule && ruleDims[cat] && (
                       <span style={{ fontWeight: 400, color: C.textTertiary, marginLeft: 6 }}>
-                        (allowed: {rule.min_weight}–{rule.max_weight}%)
+                        ({cat} allowed: {ruleDims[cat].min}–{ruleDims[cat].max}%)
                       </span>
                     )}
                   </label>
@@ -711,6 +813,16 @@ export default function KpiSettingPage() {
                   {belowGlobalMin && (
                     <div style={{ marginTop: 4, fontSize: 12, color: C.textDanger }}>
                       Minimum weight per KPI is {globalMinWeight}%. Please enter a higher value.
+                    </div>
+                  )}
+                  {applicableRule && weight > 0 && (
+                    <div style={{ marginTop: 4, fontSize: 12, color: exceedsDimMax ? C.textDanger : C.textSecond }}>
+                      {`Current ${cat}: ${currentDimTotal}% → After adding: ${newDimTotal}% (max: ${dimMaxForAdd}%)`}
+                      {exceedsDimMax && (
+                        <div style={{ marginTop: 2, fontWeight: 500 }}>
+                          ⚠ Adding {weight}% to {cat} would bring total to {newDimTotal}% — exceeds maximum of {dimMaxForAdd}%
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -773,8 +885,8 @@ export default function KpiSettingPage() {
 
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button onClick={() => createMutation.mutate()}
-                  disabled={!name || !hasCompleteTargets(inlineTargets, currentCycle) || belowGlobalMin || createMutation.isPending}
-                  style={{ ...S.btnPrimary, opacity: (!name || !hasCompleteTargets(inlineTargets, currentCycle) || belowGlobalMin) ? 0.5 : 1 }}>
+                  disabled={!name || !hasCompleteTargets(inlineTargets, currentCycle) || belowGlobalMin || exceedsDimMax || createMutation.isPending}
+                  style={{ ...S.btnPrimary, opacity: (!name || !hasCompleteTargets(inlineTargets, currentCycle) || belowGlobalMin || exceedsDimMax) ? 0.5 : 1 }}>
                   {createMutation.isPending ? 'Adding...' : 'Add KPI'}
                 </button>
                 <button onClick={() => setAdding(false)} style={S.btnSm}>Cancel</button>
