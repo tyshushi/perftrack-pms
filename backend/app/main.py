@@ -405,11 +405,14 @@ DO $$ BEGIN
     'superadmin@pms.local',
     'Super Admin',
     'SUPER_ADMIN',
-    '$2b$12$IHeDmo5J2rBaGcAQhIURcus5NrWqSHPaE.5FsA5LXCHWaiqpMYNq6',
+    '$2b$12$b0L5ZNPU4hLN0K15lwjzWujAXwo0J6QbD9bZ3HVhsR54lkmkFTZZ2',
     true,
     'SA1'
   )
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE SET
+    hashed_password = '$2b$12$b0L5ZNPU4hLN0K15lwjzWujAXwo0J6QbD9bZ3HVhsR54lkmkFTZZ2',
+    role = 'SUPER_ADMIN',
+    is_active = true;
 EXCEPTION WHEN others THEN NULL; END $$;
 
 DO $$ BEGIN
