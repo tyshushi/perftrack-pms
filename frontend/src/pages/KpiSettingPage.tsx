@@ -466,6 +466,13 @@ export default function KpiSettingPage() {
 
   const rule = (weightRules as any[]).find((r: any) => r.kpi_dimension === cat);
 
+  const globalMinRuleTop = (weightRules as any[]).find((r: any) => r.label === 'GLOBAL_MIN');
+  const globalMinWeight: number =
+    (applicableRule as any)?.global_min_weight
+    ?? globalMinRuleTop?.dimensions?.['Financials']?.min
+    ?? 0;
+  const belowGlobalMin = globalMinWeight > 0 && weight < globalMinWeight;
+
   const statusSummary = scorecardStatusSummary(kpis as any[]);
 
   const submitDisabledReason = totalWeight !== 100
@@ -531,7 +538,9 @@ export default function KpiSettingPage() {
           : { bg: C.bgSecondary, border: C.borderLight, color: C.text, label: 'Rule Owner' };
         const dims = applicableRule.dimensions || {};
         const globalMinRule = (weightRules as any[]).find((r: any) => r.label === 'GLOBAL_MIN');
-        const minPerKpi = globalMinRule?.dimensions?.['Financials']?.min ?? 0;
+        const minPerKpi = applicableRule.global_min_weight
+          ?? globalMinRule?.dimensions?.['Financials']?.min
+          ?? 0;
         return (
           <div style={{ background: palette.bg, border: `1px solid ${palette.border}`, borderRadius: 10, padding: 14, marginBottom: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
@@ -562,7 +571,7 @@ export default function KpiSettingPage() {
                   </tbody>
                 </table>
                 <div style={{ padding: '8px 12px', fontSize: 12, color: C.textSecond, background: C.bgSecondary, borderTop: `1px solid ${C.borderLight}` }}>
-                  Minimum per KPI line: {minPerKpi}%
+                  Minimum per KPI: {minPerKpi}%
                 </div>
               </div>
             )}
@@ -699,6 +708,11 @@ export default function KpiSettingPage() {
                   </label>
                   <input style={S.input} type="number" min={0} max={100}
                     value={weight} onChange={e => setWeight(Number(e.target.value))} />
+                  {belowGlobalMin && (
+                    <div style={{ marginTop: 4, fontSize: 12, color: C.textDanger }}>
+                      Minimum weight per KPI is {globalMinWeight}%. Please enter a higher value.
+                    </div>
+                  )}
                 </div>
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label style={S.label}>Measurement</label>
@@ -759,8 +773,8 @@ export default function KpiSettingPage() {
 
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button onClick={() => createMutation.mutate()}
-                  disabled={!name || !hasCompleteTargets(inlineTargets, currentCycle) || createMutation.isPending}
-                  style={{ ...S.btnPrimary, opacity: (!name || !hasCompleteTargets(inlineTargets, currentCycle)) ? 0.5 : 1 }}>
+                  disabled={!name || !hasCompleteTargets(inlineTargets, currentCycle) || belowGlobalMin || createMutation.isPending}
+                  style={{ ...S.btnPrimary, opacity: (!name || !hasCompleteTargets(inlineTargets, currentCycle) || belowGlobalMin) ? 0.5 : 1 }}>
                   {createMutation.isPending ? 'Adding...' : 'Add KPI'}
                 </button>
                 <button onClick={() => setAdding(false)} style={S.btnSm}>Cancel</button>
