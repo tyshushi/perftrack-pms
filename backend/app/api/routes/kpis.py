@@ -2,7 +2,7 @@ from uuid import UUID
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from pydantic import BaseModel
 from decimal import Decimal
 
@@ -451,6 +451,30 @@ async def create_kpi(
             f"Minimum weight per KPI is {global_min}%. "
             f"Cannot create a KPI with {body.weight}% weight.",
         )
+
+    # Dimension max enforcement using the employee's applicable rule
+    rule = await get_applicable_rule(current_user.id, body.cycle_id, db)
+    if rule:
+        dim_info = (rule.get("dimensions") or {}).get(body.kpi_dimension)
+        if dim_info is not None:
+            dim_max = dim_info.get("max", 100)
+            existing = await db.execute(
+                select(func.sum(Kpi.weight)).where(
+                    Kpi.cycle_id      == body.cycle_id,
+                    Kpi.user_id       == current_user.id,
+                    Kpi.kpi_dimension == body.kpi_dimension,
+                    Kpi.status        != "REJECTED",
+                )
+            )
+            current_dim_total = existing.scalar() or 0
+            if current_dim_total + body.weight > dim_max:
+                raise HTTPException(
+                    400,
+                    f"Cannot add KPI: {body.kpi_dimension} dimension would reach "
+                    f"{current_dim_total + body.weight}% which exceeds the maximum of "
+                    f"{dim_max}% allowed for your group. Current {body.kpi_dimension} "
+                    f"total: {current_dim_total}%.",
+                )
 
     kpi_type = (
         "FIXED" if current_user.role in
@@ -1198,6 +1222,27 @@ async def submit_scorecard(
     total_weight = sum(k.weight for k in all_kpis)
     if total_weight != 100:
         raise HTTPException(400, "Total weight must equal 100%")
+
+    # Full dimension validation against applicable rule
+    rule = await get_applicable_rule(current_user.id, body.cycle_id, db)
+    if rule:
+        dims = rule.get("dimensions") or {}
+        violations: list[tuple[str, int, int, int]] = []
+        for dim_name, bounds in dims.items():
+            dim_total = sum(
+                k.weight for k in all_kpis
+                if k.kpi_dimension == dim_name and k.status != "REJECTED"
+            )
+            d_min = bounds.get("min", 0) or 0
+            d_max = bounds.get("max", 100) or 100
+            if dim_total < d_min or dim_total > d_max:
+                violations.append((dim_name, dim_total, d_min, d_max))
+        if violations:
+            detail = "Cannot submit: Weight rule violations found:\n" + "\n".join(
+                f"• {dim}: {total}% (allowed: {mn}%–{mx}%)"
+                for dim, total, mn, mx in violations
+            )
+            raise HTTPException(400, detail)
 
     submittable = [k for k in all_kpis if k.status in ("DRAFT", "REJECTED", "APPROVED")]
     if not submittable:
