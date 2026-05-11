@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { cyclesApi } from '../api/client';
+import { cyclesApi, kpisApi } from '../api/client';
 import { useForm } from 'react-hook-form';
+import { useAuthStore } from '../store/auth';
 
 const C = {
   bg:           '#ffffff',
@@ -26,6 +27,11 @@ const S: Record<string, any> = {
   label:      { fontSize: 12, fontWeight: 500, color: C.textSecond, display: 'block', marginBottom: 4 },
   input:      { width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.bg, color: C.text, fontFamily: C.font, outline: 'none' },
   btnPrimary: { padding: '8px 16px', border: 'none', borderRadius: 8, background: C.text, color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
+  btnWarning: { padding: '6px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bgWarning, color: C.text, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
+  btnDanger:  { padding: '6px 12px', border: 'none', borderRadius: 8, background: C.textDanger, color: '#ffffff', fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
+  btnGhost:   { padding: '6px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.text, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
+  modalOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
+  modal:        { background: C.bg, borderRadius: 10, padding: 20, width: 'min(480px, 90vw)', boxShadow: '0 10px 30px rgba(0,0,0,0.2)' },
   th:         { textAlign: 'left', padding: '10px', borderBottom: `1px solid ${C.borderLight}`, fontSize: 11, color: C.textSecond, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' },
   td:         { padding: '10px', fontSize: 13, color: C.text },
   radioRow:   { display: 'flex', gap: 12, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' as const },
@@ -66,6 +72,8 @@ const MET_NOT_MET_DEFAULT = [
 export default function AdminCyclesPage() {
   const qc = useQueryClient();
   const { register: rc, handleSubmit: hc, reset: resetC } = useForm();
+  const isSuperAdmin = useAuthStore(s => s.isSuperAdmin);
+  const isHrAdmin    = useAuthStore(s => s.isHrAdmin);
 
   const [ratingType, setRatingType] = useState<'NUMERIC' | 'MET_NOT_MET' | 'OKR'>('NUMERIC');
   const [scaleMax, setScaleMax]     = useState(5);
@@ -74,6 +82,38 @@ export default function AdminCyclesPage() {
   const [metLevels, setMetLevels]   = useState(MET_NOT_MET_DEFAULT);
   const [includeRM,  setIncludeRM]  = useState(false);
   const [includeHOD, setIncludeHOD] = useState(false);
+
+  const [resetDialog, setResetDialog]   = useState<{ id: string; name: string } | null>(null);
+  const [deleteStep1, setDeleteStep1]   = useState<{ id: string; name: string } | null>(null);
+  const [deleteStep2, setDeleteStep2]   = useState<{ id: string; name: string } | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [actionMessage, setActionMessage]         = useState<string | null>(null);
+
+  const resetAllMut = useMutation({
+    mutationFn: (cycleId: string) => kpisApi.resetAllScorecards(cycleId).then(r => r.data),
+    onSuccess:  (data) => {
+      setActionMessage(`${data.message} (${data.reset} KPI${data.reset === 1 ? '' : 's'} reset)`);
+      setResetDialog(null);
+    },
+    onError: (e: any) => {
+      setActionMessage(`Reset failed: ${e?.response?.data?.detail || e.message}`);
+      setResetDialog(null);
+    },
+  });
+
+  const deleteAllMut = useMutation({
+    mutationFn: (cycleId: string) => kpisApi.deleteAllScorecards(cycleId).then(r => r.data),
+    onSuccess:  (data) => {
+      setActionMessage(`${data.message} (${data.deleted} KPI${data.deleted === 1 ? '' : 's'} deleted)`);
+      setDeleteStep2(null);
+      setDeleteConfirmText('');
+    },
+    onError: (e: any) => {
+      setActionMessage(`Delete failed: ${e?.response?.data?.detail || e.message}`);
+      setDeleteStep2(null);
+      setDeleteConfirmText('');
+    },
+  });
 
   const { data: cycles = [] } = useQuery({
     queryKey: ['cycles'],
@@ -330,7 +370,7 @@ export default function AdminCyclesPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: C.bgSecondary }}>
-                {['Name', 'Year', 'Status', 'KPI Window', 'Rating', 'Approval Chain'].map(h => (
+                {['Name', 'Year', 'Status', 'KPI Window', 'Rating', 'Approval Chain', 'Scorecard Management'].map(h => (
                   <th key={h} style={S.th}>{h}</th>
                 ))}
               </tr>
@@ -338,7 +378,7 @@ export default function AdminCyclesPage() {
             <tbody>
               {(cycles as any[]).length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ padding: 24, textAlign: 'center', color: C.textSecond }}>
+                  <td colSpan={7} style={{ padding: 24, textAlign: 'center', color: C.textSecond }}>
                     No cycles yet
                   </td>
                 </tr>
@@ -373,12 +413,124 @@ export default function AdminCyclesPage() {
                       ? c.approval_chain.join(' → ')
                       : 'DM'}
                   </td>
+                  <td style={{ ...S.td, borderBottom: i < arr.length - 1 ? `1px solid ${C.borderLight}` : 'none' }}>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {isHrAdmin() && (
+                        <button
+                          type="button"
+                          style={S.btnWarning}
+                          onClick={() => setResetDialog({ id: c.id, name: c.name })}>
+                          Reset All Scorecards
+                        </button>
+                      )}
+                      {isSuperAdmin() && (
+                        <button
+                          type="button"
+                          style={S.btnDanger}
+                          onClick={() => setDeleteStep1({ id: c.id, name: c.name })}>
+                          Delete All Scorecards
+                        </button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
+
+      {actionMessage && (
+        <div style={S.modalOverlay} onClick={() => setActionMessage(null)}>
+          <div style={S.modal} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 600, marginBottom: 10, color: C.text }}>Result</div>
+            <div style={{ fontSize: 13, color: C.text, marginBottom: 16 }}>{actionMessage}</div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" style={S.btnPrimary} onClick={() => setActionMessage(null)}>OK</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resetDialog && (
+        <div style={S.modalOverlay} onClick={() => setResetDialog(null)}>
+          <div style={S.modal} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 600, marginBottom: 10, color: C.text }}>Reset All Scorecards</div>
+            <div style={{ fontSize: 13, color: C.text, marginBottom: 16 }}>
+              Reset ALL scorecards for {resetDialog.name} to Draft? This affects all employees.
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" style={S.btnGhost} onClick={() => setResetDialog(null)} disabled={resetAllMut.isPending}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={S.btnPrimary}
+                disabled={resetAllMut.isPending}
+                onClick={() => resetAllMut.mutate(resetDialog.id)}>
+                {resetAllMut.isPending ? 'Resetting…' : 'Reset All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteStep1 && (
+        <div style={S.modalOverlay} onClick={() => setDeleteStep1(null)}>
+          <div style={S.modal} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 600, marginBottom: 10, color: C.textDanger }}>Delete All Scorecards</div>
+            <div style={{ fontSize: 13, color: C.text, marginBottom: 16 }}>
+              Are you sure you want to DELETE ALL scorecards for {deleteStep1.name}? This is permanent.
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" style={S.btnGhost} onClick={() => setDeleteStep1(null)}>Cancel</button>
+              <button
+                type="button"
+                style={S.btnDanger}
+                onClick={() => {
+                  setDeleteStep2(deleteStep1);
+                  setDeleteStep1(null);
+                  setDeleteConfirmText('');
+                }}>
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteStep2 && (
+        <div style={S.modalOverlay} onClick={() => { if (!deleteAllMut.isPending) { setDeleteStep2(null); setDeleteConfirmText(''); } }}>
+          <div style={S.modal} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 600, marginBottom: 10, color: C.textDanger }}>Final Confirmation</div>
+            <div style={{ fontSize: 13, color: C.text, marginBottom: 12 }}>
+              Type <strong>DELETE</strong> to permanently remove ALL scorecards for {deleteStep2.name}.
+            </div>
+            <input
+              autoFocus
+              style={{ ...S.input, marginBottom: 16 }}
+              value={deleteConfirmText}
+              onChange={e => setDeleteConfirmText(e.target.value)}
+              placeholder="Type DELETE to confirm" />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                style={S.btnGhost}
+                disabled={deleteAllMut.isPending}
+                onClick={() => { setDeleteStep2(null); setDeleteConfirmText(''); }}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={{ ...S.btnDanger, opacity: deleteConfirmText === 'DELETE' && !deleteAllMut.isPending ? 1 : 0.5 }}
+                disabled={deleteConfirmText !== 'DELETE' || deleteAllMut.isPending}
+                onClick={() => deleteAllMut.mutate(deleteStep2.id)}>
+                {deleteAllMut.isPending ? 'Deleting…' : 'Delete All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
