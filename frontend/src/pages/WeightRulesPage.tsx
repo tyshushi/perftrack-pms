@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { kpisApi, cyclesApi, groupsApi, departmentsApi } from '../api/client';
+import { kpisApi, cyclesApi, groupsApi, departmentsApi, usersApi } from '../api/client';
+import { useAuthStore } from '../store/auth';
 
 const C = {
   bg:           '#ffffff',
@@ -48,8 +49,17 @@ const S: Record<string, any> = {
   td:         { padding: '10px', fontSize: 13, color: C.text },
 };
 
+const ROLE_PALETTE: Record<string, { bg: string; color: string; label: string }> = {
+  HR_ADMIN:    { bg: '#dbeafe', color: '#1e40af', label: 'HR Admin' },
+  SUPER_ADMIN: { bg: '#dbeafe', color: '#1e40af', label: 'HR Admin' },
+  HOD:         { bg: '#ede9fe', color: '#5b21b6', label: 'HOD' },
+  MANAGER:     { bg: '#dcfce7', color: '#166534', label: 'Manager' },
+  MGR2:        { bg: '#dcfce7', color: '#166534', label: 'Manager' },
+};
+
 export default function WeightRulesPage() {
   const qc = useQueryClient();
+  const { user } = useAuthStore();
   const [cycleId, setCycleId] = useState('');
   const [conflicts, setConflicts]   = useState<any[]>([]);
   const [copyFrom,  setCopyFrom]    = useState('');
@@ -59,6 +69,8 @@ export default function WeightRulesPage() {
   const [rules,     setRules]       = useState<any[]>([]);
   const [globalMin, setGlobalMin]   = useState(0);
   const [initialized, setInitialized] = useState('');
+  const [saveError,   setSaveError]   = useState('');
+  const [expandedCoverage, setExpandedCoverage] = useState<Record<number, boolean>>({});
 
   const { data: cycles = [] } = useQuery({
     queryKey: ['cycles'],
@@ -90,6 +102,118 @@ export default function WeightRulesPage() {
     queryFn:  () => kpisApi.getWeightRules(cycleId).then(r => r.data),
     enabled:  !!cycleId,
   });
+
+  const { data: allUsers = [] } = useQuery({
+    queryKey: ['users', 'all'],
+    queryFn:  () => usersApi.list().then(r => r.data),
+  });
+
+  const { data: allGroupMembers = {} } = useQuery({
+    queryKey: ['group-members', (groups as any[]).map((g: any) => g.id).join(',')],
+    queryFn:  async () => {
+      const out: Record<string, string[]> = {};
+      for (const g of (groups as any[])) {
+        try {
+          const res = await groupsApi.getMembers(g.id);
+          out[g.id] = (res.data || []).map((m: any) => m.user_id || m.id);
+        } catch {
+          out[g.id] = [];
+        }
+      }
+      return out;
+    },
+    enabled: (groups as any[]).length > 0,
+  });
+
+  const usersById = useMemo(() => {
+    const map: Record<string, any> = {};
+    for (const u of (allUsers as any[])) map[u.id] = u;
+    return map;
+  }, [allUsers]);
+
+  // Compute coverage for each currently-edited rule (within actor scope)
+  const computeCoverage = (rule: any) => {
+    const direct: any[]   = [];
+    const indirect: any[] = [];
+    const universe        = (allUsers as any[]).filter((u: any) => u.is_active !== false);
+
+    const matchedByTarget = universe.filter((u: any) => {
+      if (rule.group_id) {
+        const members: string[] = (allGroupMembers as any)[rule.group_id] || [];
+        return members.includes(u.id);
+      }
+      if (rule.hierarchy)     return (u.hierarchy || '') === rule.hierarchy;
+      if (rule.user_category) return (u.category  || '') === rule.user_category;
+      if (rule.department_id) return String(u.department_id || '') === String(rule.department_id);
+      if (rule.job_grade)     return (u.job_grade || '') === rule.job_grade;
+      return true; // everyone
+    });
+
+    const actorRole = user?.role;
+    const isAdmin   = actorRole === 'HR_ADMIN' || actorRole === 'SUPER_ADMIN';
+    const isHod     = actorRole === 'HOD';
+    const isMgr     = actorRole === 'MANAGER' || actorRole === 'MGR2';
+    const myId      = user?.id;
+
+    for (const u of matchedByTarget) {
+      if (isAdmin) {
+        direct.push(u);
+        continue;
+      }
+      if (isHod) {
+        const isDirect   = String(u.direct_manager_id || '') === String(myId) ||
+                           String(u.hod_id || '') === String(myId);
+        if (isDirect) { direct.push(u); continue; }
+        const dm = u.direct_manager_id ? usersById[u.direct_manager_id] : null;
+        if (dm && String(dm.direct_manager_id || '') === String(myId)) {
+          indirect.push(u);
+        }
+        continue;
+      }
+      if (isMgr) {
+        if (String(u.direct_manager_id || '') === String(myId)) direct.push(u);
+      }
+    }
+    return { direct, indirect, total: direct.length + indirect.length };
+  };
+
+  // Detect cross-rule conflicts using existing saved rules + creator_role
+  const rulesByEmployee = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    const universe = (allUsers as any[]).filter((u: any) => u.is_active !== false);
+    for (const rule of (fetchedRules as any[])) {
+      if ((rule.label || '') === 'GLOBAL_MIN') continue;
+      const matched = universe.filter((u: any) => {
+        if (rule.group_id) {
+          const members: string[] = (allGroupMembers as any)[rule.group_id] || [];
+          return members.includes(u.id);
+        }
+        if (rule.hierarchy)     return (u.hierarchy || '') === rule.hierarchy;
+        if (rule.user_category) return (u.category  || '') === rule.user_category;
+        if (rule.department_id) return String(u.department_id || '') === String(rule.department_id);
+        if (rule.job_grade)     return (u.job_grade || '') === rule.job_grade;
+        return true;
+      });
+      for (const u of matched) {
+        (map[u.id] ||= []).push(rule);
+      }
+    }
+    return map;
+  }, [fetchedRules, allUsers, allGroupMembers]);
+
+  const conflictBanner = useMemo(() => {
+    const overlaps = Object.entries(rulesByEmployee).filter(([, rs]) => (rs as any[]).length > 1);
+    if (overlaps.length === 0) return null;
+    const names = overlaps
+      .map(([uid]) => usersById[uid]?.full_name)
+      .filter(Boolean)
+      .slice(0, 6);
+    return {
+      count: overlaps.length,
+      names,
+      moreCount: Math.max(0, overlaps.length - names.length),
+    };
+  }, [rulesByEmployee, usersById]);
 
   if ((fetchedRules as any[]).length > 0 && initialized !== cycleId) {
     const globalMinRule = (fetchedRules as any[]).find((r: any) => r.label === 'GLOBAL_MIN');
@@ -125,7 +249,11 @@ export default function WeightRulesPage() {
     onSuccess:  () => {
       qc.invalidateQueries({ queryKey: ['weight-rules', cycleId] });
       setSaved(true);
+      setSaveError('');
       setTimeout(() => setSaved(false), 3000);
+    },
+    onError: (e: any) => {
+      setSaveError(e?.response?.data?.detail || 'Failed to save');
     },
   });
 
@@ -240,6 +368,21 @@ export default function WeightRulesPage() {
           ))}
         </select>
       </div>
+
+      {cycleId && conflictBanner && (
+        <div style={{ background: C.bgWarning, border: `1px solid #fde68a`, borderRadius: 10, padding: 14, marginBottom: 12, color: '#854d0e', fontSize: 13 }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>
+            ⚠ {conflictBanner.count} employee(s) match multiple rules
+          </div>
+          <div style={{ fontSize: 12 }}>
+            The highest-priority rule (HR Admin &gt; HOD &gt; Manager) will apply. Affected: {conflictBanner.names.join(', ')}
+            {conflictBanner.moreCount > 0 && ` and ${conflictBanner.moreCount} more`}
+            {(user?.role === 'MANAGER' || user?.role === 'MGR2' || user?.role === 'HOD') && (
+              <span> — your rule may be overridden by a higher-priority rule for these employees.</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {cycleId && (
         <div>
@@ -403,6 +546,54 @@ export default function WeightRulesPage() {
                     </tfoot>
                   </table>
                 </div>
+
+                {/* Coverage section */}
+                {(() => {
+                  const cov = computeCoverage(rule);
+                  const expanded = !!expandedCoverage[i];
+                  return (
+                    <div style={{ marginTop: 12, padding: '10px 12px', background: C.bgSecondary, borderRadius: 8, border: `1px solid ${C.borderLight}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: C.textSecond, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Coverage — Applies to {cov.total} employee{cov.total === 1 ? '' : 's'}
+                        </div>
+                        {cov.total > 0 && (
+                          <button
+                            onClick={() => setExpandedCoverage(p => ({ ...p, [i]: !p[i] }))}
+                            style={{ ...S.btnSm, padding: '4px 10px', fontSize: 11 }}>
+                            {expanded ? 'Hide' : 'Show'} list
+                          </button>
+                        )}
+                      </div>
+                      {expanded && cov.total > 0 && (
+                        <div style={{ marginTop: 10, fontSize: 12, color: C.text }}>
+                          <div style={{ marginBottom: cov.indirect.length ? 8 : 0 }}>
+                            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                              Direct reports ({cov.direct.length})
+                            </div>
+                            <div style={{ color: C.textSecond }}>
+                              {cov.direct.length === 0
+                                ? '—'
+                                : cov.direct.map((u: any) => u.full_name).join(', ')}
+                            </div>
+                          </div>
+                          {(user?.role === 'HOD' || cov.indirect.length > 0) && (
+                            <div>
+                              <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                                Indirect reports — 2 levels ({cov.indirect.length})
+                              </div>
+                              <div style={{ color: C.textSecond }}>
+                                {cov.indirect.length === 0
+                                  ? '—'
+                                  : cov.indirect.map((u: any) => u.full_name).join(', ')}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
@@ -451,7 +642,7 @@ export default function WeightRulesPage() {
               {saveMutation.isPending ? 'Saving...' : 'Save All Rules'}
             </button>
             {saved && <span style={{ fontSize: 12, color: '#166534', fontWeight: 500 }}>✓ Saved</span>}
-            {saveMutation.isError && <span style={{ fontSize: 12, color: '#991b1b' }}>Failed to save</span>}
+            {saveError && <span style={{ fontSize: 12, color: '#991b1b' }}>{saveError}</span>}
           </div>
         </div>
       )}

@@ -399,6 +399,14 @@ export default function KpiSettingPage() {
     enabled:  !!cycleId,
   });
 
+  const { data: applicableRule = null } = useQuery({
+    queryKey: ['applicable-rule', cycleId, user?.id],
+    queryFn:  () => kpisApi.getApplicableRule(user!.id, cycleId).then(r => r.data),
+    enabled:  !!cycleId && !!user?.id,
+  });
+
+  const [showRulesCard, setShowRulesCard] = useState(true);
+
   const createMutation = useMutation({
     mutationFn: async () => {
       const res = await kpisApi.create({
@@ -503,6 +511,64 @@ export default function KpiSettingPage() {
           ))}
         </select>
       </div>
+
+      {cycleId && (() => {
+        if (!applicableRule) {
+          return (
+            <div style={{ padding: '10px 14px', borderRadius: 8, background: C.bgSecondary, border: `1px solid ${C.borderLight}`, color: C.textSecond, fontSize: 12, marginBottom: 12 }}>
+              📋 No weight restrictions for this cycle.
+            </div>
+          );
+        }
+        const role = applicableRule.creator_role;
+        const palette =
+          role === 'HR_ADMIN' || role === 'SUPER_ADMIN'
+            ? { bg: '#dbeafe', border: '#bfdbfe', color: '#1e40af', label: 'HR Admin' }
+          : role === 'HOD'
+            ? { bg: '#ede9fe', border: '#ddd6fe', color: '#5b21b6', label: 'Your HOD' }
+          : role === 'MANAGER' || role === 'MGR2'
+            ? { bg: '#dcfce7', border: '#bbf7d0', color: '#166534', label: 'Your Manager' }
+          : { bg: C.bgSecondary, border: C.borderLight, color: C.text, label: 'Rule Owner' };
+        const dims = applicableRule.dimensions || {};
+        const globalMinRule = (weightRules as any[]).find((r: any) => r.label === 'GLOBAL_MIN');
+        const minPerKpi = globalMinRule?.dimensions?.['Financials']?.min ?? 0;
+        return (
+          <div style={{ background: palette.bg, border: `1px solid ${palette.border}`, borderRadius: 10, padding: 14, marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+              onClick={() => setShowRulesCard(v => !v)}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: palette.color }}>
+                📋 Your Weight Rules — {applicableRule.label || 'Rule'} (set by {palette.label})
+              </div>
+              <span style={{ fontSize: 12, color: palette.color }}>{showRulesCard ? '▾' : '▸'}</span>
+            </div>
+            {showRulesCard && (
+              <div style={{ marginTop: 10, background: C.bg, borderRadius: 8, border: `1px solid ${C.borderLight}`, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: C.bgSecondary }}>
+                      <th style={S.th}>KPI Dimension</th>
+                      <th style={{ ...S.th, width: 100 }}>Min %</th>
+                      <th style={{ ...S.th, width: 100 }}>Max %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {CATEGORIES.map((c, di, arr) => (
+                      <tr key={c}>
+                        <td style={{ ...S.td, fontWeight: 500, borderBottom: di < arr.length - 1 ? `1px solid ${C.borderLight}` : 'none' }}>{c}</td>
+                        <td style={{ ...S.td, borderBottom: di < arr.length - 1 ? `1px solid ${C.borderLight}` : 'none' }}>{dims[c]?.min ?? 0}%</td>
+                        <td style={{ ...S.td, borderBottom: di < arr.length - 1 ? `1px solid ${C.borderLight}` : 'none' }}>{dims[c]?.max ?? 100}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div style={{ padding: '8px 12px', fontSize: 12, color: C.textSecond, background: C.bgSecondary, borderTop: `1px solid ${C.borderLight}` }}>
+                  Minimum per KPI line: {minPerKpi}%
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {cycleId && (
         <div>
@@ -749,4 +815,6 @@ const S: Record<string, any> = {
   input:      { width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.bg, color: C.text, fontFamily: C.font, outline: 'none' },
   btnPrimary: { padding: '8px 16px', border: 'none', borderRadius: 8, background: C.text, color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
   btnSm:      { padding: '6px 10px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font },
+  th:         { textAlign: 'left', padding: '10px', borderBottom: `1px solid ${C.borderLight}`, fontSize: 11, color: C.textSecond, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' },
+  td:         { padding: '10px', fontSize: 13, color: C.text },
 };

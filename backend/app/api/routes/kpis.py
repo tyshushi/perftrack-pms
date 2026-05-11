@@ -156,7 +156,7 @@ def kpi_to_dict(k: Kpi) -> dict:
         "self_remarks":       k.self_remarks,
     }
 
-def rule_to_dict(r: WeightRule) -> dict:
+def rule_to_dict(r: WeightRule, creator_role: Optional[str] = None) -> dict:
     return {
         "id":            str(r.id),
         "cycle_id":      str(r.cycle_id),
@@ -167,6 +167,8 @@ def rule_to_dict(r: WeightRule) -> dict:
         "department_id": str(r.department_id) if r.department_id else None,
         "job_grade":     r.job_grade,
         "priority":      r.priority or 0,
+        "created_by":    str(r.created_by) if r.created_by else None,
+        "creator_role":  creator_role,
         "dimensions": {
             "Financials":           {"min": r.fin_min  or 0, "max": r.fin_max  or 100},
             "Customer":             {"min": r.cust_min or 0, "max": r.cust_max or 100},
@@ -175,6 +177,186 @@ def rule_to_dict(r: WeightRule) -> dict:
             "Leadership & Culture": {"min": r.lc_min   or 0, "max": r.lc_max   or 100},
         },
     }
+
+
+# ── Rule resolution ────────────────────────────────────────────────────────
+
+# Tiebreaker order within same role-priority: more specific targets first.
+# Group > Hierarchy > Category > Department > Grade > Everyone
+_TARGET_SPECIFICITY = {
+    "group":     6,
+    "hierarchy": 5,
+    "category":  4,
+    "department":3,
+    "grade":     2,
+    "everyone":  1,
+}
+
+
+def _rule_target_type(rule: WeightRule) -> str:
+    if rule.group_id:      return "group"
+    if rule.hierarchy:     return "hierarchy"
+    if rule.user_category: return "category"
+    if rule.department_id: return "department"
+    if rule.job_grade:     return "grade"
+    return "everyone"
+
+
+async def _creator_role_priority(
+    creator: Optional[User],
+    db: AsyncSession,
+) -> int:
+    """Return role-based priority for a rule's creator.
+    1 = HR Admin / Super Admin (highest)
+    2 = HOD (creator is referenced as another employee's hod_id)
+    3 = Manager (creator has direct reports)
+    99 = no recognised authority (treated as lowest)
+    """
+    if creator is None:
+        return 99
+    if creator.role in ("HR_ADMIN", "SUPER_ADMIN"):
+        return 1
+    # HOD: somebody has hod_id = creator.id
+    from app.models.user import GroupMember  # noqa
+    hod_res = await db.execute(
+        select(User.id).where(User.hod_id == creator.id).limit(1)
+    )
+    if hod_res.scalar_one_or_none() is not None or creator.role == "HOD":
+        return 2
+    # Manager: somebody reports to creator directly
+    mgr_res = await db.execute(
+        select(User.id).where(User.direct_manager_id == creator.id).limit(1)
+    )
+    if mgr_res.scalar_one_or_none() is not None or creator.role in ("MANAGER", "MGR2"):
+        return 3
+    return 99
+
+
+async def _rule_applies_to_employee(
+    rule: WeightRule,
+    employee: User,
+    creator: Optional[User],
+    creator_priority: int,
+    db: AsyncSession,
+) -> bool:
+    """Check if rule applies to employee based on rule target and creator's scope."""
+    from app.models.user import GroupMember
+
+    # First: does the employee match the rule's target filter?
+    target = _rule_target_type(rule)
+    if target == "group":
+        gm = await db.execute(
+            select(GroupMember.user_id).where(
+                GroupMember.group_id == rule.group_id,
+                GroupMember.user_id  == employee.id,
+            )
+        )
+        if gm.scalar_one_or_none() is None:
+            return False
+    elif target == "hierarchy":
+        if (employee.hierarchy or "") != (rule.hierarchy or ""):
+            return False
+    elif target == "category":
+        if (employee.category or "") != (rule.user_category or ""):
+            return False
+    elif target == "department":
+        if str(employee.department_id or "") != str(rule.department_id or ""):
+            return False
+    elif target == "grade":
+        if (employee.job_grade or "") != (rule.job_grade or ""):
+            return False
+    # everyone: applies to all
+
+    # Second: scope restrictions based on creator role
+    if creator is None or creator_priority == 1:
+        # HR Admin / Super Admin rules apply to everyone matching the target
+        return True
+
+    if creator_priority == 2:
+        # HOD: applies to direct reports OR indirect (2 levels)
+        if employee.direct_manager_id and str(employee.direct_manager_id) == str(creator.id):
+            return True
+        if employee.hod_id and str(employee.hod_id) == str(creator.id):
+            return True
+        # Indirect: employee's direct manager reports to creator
+        if employee.direct_manager_id:
+            dm_res = await db.execute(
+                select(User).where(User.id == employee.direct_manager_id)
+            )
+            dm = dm_res.scalar_one_or_none()
+            if dm and dm.direct_manager_id and str(dm.direct_manager_id) == str(creator.id):
+                return True
+        return False
+
+    if creator_priority == 3:
+        # Manager: only direct reports
+        if employee.direct_manager_id and str(employee.direct_manager_id) == str(creator.id):
+            return True
+        return False
+
+    return False
+
+
+async def get_applicable_rule(
+    employee_id: UUID,
+    cycle_id: UUID,
+    db: AsyncSession,
+) -> Optional[dict]:
+    """Resolve the single highest-priority weight rule applicable to an employee.
+
+    Role priority: 1 (HR Admin) > 2 (HOD) > 3 (Manager).
+    Within same priority, tie-break by target specificity:
+        Group > Hierarchy > Category > Department > Grade > Everyone.
+    Returns the rule_to_dict() of the chosen rule, or None.
+    """
+    emp_res = await db.execute(select(User).where(User.id == employee_id))
+    employee = emp_res.scalar_one_or_none()
+    if employee is None:
+        return None
+
+    rules_res = await db.execute(
+        select(WeightRule).where(WeightRule.cycle_id == cycle_id)
+    )
+    rules = rules_res.scalars().all()
+    if not rules:
+        return None
+
+    # Cache creators by id
+    creator_cache: dict = {}
+    priority_cache: dict = {}
+
+    async def _creator_for(rule: WeightRule):
+        if rule.created_by is None:
+            return None, 99
+        key = str(rule.created_by)
+        if key in creator_cache:
+            return creator_cache[key], priority_cache[key]
+        c_res = await db.execute(select(User).where(User.id == rule.created_by))
+        creator = c_res.scalar_one_or_none()
+        prio = await _creator_role_priority(creator, db)
+        creator_cache[key]  = creator
+        priority_cache[key] = prio
+        return creator, prio
+
+    best = None  # tuple (priority, -specificity, rule, creator)
+    for rule in rules:
+        # Skip the GLOBAL_MIN sentinel — it's a baseline, not a coverage rule
+        if (rule.label or "") == "GLOBAL_MIN":
+            continue
+        creator, prio = await _creator_for(rule)
+        if not await _rule_applies_to_employee(rule, employee, creator, prio, db):
+            continue
+        specificity = _TARGET_SPECIFICITY.get(_rule_target_type(rule), 0)
+        key = (prio, -specificity)
+        if best is None or key < best[0]:
+            best = (key, rule, creator)
+
+    if best is None:
+        return None
+
+    _, rule, creator = best
+    creator_role = creator.role if creator else None
+    return rule_to_dict(rule, creator_role=creator_role)
 
 # ── Static routes ──────────────────────────────────────────────────────────
 
@@ -584,21 +766,214 @@ async def get_weight_rules(
         select(WeightRule).where(WeightRule.cycle_id == cycle_id)
         .order_by(WeightRule.priority.desc())
     )
-    return [rule_to_dict(r) for r in result.scalars().all()]
+    rules = result.scalars().all()
+
+    # Resolve creator roles in one pass
+    creator_ids = {r.created_by for r in rules if r.created_by}
+    role_by_id: dict = {}
+    if creator_ids:
+        cres = await db.execute(select(User).where(User.id.in_(creator_ids)))
+        for u in cres.scalars().all():
+            role_by_id[str(u.id)] = u.role
+
+    return [
+        rule_to_dict(
+            r,
+            creator_role=role_by_id.get(str(r.created_by)) if r.created_by else None,
+        )
+        for r in rules
+    ]
+
+
+@router.get("/applicable-rule")
+async def applicable_rule(
+    employee_id:  UUID,
+    cycle_id:     UUID,
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(get_current_user),
+):
+    """Return the single highest-priority weight rule applying to the employee."""
+    is_admin = current_user.role in ("HR_ADMIN", "SUPER_ADMIN")
+    is_self  = str(current_user.id) == str(employee_id)
+
+    if not is_admin and not is_self:
+        emp_res = await db.execute(select(User).where(User.id == employee_id))
+        emp = emp_res.scalar_one_or_none()
+        if emp is None:
+            raise HTTPException(404, "Employee not found")
+        is_manager_of = (
+            (emp.direct_manager_id    and str(emp.direct_manager_id)    == str(current_user.id)) or
+            (emp.reviewing_manager_id and str(emp.reviewing_manager_id) == str(current_user.id)) or
+            (emp.hod_id               and str(emp.hod_id)               == str(current_user.id))
+        )
+        if not is_manager_of:
+            raise HTTPException(403, "Not authorised to view this employee's rule")
+
+    return await get_applicable_rule(employee_id, cycle_id, db)
+
+
+def _employees_matched_by_rule_payload(
+    rule_payload: dict,
+    db_users: list,
+    group_members_by_group: dict,
+) -> set:
+    """Return set of user_ids that match a rule's target filter (ignoring creator scope)."""
+    matched: set = set()
+    group_id      = rule_payload.get("group_id")
+    hierarchy     = rule_payload.get("hierarchy")
+    user_category = rule_payload.get("user_category")
+    department_id = rule_payload.get("department_id")
+    job_grade     = rule_payload.get("job_grade")
+
+    if group_id:
+        return set(group_members_by_group.get(str(group_id), set()))
+    if hierarchy:
+        return {u.id for u in db_users if (u.hierarchy or "") == hierarchy}
+    if user_category:
+        return {u.id for u in db_users if (u.category or "") == user_category}
+    if department_id:
+        return {u.id for u in db_users if str(u.department_id or "") == str(department_id)}
+    if job_grade:
+        return {u.id for u in db_users if (u.job_grade or "") == job_grade}
+    # everyone
+    return {u.id for u in db_users}
 
 
 @router.post("/weight-rules/{cycle_id}")
 async def set_weight_rules(
-    cycle_id: UUID,
-    body:     List[dict],
-    db:       AsyncSession = Depends(get_db),
-    _:        User         = Depends(require_hr_admin),
+    cycle_id:     UUID,
+    body:         List[dict],
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(get_current_user),
 ):
-    existing = await db.execute(
+    # Role gate — only HR Admin, Super Admin, HOD or Manager may write rules
+    if current_user.role not in ("HR_ADMIN", "SUPER_ADMIN", "HOD", "MANAGER", "MGR2"):
+        raise HTTPException(403, "Not authorised to set weight rules")
+
+    actor_priority = await _creator_role_priority(current_user, db)
+
+    # Pre-fetch existing rules with their creator roles for conflict checking
+    existing_res = await db.execute(
         select(WeightRule).where(WeightRule.cycle_id == cycle_id)
     )
-    for rule in existing.scalars().all():
-        await db.delete(rule)
+    existing_rules = existing_res.scalars().all()
+    creator_ids = {r.created_by for r in existing_rules if r.created_by}
+    creator_priority: dict = {}
+    if creator_ids:
+        cres = await db.execute(select(User).where(User.id.in_(creator_ids)))
+        for u in cres.scalars().all():
+            creator_priority[str(u.id)] = await _creator_role_priority(u, db)
+
+    # Load all active users and group members once for matching
+    if actor_priority != 1:
+        from app.models.user import GroupMember
+        users_res = await db.execute(select(User).where(User.is_active == True))
+        all_users = users_res.scalars().all()
+        users_by_id = {u.id: u for u in all_users}
+
+        gm_res = await db.execute(select(GroupMember))
+        group_members_by_group: dict = {}
+        for gm in gm_res.scalars().all():
+            group_members_by_group.setdefault(str(gm.group_id), set()).add(gm.user_id)
+
+        # For each incoming non-sentinel rule, resolve which employees it covers
+        # within the actor's scope, then check whether any higher-priority
+        # existing rule already covers them.
+        for r in body:
+            if (r.get("label") or "") == "GLOBAL_MIN":
+                continue
+            target_matched = _employees_matched_by_rule_payload(
+                r, all_users, group_members_by_group,
+            )
+
+            # Restrict to actor scope
+            scoped: set = set()
+            for uid in target_matched:
+                emp = users_by_id.get(uid)
+                if not emp:
+                    continue
+                if actor_priority == 2:  # HOD
+                    if emp.direct_manager_id and str(emp.direct_manager_id) == str(current_user.id):
+                        scoped.add(uid); continue
+                    if emp.hod_id and str(emp.hod_id) == str(current_user.id):
+                        scoped.add(uid); continue
+                    if emp.direct_manager_id:
+                        dm = users_by_id.get(emp.direct_manager_id)
+                        if dm and dm.direct_manager_id and str(dm.direct_manager_id) == str(current_user.id):
+                            scoped.add(uid); continue
+                elif actor_priority == 3:  # Manager
+                    if emp.direct_manager_id and str(emp.direct_manager_id) == str(current_user.id):
+                        scoped.add(uid)
+
+            if not scoped:
+                continue
+
+            # Check conflicts against existing rules of higher priority
+            for ex in existing_rules:
+                if (ex.label or "") == "GLOBAL_MIN":
+                    continue
+                ex_prio = creator_priority.get(str(ex.created_by), 99) if ex.created_by else 99
+                if ex_prio >= actor_priority:
+                    continue  # not higher priority
+
+                ex_payload = {
+                    "group_id":      str(ex.group_id) if ex.group_id else None,
+                    "hierarchy":     ex.hierarchy,
+                    "user_category": ex.user_category,
+                    "department_id": str(ex.department_id) if ex.department_id else None,
+                    "job_grade":     ex.job_grade,
+                }
+                ex_matched = _employees_matched_by_rule_payload(
+                    ex_payload, all_users, group_members_by_group,
+                )
+                # Apply ex creator scope too
+                ex_creator = None
+                if ex.created_by:
+                    ec_res = await db.execute(select(User).where(User.id == ex.created_by))
+                    ex_creator = ec_res.scalar_one_or_none()
+                ex_scoped: set = set()
+                for uid in ex_matched:
+                    emp = users_by_id.get(uid)
+                    if not emp:
+                        continue
+                    if ex_prio == 1:
+                        ex_scoped.add(uid)
+                    elif ex_prio == 2 and ex_creator:
+                        if emp.direct_manager_id and str(emp.direct_manager_id) == str(ex_creator.id):
+                            ex_scoped.add(uid); continue
+                        if emp.hod_id and str(emp.hod_id) == str(ex_creator.id):
+                            ex_scoped.add(uid); continue
+                        if emp.direct_manager_id:
+                            dm = users_by_id.get(emp.direct_manager_id)
+                            if dm and dm.direct_manager_id and str(dm.direct_manager_id) == str(ex_creator.id):
+                                ex_scoped.add(uid)
+                    elif ex_prio == 3 and ex_creator:
+                        if emp.direct_manager_id and str(emp.direct_manager_id) == str(ex_creator.id):
+                            ex_scoped.add(uid)
+
+                overlap = scoped & ex_scoped
+                if overlap:
+                    names = []
+                    for uid in list(overlap)[:8]:
+                        u = users_by_id.get(uid)
+                        if u:
+                            names.append(u.full_name)
+                    more = f" and {len(overlap) - len(names)} more" if len(overlap) > len(names) else ""
+                    role_label = {1: "HR Admin", 2: "HOD"}.get(ex_prio, "higher-priority")
+                    raise HTTPException(
+                        400,
+                        f"Rule '{r.get('label') or 'Untitled'}' conflicts with an existing "
+                        f"{role_label} rule ('{ex.label or 'Untitled'}') already covering "
+                        f"{len(overlap)} employee(s): {', '.join(names)}{more}.",
+                    )
+
+    # All checks passed — replace this actor's rules.
+    # HR Admin replaces everything; non-admins replace only their own rules.
+    for rule in existing_rules:
+        if actor_priority == 1:
+            await db.delete(rule)
+        elif rule.created_by and str(rule.created_by) == str(current_user.id):
+            await db.delete(rule)
 
     for r in body:
         dims = r.get("dimensions", {})
@@ -612,6 +987,7 @@ async def set_weight_rules(
             department_id = r.get("department_id"),
             job_grade     = r.get("job_grade"),
             priority      = r.get("priority", 0),
+            created_by    = current_user.id,
             fin_min  = dims.get("Financials",           {}).get("min", 0),
             fin_max  = dims.get("Financials",           {}).get("max", 100),
             cust_min = dims.get("Customer",             {}).get("min", 0),
