@@ -358,11 +358,32 @@ export default function ManagerApprovalPage() {
     })),
   });
 
-  const reportData = myReports.map((report: any, i: number) => {
-    const q = reportKpiQueries[i];
-    const kpis = (q?.data as any[]) ?? [];
+  // Build an explicit id-keyed map so KPI data can never desync from the
+  // employee row it belongs to, regardless of render order.
+  const kpisByEmployeeId = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    (myReports as any[]).forEach((report, i) => {
+      map[report.id] = reportKpiQueries[i]?.data || [];
+    });
+    return map;
+  }, [myReports, reportKpiQueries]);
+
+  const loadingByEmployeeId = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    (myReports as any[]).forEach((report, i) => {
+      map[report.id] = !!reportKpiQueries[i]?.isLoading;
+    });
+    return map;
+  }, [myReports, reportKpiQueries]);
+
+  const reportData = myReports.map((report: any) => {
+    const kpis = kpisByEmployeeId[report.id] ?? [];
     const status = computeReportStatus(kpis, report, currentUserId);
-    return { report, kpis, status, isLoading: !!q?.isLoading };
+    if ((import.meta as any).env?.DEV) {
+      // eslint-disable-next-line no-console
+      console.log('Employee:', report.id, report.full_name, '→ KPIs:', kpisByEmployeeId[report.id]?.length, 'status:', kpisByEmployeeId[report.id]?.[0]?.status);
+    }
+    return { report, kpis, status, isLoading: loadingByEmployeeId[report.id] };
   });
 
   const summary = reportData.reduce(
@@ -437,7 +458,8 @@ export default function ManagerApprovalPage() {
             </div>
           )}
 
-          {reportData.map(({ report, kpis, status, isLoading }) => {
+          {reportData.map(({ report, status, isLoading }) => {
+            const kpis = kpisByEmployeeId[report.id] ?? [];
             const expanded = isOpen(report.id, status);
             const badge    = REPORT_STATUS_STYLE[status];
             return (
