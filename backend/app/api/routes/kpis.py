@@ -669,6 +669,69 @@ async def admin_delete_scorecard(
     return {"deleted": count, "message": "Scorecard deleted"}
 
 
+class AdminAllScorecardsRequest(BaseModel):
+    cycle_id: UUID
+
+
+@router.post("/admin/reset-all-scorecards")
+async def admin_reset_all_scorecards(
+    body:         AdminAllScorecardsRequest,
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(require_hr_admin),
+):
+    from app.models.user import KpiAuditLog
+
+    res = await db.execute(select(Kpi).where(Kpi.cycle_id == body.cycle_id))
+    kpis = res.scalars().all()
+
+    if kpis:
+        audit_result = await db.execute(
+            select(KpiAuditLog).where(KpiAuditLog.kpi_id.in_([k.id for k in kpis]))
+        )
+        for log in audit_result.scalars().all():
+            await db.delete(log)
+        await db.flush()
+
+    for kpi in kpis:
+        kpi.status             = "DRAFT"
+        kpi.mgr_comment        = None
+        kpi.self_rating        = None
+        kpi.actual_achievement = None
+        kpi.self_remarks       = None
+
+    await db.flush()
+    return {"reset": len(kpis), "message": "All scorecards reset to draft"}
+
+
+@router.delete("/admin/delete-all-scorecards")
+async def admin_delete_all_scorecards(
+    body:         AdminAllScorecardsRequest,
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(get_current_user),
+):
+    if current_user.role != "SUPER_ADMIN":
+        raise HTTPException(403, "Super Admin only")
+
+    from app.models.user import KpiAuditLog
+
+    res = await db.execute(select(Kpi).where(Kpi.cycle_id == body.cycle_id))
+    kpis = res.scalars().all()
+    count = len(kpis)
+
+    if kpis:
+        audit_result = await db.execute(
+            select(KpiAuditLog).where(KpiAuditLog.kpi_id.in_([k.id for k in kpis]))
+        )
+        for log in audit_result.scalars().all():
+            await db.delete(log)
+        await db.flush()
+
+    for kpi in kpis:
+        await db.delete(kpi)
+    await db.flush()
+    return {"deleted": count, "message": "All scorecards deleted"}
+
+
 # ── Scorecard-level endpoints ──────────────────────────────────────────────
 
 @router.post("/submit-scorecard")
