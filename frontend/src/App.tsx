@@ -27,42 +27,12 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function RequirePermission({
-  anyOf,
-  children,
-}: {
-  anyOf: string[];
-  children: React.ReactNode;
-}) {
-  const permissions = useAuthStore((s) => s.permissions);
-  const allowed = anyOf.some((p) => permissions.includes(p));
-  if (!allowed) {
-    return (
-      <div style={{ padding: 24, fontSize: 13, color: '#888' }}>
-        You do not have permission to access this page.
-      </div>
-    );
-  }
-  return <>{children}</>;
-}
-
-function RequireSuperAdminOrPermission({
-  permission,
-  children,
-}: {
-  permission: string;
-  children: React.ReactNode;
-}) {
-  const permissions = useAuthStore((s) => s.permissions);
-  const user = useAuthStore((s) => s.user);
-  const allowed = user?.role === 'SUPER_ADMIN' || permissions.includes(permission);
-  if (!allowed) {
-    return (
-      <div style={{ padding: 24, fontSize: 13, color: '#888' }}>
-        You do not have permission to access this page.
-      </div>
-    );
-  }
+function RequirePermission({ permission, children }: { permission: string | string[], children: React.ReactNode }) {
+  const hasPermission = useAuthStore(s => s.hasPermission);
+  const isSuperAdmin = useAuthStore(s => s.isSuperAdmin());
+  const perms = Array.isArray(permission) ? permission : [permission];
+  const allowed = isSuperAdmin || perms.some(p => hasPermission(p));
+  if (!allowed) return <Navigate to="/scorecard/setting" replace />;
   return <>{children}</>;
 }
 
@@ -83,16 +53,16 @@ export default function App() {
             <Route index element={<Navigate to="/scorecard/setting" replace />} />
             <Route path="scorecard/setting"        element={<KpiSettingPage />} />
             <Route path="scorecard/self-eval"      element={<SelfEvalPage />} />
-            <Route path="tray/approve"             element={<RequirePermission anyOf={['approve_scorecards']}><ManagerApprovalPage /></RequirePermission>} />
+            <Route path="tray/approve"             element={<RequirePermission permission={["approve_scorecards"]}><ManagerApprovalPage /></RequirePermission>} />
             <Route path="tray/team-eval"           element={<ManagerEvalPage />} />
-            <Route path="tray/cascade"             element={<RequirePermission anyOf={['cascade_kpis']}><QuickCascadePage /></RequirePermission>} />
-            <Route path="dashboard"                element={<RequirePermission anyOf={['view_team_dashboard', 'view_org_dashboard']}><DashboardPage /></RequirePermission>} />
-            <Route path="admin/cycles"             element={<RequirePermission anyOf={['manage_cycles']}><AdminCyclesPage /></RequirePermission>} />
-            <Route path="admin/users"              element={<RequirePermission anyOf={['view_employees']}><AdminPage /></RequirePermission>} />
-            <Route path="admin/groups"             element={<RequirePermission anyOf={['manage_groups']}><GroupsPage /></RequirePermission>} />
-            <Route path="admin/weight-rules"       element={<RequirePermission anyOf={['manage_weight_rules']}><WeightRulesPage /></RequirePermission>} />
-            <Route path="admin/kpi-setup/templates" element={<RequirePermission anyOf={['manage_templates']}><KpiTemplatesPage /></RequirePermission>} />
-            <Route path="admin/roles"              element={<RequireSuperAdminOrPermission permission="manage_custom_roles"><RoleManagementPage /></RequireSuperAdminOrPermission>} />
+            <Route path="tray/cascade"             element={<RequirePermission permission={["cascade_kpis"]}><QuickCascadePage /></RequirePermission>} />
+            <Route path="dashboard"                element={<RequirePermission permission={["view_team_dashboard", "view_org_dashboard"]}><DashboardPage /></RequirePermission>} />
+            <Route path="admin/cycles"             element={<RequirePermission permission={["view_cycles", "manage_cycles"]}><AdminCyclesPage /></RequirePermission>} />
+            <Route path="admin/users"              element={<RequirePermission permission={["view_employees", "edit_employee_profiles"]}><AdminPage /></RequirePermission>} />
+            <Route path="admin/groups"             element={<RequirePermission permission={["view_groups", "manage_groups"]}><GroupsPage /></RequirePermission>} />
+            <Route path="admin/weight-rules"       element={<RequirePermission permission={["manage_weight_rules"]}><WeightRulesPage /></RequirePermission>} />
+            <Route path="admin/kpi-setup/templates" element={<RequirePermission permission={["manage_templates", "cascade_kpis"]}><KpiTemplatesPage /></RequirePermission>} />
+            <Route path="admin/roles"              element={<RequirePermission permission={["manage_custom_roles"]}><RoleManagementPage /></RequirePermission>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
