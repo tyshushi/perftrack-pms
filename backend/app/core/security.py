@@ -79,3 +79,32 @@ require_hr_admin    = require_roles("HR_ADMIN", "SUPER_ADMIN")
 require_manager_up  = require_roles("MANAGER", "MGR2", "HOD", "HR_ADMIN", "SUPER_ADMIN")
 require_hod_up      = require_roles("HOD", "HR_ADMIN", "SUPER_ADMIN")
 require_any         = require_roles("STAFF", "MANAGER", "MGR2", "HOD", "HR_ADMIN", "SUPER_ADMIN")
+
+
+def require_permission(permission: str):
+    """Dependency factory: allow HR_ADMIN/SUPER_ADMIN, or any user whose
+    custom role grants the given permission."""
+    async def checker(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> User:
+        if current_user.role in ("HR_ADMIN", "SUPER_ADMIN"):
+            return current_user
+        from sqlalchemy import text
+        result = await db.execute(
+            text("""
+                SELECT rp.permission
+                FROM user_roles ur
+                JOIN role_permissions rp ON rp.role_id = ur.role_id
+                WHERE ur.user_id = :user_id AND rp.permission = :permission
+                LIMIT 1
+            """),
+            {"user_id": str(current_user.id), "permission": permission},
+        )
+        if result.scalar_one_or_none():
+            return current_user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied. Required permission: {permission}",
+        )
+    return checker

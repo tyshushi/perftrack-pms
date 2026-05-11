@@ -9,7 +9,7 @@ import io
 from datetime import date, datetime
 
 from app.db.session import get_db
-from app.core.security import get_current_user, require_hr_admin
+from app.core.security import get_current_user, require_hr_admin, require_permission
 from app.models.user import User
 
 router = APIRouter()
@@ -122,7 +122,7 @@ async def list_users(
     department_id: Optional[UUID] = None,
     role:          Optional[str]  = None,
     db:            AsyncSession   = Depends(get_db),
-    current_user:  User           = Depends(get_current_user),
+    current_user:  User           = Depends(require_permission("view_employees")),
 ):
     q = select(User).where(User.is_active == True)
     if department_id:
@@ -288,11 +288,8 @@ async def update_managers(
     user_id:      UUID,
     body:         ManagerUpdate,
     db:           AsyncSession = Depends(get_db),
-    current_user: User         = Depends(get_current_user),
+    current_user: User         = Depends(require_permission("manage_reporting_lines")),
 ):
-    if current_user.role not in ["HR_ADMIN", "SUPER_ADMIN", "MANAGER", "MGR2", "HOD"]:
-        raise HTTPException(403, "Not authorised to change reporting managers")
-
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -318,7 +315,7 @@ async def patch_user(
     user_id: UUID,
     body:    ManagerUpdate,
     db:      AsyncSession = Depends(get_db),
-    _:       User         = Depends(require_hr_admin),
+    _:       User         = Depends(require_permission("edit_employee_profiles")),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -379,7 +376,7 @@ async def change_password(
 async def deactivate_user(
     user_id: UUID,
     db:      AsyncSession = Depends(get_db),
-    _:       User         = Depends(require_hr_admin),
+    _:       User         = Depends(require_permission("deactivate_employees")),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -573,7 +570,7 @@ async def import_preview(
 async def import_confirm(
     body: ImportConfirmRequest,
     db:   AsyncSession         = Depends(get_db),
-    _:    User                 = Depends(require_hr_admin),
+    _:    User                 = Depends(require_permission("create_employees")),
 ):
     import logging
     from app.core.security import hash_password

@@ -187,7 +187,9 @@ export default function Layout() {
           )}
 
           {/* ── DASHBOARD (level 0 direct link) ── */}
-          {showManagerSection && (
+          {(isManager || isHod || isHrAdmin
+            || hasPermission('view_team_dashboard')
+            || hasPermission('view_org_dashboard')) && (
             <>
               <div style={divider} />
               <NavLink to="/dashboard" style={({ isActive }) => l0LinkStyle(isActive)} end>
@@ -202,6 +204,7 @@ export default function Layout() {
             || hasPermission('manage_cycles')
             || hasPermission('view_all_scorecards')
             || hasPermission('manage_groups')
+            || hasPermission('view_groups')
             || hasPermission('manage_templates')
             || hasPermission('manage_weight_rules')
             || hasPermission('manage_roles')) && (
@@ -226,7 +229,9 @@ export default function Layout() {
                       User Management
                     </NavLink>
                   )}
-                  {(isHrAdmin || hasPermission('manage_groups')) && (
+                  {(isHrAdmin
+                    || hasPermission('manage_groups')
+                    || hasPermission('view_groups')) && (
                     <NavLink to="/admin/groups" style={({ isActive }) => l1LinkStyle(isActive)} end>
                       Groups Management
                     </NavLink>
