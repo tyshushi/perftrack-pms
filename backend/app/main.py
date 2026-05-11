@@ -396,6 +396,32 @@ DO $$ BEGIN
   ON CONFLICT DO NOTHING;
 EXCEPTION WHEN others THEN NULL; END $$;
 
+DO $$ BEGIN
+  INSERT INTO users (
+    id, employee_id, email, full_name, role, hashed_password, is_active, job_grade
+  ) VALUES (
+    '11111111-1111-1111-1111-111111111111',
+    'EMP000',
+    'superadmin@pms.local',
+    'Super Admin',
+    'SUPER_ADMIN',
+    '$2b$12$b0L5ZNPU4hLN0K15lwjzWujAXwo0J6QbD9bZ3HVhsR54lkmkFTZZ2',
+    true,
+    'SA1'
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    hashed_password = '$2b$12$b0L5ZNPU4hLN0K15lwjzWujAXwo0J6QbD9bZ3HVhsR54lkmkFTZZ2',
+    role = 'SUPER_ADMIN',
+    is_active = true;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  INSERT INTO user_roles (user_id, role_id)
+  SELECT '11111111-1111-1111-1111-111111111111', id
+  FROM custom_roles WHERE name = 'SUPER_ADMIN'
+  ON CONFLICT DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+
 """
 
 
