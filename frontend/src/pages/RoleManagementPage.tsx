@@ -655,7 +655,7 @@ function UserRoleAssignmentSection({
 
 export default function RoleManagementPage() {
   const qc = useQueryClient();
-  const isSuperAdmin = useAuthStore.getState().isSuperAdmin();
+  const isSuperAdmin = useAuthStore(s => s.isSuperAdmin());
   const [systemExpanded, setSystemExpanded] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
