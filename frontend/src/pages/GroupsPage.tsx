@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { groupsApi, usersApi } from '../api/client';
+import { useAuthStore } from '../store/auth';
 const C = {
   bg:           '#ffffff',
   bgSecondary:  '#f7f7f5',
@@ -35,9 +36,9 @@ function Avatar({ name }: { name: string }) {
 }
 
 function GroupMembersPanel({
-  group, allUsers, onClose,
+  group, allUsers, onClose, canManage,
 }: {
-  group: any; allUsers: any[]; onClose: () => void;
+  group: any; allUsers: any[]; onClose: () => void; canManage: boolean;
 }) {
   const qc = useQueryClient();
   const [search,    setSearch]   = useState('');
@@ -127,12 +128,20 @@ function GroupMembersPanel({
                 lineHeight: 1 }}>✕</button>
           </div>
 
+          {/* Read-only banner */}
+          {!canManage && (
+            <div style={{ marginBottom: 16, padding: '10px 14px', background: C.bgInfo,
+              borderRadius: 8, fontSize: 12, color: C.textInfo }}>
+              You have view-only access to groups. Contact HR Admin to make changes.
+            </div>
+          )}
+
           {/* Add members button */}
-          {!showAdd ? (
+          {canManage && !showAdd ? (
             <button onClick={() => setShowAdd(true)} style={S.btnPrimary}>
               + Add Members
             </button>
-          ) : (
+          ) : canManage && showAdd ? (
             <div style={{ ...S.card, marginBottom: 16 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: C.text,
                 marginBottom: 10 }}>Add Members</div>
@@ -214,7 +223,7 @@ function GroupMembersPanel({
                 </button>
               </div>
             </div>
-          )}
+          ) : null}
 
           {/* Current members */}
           <div style={{ marginTop: 20 }}>
@@ -258,15 +267,17 @@ function GroupMembersPanel({
                     {' · '}{ROLE_LABELS[m.role] || m.role}
                   </div>
                 </div>
-                <button
-                  onClick={() => removeMutation.mutate(m.user_id)}
-                  disabled={removeMutation.isPending}
-                  style={{ border: 'none', background: 'transparent',
-                    cursor: 'pointer', fontSize: 13,
-                    color: C.textTertiary, padding: '2px 6px',
-                    flexShrink: 0 }}>
-                  ✕
-                </button>
+                {canManage && (
+                  <button
+                    onClick={() => removeMutation.mutate(m.user_id)}
+                    disabled={removeMutation.isPending}
+                    style={{ border: 'none', background: 'transparent',
+                      cursor: 'pointer', fontSize: 13,
+                      color: C.textTertiary, padding: '2px 6px',
+                      flexShrink: 0 }}>
+                    ✕
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -278,6 +289,9 @@ function GroupMembersPanel({
 
 export default function GroupsPage() {
   const qc = useQueryClient();
+  const hasManageGroups = useAuthStore(s => s.hasPermission)('manage_groups');
+  const isHrAdmin = useAuthStore(s => s.isHrAdmin());
+  const canManage = hasManageGroups || isHrAdmin;
   const [creating, setCreating] = useState(false);
   const [newName,  setNewName]  = useState('');
   const [newDesc,  setNewDesc]  = useState('');
@@ -328,9 +342,11 @@ export default function GroupsPage() {
             Create and manage custom groups for KPI weight rules and templates
           </p>
         </div>
-        <button onClick={() => setCreating(true)} style={S.btnPrimary}>
-          + New Group
-        </button>
+        {canManage && (
+          <button onClick={() => setCreating(true)} style={S.btnPrimary}>
+            + New Group
+          </button>
+        )}
       </div>
 
       {/* Create form */}
@@ -400,16 +416,18 @@ export default function GroupsPage() {
                   </div>
                 )}
               </div>
-              <button
-                onClick={() => {
-                  if (window.confirm(`Delete group "${g.name}"?`))
-                    deleteMutation.mutate(g.id);
-                }}
-                style={{ border: 'none', background: 'transparent',
-                  cursor: 'pointer', fontSize: 13, flexShrink: 0,
-                  color: C.textTertiary, padding: '0 4px', marginLeft: 8 }}>
-                ✕
-              </button>
+              {canManage && (
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Delete group "${g.name}"?`))
+                      deleteMutation.mutate(g.id);
+                  }}
+                  style={{ border: 'none', background: 'transparent',
+                    cursor: 'pointer', fontSize: 13, flexShrink: 0,
+                    color: C.textTertiary, padding: '0 4px', marginLeft: 8 }}>
+                  ✕
+                </button>
+              )}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between',
@@ -431,6 +449,7 @@ export default function GroupsPage() {
           group={selected}
           allUsers={users as any[]}
           onClose={() => setSelected(null)}
+          canManage={canManage}
         />
       )}
     </div>
