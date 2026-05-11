@@ -420,7 +420,19 @@ async def list_kpis(
             )
             is_manager_of_employee = emp_result.scalar_one_or_none() is not None
 
-        if is_admin:
+        # Check if user has reset_scorecards permission (scorecard managers)
+        has_reset_permission = False
+        if not is_admin and user_id:
+            from sqlalchemy import text
+            perm_check = await db.execute(text("""
+                SELECT rp.permission
+                FROM user_roles ur
+                JOIN role_permissions rp ON rp.role_id = ur.role_id
+                WHERE ur.user_id = :uid AND rp.permission = 'reset_scorecards'
+            """), {"uid": str(current_user.id)})
+            has_reset_permission = perm_check.scalar_one_or_none() is not None
+
+        if is_admin or has_reset_permission:
             if user_id:
                 q = q.where(Kpi.user_id == user_id)
         elif is_manager_of_employee:
