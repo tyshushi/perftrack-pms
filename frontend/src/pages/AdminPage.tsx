@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { usersApi, departmentsApi, api } from '../api/client';
+import { usersApi, departmentsApi, api, userProfileApi } from '../api/client';
 import UserProfileDrawer from '../components/common/UserProfileDrawer';
 
 const C = {
@@ -197,7 +197,7 @@ function ManagerCell({
   async function select(targetId: string | null) {
     setSaving(true);
     try {
-      await api.patch(`/users/${userId}`, { [field]: targetId });
+      await userProfileApi.updateManagers(userId, { [field]: targetId });
       setFlash(true);
       setTimeout(() => setFlash(false), 1200);
       onSaved();
@@ -306,7 +306,7 @@ function ApprovalLevelsCell({
   async function select(level: number) {
     setSaving(true);
     try {
-      await api.patch(`/users/${userId}`, { approval_levels: level });
+      await userProfileApi.updateManagers(userId, { approval_levels: level });
       setFlash(true);
       setTimeout(() => setFlash(false), 1200);
       onSaved();
