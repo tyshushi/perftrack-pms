@@ -202,16 +202,36 @@ async def list_kpis(
         ))
         if user_id:
             q = q.where(Kpi.user_id == user_id)
-    elif current_user.role in ["HR_ADMIN", "SUPER_ADMIN"]:
-        if user_id:
+    else:
+        # Check if user is HR/Super Admin
+        is_admin = current_user.role in ["HR_ADMIN", "SUPER_ADMIN"]
+
+        # Check if user is a manager of the requested employee (org-chart derived)
+        is_manager_of_employee = False
+        if user_id and not is_admin:
+            from sqlalchemy import or_
+            emp_result = await db.execute(
+                select(User).where(
+                    User.id == user_id,
+                    or_(
+                        User.direct_manager_id == current_user.id,
+                        User.reviewing_manager_id == current_user.id,
+                        User.hod_id == current_user.id,
+                    )
+                )
+            )
+            is_manager_of_employee = emp_result.scalar_one_or_none() is not None
+
+        if is_admin:
+            if user_id:
+                q = q.where(Kpi.user_id == user_id)
+        elif is_manager_of_employee:
             q = q.where(Kpi.user_id == user_id)
-    elif current_user.role in ["MANAGER", "MGR2", "HOD"]:
-        if user_id:
+        elif current_user.role in ["MANAGER", "HOD"] and user_id:
+            # Legacy role-based check
             q = q.where(Kpi.user_id == user_id)
         else:
             q = q.where(Kpi.user_id == current_user.id)
-    else:
-        q = q.where(Kpi.user_id == current_user.id)
 
     if status:
         q = q.where(Kpi.status == status)
