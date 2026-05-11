@@ -287,6 +287,124 @@ function SystemRoleRow({ role, expanded, onToggle }: {
   );
 }
 
+function CustomRoleCard({
+  role, onEdit, onDelete, deleting,
+}: {
+  role: any;
+  onEdit: () => void;
+  onDelete: () => void;
+  deleting: boolean;
+}) {
+  const qc = useQueryClient();
+  const [showMembers, setShowMembers] = useState(false);
+  const userCount = role.user_count ?? 0;
+  const canDelete = userCount === 0;
+
+  const membersQuery = useQuery({
+    queryKey: ['role-users', role.id],
+    queryFn: () => rolesApi.getUsers(role.id).then(r => r.data),
+    enabled: showMembers,
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (userId: string) => rolesApi.removeUser(role.id, userId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['role-users', role.id] });
+      qc.invalidateQueries({ queryKey: ['all-role-users'] });
+      qc.invalidateQueries({ queryKey: ['roles'] });
+    },
+  });
+
+  const members = (membersQuery.data as any[]) || [];
+
+  return (
+    <div style={S.card}>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontWeight: 600, fontSize: 14, color: C.text }}>
+          {role.name}
+        </div>
+        {role.description && (
+          <div style={{ fontSize: 12, color: C.textSecond, marginTop: 2 }}>
+            {role.description}
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+        <span style={{ fontSize: 12, color: C.textSecond }}>
+          {role.permissions.length} permission{role.permissions.length !== 1 ? 's' : ''}
+        </span>
+        <span style={{ fontSize: 12, color: C.textSecond }}>
+          {userCount} member{userCount !== 1 ? 's' : ''}
+        </span>
+      </div>
+      <div style={{ display: 'flex', gap: 6,
+        paddingTop: 10, borderTop: `1px solid ${C.borderLight}` }}>
+        <button onClick={onEdit} style={S.btnSm}>
+          Edit
+        </button>
+        <button
+          onClick={() => setShowMembers(v => !v)}
+          style={S.btnSm}>
+          {showMembers ? 'Hide Members' : 'View Members'}
+        </button>
+        <span title={canDelete
+          ? ''
+          : 'Cannot delete: users are still assigned to this role'}>
+          <button
+            onClick={onDelete}
+            disabled={!canDelete || deleting}
+            style={{ ...S.btnSm,
+              color: canDelete ? C.textDanger : C.textTertiary,
+              cursor: canDelete ? 'pointer' : 'not-allowed',
+              opacity: canDelete ? 1 : 0.6 }}>
+            Delete
+          </button>
+        </span>
+      </div>
+      {showMembers && (
+        <div style={{ marginTop: 12, paddingTop: 12,
+          borderTop: `1px solid ${C.borderLight}` }}>
+          {membersQuery.isLoading ? (
+            <div style={{ fontSize: 12, color: C.textTertiary }}>Loading...</div>
+          ) : members.length === 0 ? (
+            <div style={{ fontSize: 12, color: C.textTertiary }}>
+              No members assigned
+            </div>
+          ) : (
+            <div>
+              {members.map((m: any) => (
+                <div key={m.user_id} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '6px 0',
+                  borderBottom: `1px solid ${C.borderLight}`,
+                }}>
+                  <Avatar name={m.full_name} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: C.text }}>
+                      {m.full_name}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.textSecond }}>
+                      {m.employee_id}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => removeMutation.mutate(m.user_id)}
+                    disabled={removeMutation.isPending}
+                    style={{ ...S.btnSm,
+                      color: C.textDanger,
+                      opacity: removeMutation.isPending ? 0.6 : 1 }}>
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UserRoleAssignmentSection({
   customRoles, allUsers,
 }: {
@@ -446,21 +564,25 @@ function UserRoleAssignmentSection({
             <div style={{ fontSize: 11, fontWeight: 600, color: C.textSecond,
               textTransform: 'uppercase', letterSpacing: '0.05em',
               marginBottom: 8 }}>
-              Assigned Custom Roles ({userAssignedRoles.length})
+              Assigned Roles ({userAssignedRoles.length + 1})
             </div>
             {roleUsersQueries.isLoading ? (
               <div style={{ fontSize: 12, color: C.textTertiary }}>Loading...</div>
-            ) : userAssignedRoles.length === 0 ? (
-              <div style={{ fontSize: 12, color: C.textTertiary }}>
-                No custom roles assigned
-              </div>
             ) : (
               <div>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  fontSize: 12, padding: '4px 10px', borderRadius: 14,
+                  background: '#f3f4f6', color: '#4b5563',
+                  margin: '2px 6px 2px 0', fontFamily: C.font,
+                }}>
+                  {ROLE_LABELS[selectedUser.role] || selectedUser.role}
+                </span>
                 {userAssignedRoles.map((r: any) => (
                   <span key={r.id} style={{
                     display: 'inline-flex', alignItems: 'center', gap: 6,
                     fontSize: 12, padding: '4px 10px', borderRadius: 14,
-                    background: '#f0fdf4', color: '#166534',
+                    background: '#ccfbf1', color: '#0d9488',
                     margin: '2px 6px 2px 0', fontFamily: C.font,
                   }}>
                     {r.name}
@@ -468,12 +590,18 @@ function UserRoleAssignmentSection({
                       onClick={() => removeMutation.mutate(r.id)}
                       disabled={removeMutation.isPending}
                       style={{ border: 'none', background: 'transparent',
-                        cursor: 'pointer', fontSize: 12, color: '#166534',
+                        cursor: 'pointer', fontSize: 12, color: '#0d9488',
                         padding: 0, lineHeight: 1 }}>
                       ✕
                     </button>
                   </span>
                 ))}
+                {userAssignedRoles.length === 0 && (
+                  <span style={{ fontSize: 12, color: C.textTertiary,
+                    marginLeft: 4 }}>
+                    No custom roles assigned
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -688,54 +816,18 @@ export default function RoleManagementPage() {
               <div style={{ display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
                 gap: 10 }}>
-                {customRoles.map((r: any) => {
-                  const userCount = r.user_count ?? 0;
-                  const canDelete = userCount === 0;
-                  return (
-                    <div key={r.id} style={S.card}>
-                      <div style={{ marginBottom: 10 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14, color: C.text }}>
-                          {r.name}
-                        </div>
-                        {r.description && (
-                          <div style={{ fontSize: 12, color: C.textSecond, marginTop: 2 }}>
-                            {r.description}
-                          </div>
-                        )}
-                      </div>
-                      <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-                        <span style={{ fontSize: 12, color: C.textSecond }}>
-                          {r.permissions.length} permission{r.permissions.length !== 1 ? 's' : ''}
-                        </span>
-                        <span style={{ fontSize: 12, color: C.textSecond }}>
-                          {userCount} user{userCount !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', gap: 6,
-                        paddingTop: 10, borderTop: `1px solid ${C.borderLight}` }}>
-                        <button onClick={() => setEditing(r)} style={S.btnSm}>
-                          Edit
-                        </button>
-                        <span title={canDelete
-                          ? ''
-                          : 'Cannot delete: users are still assigned to this role'}>
-                          <button
-                            onClick={() => {
-                              if (window.confirm(`Delete role "${r.name}"?`))
-                                deleteMutation.mutate(r.id);
-                            }}
-                            disabled={!canDelete || deleteMutation.isPending}
-                            style={{ ...S.btnSm,
-                              color: canDelete ? C.textDanger : C.textTertiary,
-                              cursor: canDelete ? 'pointer' : 'not-allowed',
-                              opacity: canDelete ? 1 : 0.6 }}>
-                            Delete
-                          </button>
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
+                {customRoles.map((r: any) => (
+                  <CustomRoleCard
+                    key={r.id}
+                    role={r}
+                    onEdit={() => setEditing(r)}
+                    onDelete={() => {
+                      if (window.confirm(`Delete role "${r.name}"?`))
+                        deleteMutation.mutate(r.id);
+                    }}
+                    deleting={deleteMutation.isPending}
+                  />
+                ))}
               </div>
             )}
           </>

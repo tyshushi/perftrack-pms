@@ -197,7 +197,14 @@ export default function Layout() {
           )}
 
           {/* ── ADMIN FUNCTIONS (toggleable header) ── */}
-          {isHrAdmin && (
+          {(isHrAdmin
+            || hasPermission('view_employees')
+            || hasPermission('manage_cycles')
+            || hasPermission('view_all_scorecards')
+            || hasPermission('manage_groups')
+            || hasPermission('manage_templates')
+            || hasPermission('manage_weight_rules')
+            || hasPermission('manage_roles')) && (
             <>
               <div style={divider} />
               <div
@@ -209,16 +216,22 @@ export default function Layout() {
               </div>
               {expanded.has('admin-functions') && (
                 <>
-                  <NavLink to="/admin/cycles" style={({ isActive }) => l1LinkStyle(isActive)} end>
-                    Performance Cycle
-                  </NavLink>
-                  <NavLink to="/admin/users" style={({ isActive }) => l1LinkStyle(isActive)} end>
-                    User Management
-                  </NavLink>
-                  <NavLink to="/admin/groups" style={({ isActive }) => l1LinkStyle(isActive)} end>
-                    Groups Management
-                  </NavLink>
-                  {hasPermission('manage_weight_rules') && (
+                  {(isHrAdmin || hasPermission('manage_cycles')) && (
+                    <NavLink to="/admin/cycles" style={({ isActive }) => l1LinkStyle(isActive)} end>
+                      Performance Cycle
+                    </NavLink>
+                  )}
+                  {(isHrAdmin || hasPermission('view_employees')) && (
+                    <NavLink to="/admin/users" style={({ isActive }) => l1LinkStyle(isActive)} end>
+                      User Management
+                    </NavLink>
+                  )}
+                  {(isHrAdmin || hasPermission('manage_groups')) && (
+                    <NavLink to="/admin/groups" style={({ isActive }) => l1LinkStyle(isActive)} end>
+                      Groups Management
+                    </NavLink>
+                  )}
+                  {(isHrAdmin || hasPermission('manage_weight_rules')) && (
                     <NavLink to="/admin/weight-rules" style={({ isActive }) => l1LinkStyle(isActive)} end>
                       Weight Rules
                     </NavLink>
@@ -230,14 +243,18 @@ export default function Layout() {
                   )}
 
                   {/* KPI Setup sub-group */}
-                  <div style={groupRow} onClick={() => toggle('kpi-setup')}>
-                    <span>KPI Setup</span>
-                    <span style={arrowStyle}>{expanded.has('kpi-setup') ? '▼' : '▶'}</span>
-                  </div>
-                  {expanded.has('kpi-setup') && (
-                    <NavLink to="/admin/kpi-setup/templates" style={({ isActive }) => l2LinkStyle(isActive)} end>
-                      Templates & Cascade
-                    </NavLink>
+                  {(isHrAdmin || hasPermission('manage_templates')) && (
+                    <>
+                      <div style={groupRow} onClick={() => toggle('kpi-setup')}>
+                        <span>KPI Setup</span>
+                        <span style={arrowStyle}>{expanded.has('kpi-setup') ? '▼' : '▶'}</span>
+                      </div>
+                      {expanded.has('kpi-setup') && (
+                        <NavLink to="/admin/kpi-setup/templates" style={({ isActive }) => l2LinkStyle(isActive)} end>
+                          Templates & Cascade
+                        </NavLink>
+                      )}
+                    </>
                   )}
                 </>
               )}
