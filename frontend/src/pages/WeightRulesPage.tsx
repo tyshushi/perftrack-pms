@@ -285,6 +285,7 @@ export default function WeightRulesPage() {
   }
 
   function addRule() {
+    setSaveError('');
     setRules(p => [...p, {
       label: 'New Rule', target_type: 'everyone',
       group_id: null, hierarchy: null, user_category: null,
@@ -300,14 +301,17 @@ export default function WeightRulesPage() {
   }
 
   function removeRule(i: number) {
+    setSaveError('');
     setRules(p => p.filter((_, j) => j !== i));
   }
 
   function updateRule(i: number, field: string, value: any) {
+    setSaveError('');
     setRules(p => p.map((r, j) => j === i ? { ...r, [field]: value } : r));
   }
 
   function updateDim(ruleIdx: number, dim: string, field: 'min' | 'max', value: number) {
+    setSaveError('');
     setRules(p => p.map((r, j) => j === ruleIdx ? {
       ...r,
       dimensions: { ...r.dimensions, [dim]: { ...r.dimensions[dim], [field]: value } },
@@ -324,6 +328,7 @@ export default function WeightRulesPage() {
   }
 
   function setTargetType(i: number, type: string) {
+    setSaveError('');
     setRules(p => p.map((r, j) => j !== i ? r : {
       ...r, target_type: type,
       group_id: null, hierarchy: null, user_category: null,
@@ -401,7 +406,7 @@ export default function WeightRulesPage() {
               <input type="number" min={0} max={100}
                 style={{ ...S.input, width: 90 }}
                 value={globalMin}
-                onChange={e => setGlobalMin(Number(e.target.value))} />
+                onChange={e => { setSaveError(''); setGlobalMin(Number(e.target.value)); }} />
             </div>
           </div>
 
@@ -642,8 +647,16 @@ export default function WeightRulesPage() {
               {saveMutation.isPending ? 'Saving...' : 'Save All Rules'}
             </button>
             {saved && <span style={{ fontSize: 12, color: '#166534', fontWeight: 500 }}>✓ Saved</span>}
-            {saveError && <span style={{ fontSize: 12, color: '#991b1b' }}>{saveError}</span>}
           </div>
+          {saveError && (
+            <div style={{
+              marginTop: 10, padding: '10px 12px',
+              background: '#fee2e2', border: `1px solid #fca5a5`,
+              borderRadius: 8, fontSize: 13, color: '#991b1b',
+            }}>
+              {saveError}
+            </div>
+          )}
         </div>
       )}
     </div>

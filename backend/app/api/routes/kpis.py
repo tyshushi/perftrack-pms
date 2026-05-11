@@ -43,6 +43,22 @@ async def get_cycle_chain(db: AsyncSession, cycle_id: UUID) -> list:
     return normalise_approval_chain(cycle.approval_chain)
 
 
+async def _get_global_min_weight(db: AsyncSession, cycle_id: UUID) -> int:
+    """Fetch the global minimum weight per KPI from the GLOBAL_MIN sentinel rule.
+    Stored in fin_min on a WeightRule whose label == 'GLOBAL_MIN'. Returns 0 if absent.
+    """
+    res = await db.execute(
+        select(WeightRule).where(
+            WeightRule.cycle_id == cycle_id,
+            WeightRule.label    == "GLOBAL_MIN",
+        ).limit(1)
+    )
+    rule = res.scalar_one_or_none()
+    if rule is None:
+        return 0
+    return int(rule.fin_min or 0)
+
+
 # ── Schemas ────────────────────────────────────────────────────────────────
 
 class KpiCreate(BaseModel):
@@ -428,6 +444,14 @@ async def create_kpi(
     db:           AsyncSession = Depends(get_db),
     current_user: User         = Depends(get_current_user),
 ):
+    global_min = await _get_global_min_weight(db, body.cycle_id)
+    if global_min and body.weight < global_min:
+        raise HTTPException(
+            400,
+            f"Minimum weight per KPI is {global_min}%. "
+            f"Cannot create a KPI with {body.weight}% weight.",
+        )
+
     kpi_type = (
         "FIXED" if current_user.role in
         ["HR_ADMIN", "SUPER_ADMIN", "MANAGER", "MGR2", "HOD"]
@@ -463,6 +487,14 @@ async def cascade_kpi(
         "HR_ADMIN", "SUPER_ADMIN", "MANAGER", "MGR2", "HOD"
     ]:
         raise HTTPException(403, "Not authorised to cascade KPIs")
+
+    global_min = await _get_global_min_weight(db, body.cycle_id)
+    if global_min and body.weight < global_min:
+        raise HTTPException(
+            400,
+            f"Minimum weight per KPI is {global_min}%. "
+            f"Cannot create a KPI with {body.weight}% weight.",
+        )
 
     # Check weight rule
     wr = await db.execute(
@@ -688,6 +720,14 @@ async def cascade_template(
     if not t:
         raise HTTPException(404, "Template not found")
 
+    global_min = await _get_global_min_weight(db, t.cycle_id)
+    if global_min and (t.weight or 0) < global_min:
+        raise HTTPException(
+            400,
+            f"Minimum weight per KPI is {global_min}%. "
+            f"Cannot create a KPI with {t.weight}% weight.",
+        )
+
     # Match employees: group > department > job_grade > everyone
     if t.department_id:
         q = select(User).where(
@@ -809,7 +849,12 @@ async def applicable_rule(
         if not is_manager_of:
             raise HTTPException(403, "Not authorised to view this employee's rule")
 
-    return await get_applicable_rule(employee_id, cycle_id, db)
+    rule = await get_applicable_rule(employee_id, cycle_id, db)
+    global_min = await _get_global_min_weight(db, cycle_id)
+    if rule is None:
+        return {"global_min_weight": global_min} if global_min else None
+    rule["global_min_weight"] = global_min
+    return rule
 
 
 def _employees_matched_by_rule_payload(
