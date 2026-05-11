@@ -54,6 +54,7 @@ const R_LABELS = ['', 'Unsatisfactory', 'Needs Improvement',
 
 export default function ManagerEvalPage() {
   const { user } = useAuthStore();
+  const isHrAdmin = useAuthStore(s => s.isHrAdmin());
   const qc = useQueryClient();
   const [cycleId, setCycleId]           = useState('');
   const [selectedReport, setReport]     = useState<any>(null);
@@ -87,7 +88,7 @@ export default function ManagerEvalPage() {
     if (report.reviewing_manager_id === uid) statuses.push('PENDING_RM');
     if (report.hod_id               === uid) statuses.push('PENDING_HOD');
     // HR Admin can act on all
-    if (useAuthStore.getState().isHrAdmin()) {
+    if (isHrAdmin) {
       statuses.push('PENDING_DM', 'PENDING_RM', 'PENDING_HOD');
     }
     return [...new Set(statuses)];
@@ -165,7 +166,7 @@ export default function ManagerEvalPage() {
             {selectedReport.direct_manager_id    === user?.id && <span style={S.roleBadge('#0369a1')}>Direct Manager</span>}
             {selectedReport.reviewing_manager_id === user?.id && <span style={S.roleBadge('#6d28d9')}>Reviewing Manager</span>}
             {selectedReport.hod_id               === user?.id && <span style={S.roleBadge('#92400e')}>HOD</span>}
-            {useAuthStore.getState().isHrAdmin() && <span style={S.roleBadge('#166534')}>HR Admin (full access)</span>}
+            {isHrAdmin && <span style={S.roleBadge('#166534')}>HR Admin (full access)</span>}
           </div>
 
           {/* Tabs */}

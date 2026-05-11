@@ -447,7 +447,7 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
   const [levels,      setLevels]      = useState(3);
   const [saveOk,      setSaveOk]      = useState(false);
 
-  const isHrAdmin = useAuthStore.getState().isHrAdmin();
+  const isHrAdmin = useAuthStore(s => s.isHrAdmin());
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['user-profile', user.id],

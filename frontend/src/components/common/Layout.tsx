@@ -32,11 +32,11 @@ export default function Layout() {
   const { user, logout } = useAuthStore();
   const role = user?.role || '';
   const location = useLocation();
-  const isManager = useAuthStore.getState().isManager();
-  const isHod = useAuthStore.getState().isHod();
-  const isHrAdmin = useAuthStore.getState().isHrAdmin();
-  const isSuperAdmin = useAuthStore.getState().isSuperAdmin();
-  const hasPermission = useAuthStore.getState().hasPermission;
+  const isManager    = useAuthStore(s => s.isManager());
+  const isHod        = useAuthStore(s => s.isHod());
+  const isHrAdmin    = useAuthStore(s => s.isHrAdmin());
+  const isSuperAdmin = useAuthStore(s => s.isSuperAdmin());
+  const hasPermission = useAuthStore(s => s.hasPermission);
   const showManagerSection = isManager || isHod || isHrAdmin;
 
   const [expanded, setExpanded] = useState<Set<string>>(() =>

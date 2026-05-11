@@ -678,7 +678,7 @@ async def import_confirm(
 async def import_reporting_lines(
     file:         UploadFile   = File(...),
     db:           AsyncSession = Depends(get_db),
-    _:            User         = Depends(require_hr_admin),
+    _:            User         = Depends(require_permission("manage_reporting_lines")),
 ):
     """
     Upload a CSV with reporting line assignments only.
