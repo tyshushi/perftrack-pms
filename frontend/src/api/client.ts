@@ -61,6 +61,8 @@ export const kpisApi = {
   adjustWeight:    (id: string, weight: number)     => api.patch(`/kpis/${id}/weight`, { weight }),
   getWeightRules:  (cycleId: string)                => api.get(`/kpis/weight-rules/${cycleId}`),
   setWeightRules:  (cycleId: string, rules: any[])  => api.post(`/kpis/weight-rules/${cycleId}`, rules),
+  getApplicableRule: (employeeId: string, cycleId: string) =>
+    api.get('/kpis/applicable-rule', { params: { employee_id: employeeId, cycle_id: cycleId } }),
   getTemplates:    (cycleId: string)                => api.get(`/kpis/templates/${cycleId}`),
   createTemplate:  (data: any)                      => api.post('/kpis/templates', data),
   deleteTemplate:  (id: string)                     => api.delete(`/kpis/templates/${id}`),
