@@ -1134,6 +1134,76 @@ async def admin_delete_scorecard(
     return {"deleted": count, "message": "Scorecard deleted"}
 
 
+class AdminMoveStageRequest(BaseModel):
+    cycle_id:     UUID
+    employee_id:  UUID
+    target_stage: str
+    comment:      str = ""
+
+
+VALID_MOVE_STAGES = {
+    "DRAFT", "PENDING_DM", "PENDING_RM", "PENDING_HOD",
+    "LOCKED", "SELF_EVAL", "SELF_EVALUATED", "REJECTED",
+}
+
+
+@router.post("/admin/move-stage")
+async def admin_move_stage(
+    body:         AdminMoveStageRequest,
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(require_permission("reset_scorecards")),
+):
+    if body.target_stage not in VALID_MOVE_STAGES:
+        raise HTTPException(
+            400,
+            f"Invalid target_stage. Must be one of: {', '.join(sorted(VALID_MOVE_STAGES))}",
+        )
+    if body.target_stage == "REJECTED" and not body.comment.strip():
+        raise HTTPException(400, "A comment is required when rejecting a scorecard")
+
+    res = await db.execute(
+        select(Kpi).where(
+            Kpi.cycle_id == body.cycle_id,
+            Kpi.user_id  == body.employee_id,
+        )
+    )
+    kpis = res.scalars().all()
+    if not kpis:
+        raise HTTPException(400, "No scorecard found for this employee in this cycle")
+
+    from app.models.user import KpiAuditLog
+
+    target = body.target_stage
+    # SELF_EVAL is a synthetic stage — it opens self-evaluation, which is
+    # triggered by KPIs being LOCKED.
+    effective_status = "LOCKED" if target == "SELF_EVAL" else target
+
+    for kpi in kpis:
+        old = kpi.status
+        if target == "DRAFT":
+            kpi.status             = "DRAFT"
+            kpi.mgr_comment        = None
+            kpi.self_rating        = None
+            kpi.actual_achievement = None
+            kpi.self_remarks       = None
+        elif target == "REJECTED":
+            kpi.status      = "REJECTED"
+            kpi.mgr_comment = body.comment
+        else:
+            kpi.status = effective_status
+
+        db.add(KpiAuditLog(
+            kpi_id=kpi.id,
+            actor_id=current_user.id,
+            from_status=old,
+            to_status=target,
+            comment=body.comment or None,
+        ))
+
+    await db.flush()
+    return {"moved": len(kpis), "message": f"Scorecard moved to {target}"}
+
+
 class AdminAllScorecardsRequest(BaseModel):
     cycle_id: UUID
 

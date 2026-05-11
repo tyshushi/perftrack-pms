@@ -203,29 +203,62 @@ function ManagerSlot({
 // ── Scorecard status helpers ────────────────────────────────────────────────
 
 function computeScorecardStatus(kpis: any[]): { label: string; bg: string; color: string } {
-  if (!kpis.length) return { label: 'No KPIs', bg: C.bgTertiary, color: C.textTertiary };
-  const statuses = new Set(kpis.map((k: any) => k.status));
-  if ([...statuses].every(s => s === 'LOCKED'))
-    return { label: 'Locked', bg: '#e0f2fe', color: '#0c4a6e' };
-  if ([...statuses].every(s => s === 'LOCKED' || s === 'APPROVED'))
-    return { label: 'Approved', bg: '#dcfce7', color: '#166534' };
-  if ([...statuses].some(s => s === 'PENDING_DM' || s === 'PENDING_RM' || s === 'PENDING_HOD'))
-    return { label: 'Pending Approval', bg: '#fef9c3', color: '#854d0e' };
-  if ([...statuses].some(s => s === 'REJECTED'))
-    return { label: 'Draft (Rejected)', bg: '#fee2e2', color: '#991b1b' };
-  return { label: 'Draft', bg: '#f5f5f3', color: '#555' };
+  if (!kpis.length)
+    return { label: 'No Scorecard', bg: C.bgTertiary, color: C.textTertiary };
+  const statuses = kpis.map((k: any) => k.status);
+  if (statuses.some(s => s === 'REJECTED'))
+    return { label: 'Rejected', bg: '#fee2e2', color: '#991b1b' };
+  if (statuses.some(s => s === 'SELF_EVALUATED'))
+    return { label: 'Self Evaluation Submitted', bg: '#ede9fe', color: '#5b21b6' };
+  if (statuses.some(s => s === 'PENDING_HOD'))
+    return { label: 'Pending HOD Approval', bg: '#fef3c7', color: '#92400e' };
+  if (statuses.some(s => s === 'PENDING_RM'))
+    return { label: 'Pending Reviewing Manager Approval', bg: '#fef9c3', color: '#854d0e' };
+  if (statuses.some(s => s === 'PENDING_DM'))
+    return { label: 'Pending Direct Manager Approval', bg: '#fef9c3', color: '#854d0e' };
+  if (statuses.every(s => s === 'LOCKED'))
+    return { label: 'Approved & Locked', bg: '#dcfce7', color: '#166534' };
+  if (statuses.every(s => s === 'DRAFT'))
+    return { label: 'Draft', bg: C.bgTertiary, color: C.textSecond };
+  return { label: 'Mixed', bg: C.bgTertiary, color: C.textSecond };
 }
+
+// ── Stage action options ────────────────────────────────────────────────────
+
+interface StageAction {
+  key:        string;
+  label:      string;
+  target:     string;          // value sent to backend
+  needsComment?: boolean;
+  superOnly?: boolean;
+  isDelete?:  boolean;
+}
+
+const STAGE_ACTIONS: StageAction[] = [
+  { key: 'draft',         label: 'Reset to Draft',                       target: 'DRAFT' },
+  { key: 'submit_dm',     label: 'Submit for DM Approval',               target: 'PENDING_DM' },
+  { key: 'force_dm',      label: 'Force DM Approve (→ RM)',              target: 'PENDING_RM' },
+  { key: 'force_rm',      label: 'Force RM Approve (→ HOD)',             target: 'PENDING_HOD' },
+  { key: 'force_hod',     label: 'Force HOD Approve (→ Locked)',         target: 'LOCKED' },
+  { key: 'force_lock',    label: 'Force Lock',                           target: 'LOCKED' },
+  { key: 'open_self',     label: 'Open for Self Evaluation',             target: 'SELF_EVAL' },
+  { key: 'self_complete', label: 'Mark Self Eval Complete',              target: 'SELF_EVALUATED' },
+  { key: 'reject',        label: 'Reject Scorecard',                     target: 'REJECTED', needsComment: true },
+  { key: 'delete',        label: 'Delete Scorecard',                     target: '__DELETE__', superOnly: true, isDelete: true },
+];
 
 // ── Scorecard Management section ───────────────────────────────────────────
 
 function ScorecardManagement({ employeeId, employeeName }: { employeeId: string; employeeName: string }) {
   const qc = useQueryClient();
-  const [cycleId,      setCycleId]      = useState('');
-  const [resetConfirm, setResetConfirm] = useState(false);
-  // delete flow: null → 'warn1' → 'warn2'
-  const [deleteStep,   setDeleteStep]   = useState<null | 'warn1' | 'warn2'>(null);
-  const [deleteInput,  setDeleteInput]  = useState('');
-  const [actionMsg,    setActionMsg]    = useState<{ ok: boolean; text: string } | null>(null);
+  const isSuperAdmin = useAuthStore(s => s.isSuperAdmin());
+
+  const [cycleId,     setCycleId]     = useState('');
+  const [actionKey,   setActionKey]   = useState('');
+  const [comment,     setComment]     = useState('');
+  const [deleteStep,  setDeleteStep]  = useState<null | 'warn1' | 'warn2'>(null);
+  const [deleteInput, setDeleteInput] = useState('');
+  const [actionMsg,   setActionMsg]   = useState<{ ok: boolean; text: string } | null>(null);
 
   const { data: cycles = [] } = useQuery({
     queryKey: ['cycles'],
@@ -249,21 +282,35 @@ function ScorecardManagement({ employeeId, employeeName }: { employeeId: string;
 
   const scorecardStatus = computeScorecardStatus(kpis as any[]);
 
+  const selectedAction = STAGE_ACTIONS.find(a => a.key === actionKey) ?? null;
+  const visibleActions = STAGE_ACTIONS.filter(a => !a.superOnly || isSuperAdmin);
+
   function showMsg(ok: boolean, text: string) {
     setActionMsg({ ok, text });
     setTimeout(() => setActionMsg(null), 4000);
   }
 
-  const resetMutation = useMutation({
-    mutationFn: () => kpisApi.resetScorecard(cycleId, employeeId),
+  function resetForm() {
+    setActionKey('');
+    setComment('');
+    setDeleteStep(null);
+    setDeleteInput('');
+  }
+
+  const moveMutation = useMutation({
+    mutationFn: () => kpisApi.moveStage({
+      cycle_id:     cycleId,
+      employee_id:  employeeId,
+      target_stage: selectedAction!.target,
+      comment:      comment.trim(),
+    }),
     onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ['kpis-admin', cycleId, employeeId] });
-      setResetConfirm(false);
-      showMsg(true, res.data?.message ?? 'Scorecard reset to draft');
+      resetForm();
+      showMsg(true, res.data?.message ?? 'Scorecard moved');
     },
     onError: (err: any) => {
-      setResetConfirm(false);
-      showMsg(false, err?.response?.data?.detail ?? 'Reset failed');
+      showMsg(false, err?.response?.data?.detail ?? 'Failed to move scorecard');
     },
   });
 
@@ -271,16 +318,23 @@ function ScorecardManagement({ employeeId, employeeName }: { employeeId: string;
     mutationFn: () => kpisApi.deleteScorecard(cycleId, employeeId),
     onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ['kpis-admin', cycleId, employeeId] });
-      setDeleteStep(null);
-      setDeleteInput('');
+      resetForm();
       showMsg(true, res.data?.message ?? 'Scorecard deleted');
     },
     onError: (err: any) => {
-      setDeleteStep(null);
-      setDeleteInput('');
+      resetForm();
       showMsg(false, err?.response?.data?.detail ?? 'Delete failed');
     },
   });
+
+  const hasScorecard      = (kpis as any[]).length > 0;
+  const commentRequired   = !!selectedAction?.needsComment;
+  const isDeleteSelected  = !!selectedAction?.isDelete;
+  const moveDisabled      =
+    !selectedAction ||
+    !hasScorecard ||
+    moveMutation.isPending ||
+    (commentRequired && !comment.trim());
 
   return (
     <div style={{ marginTop: 24, paddingTop: 20, borderTop: `1px solid ${C.borderLight}` }}>
@@ -293,8 +347,8 @@ function ScorecardManagement({ employeeId, employeeName }: { employeeId: string;
         </label>
         <select
           value={cycleId}
-          onChange={e => { setCycleId(e.target.value); setResetConfirm(false); setDeleteStep(null); setDeleteInput(''); setActionMsg(null); }}
-          style={{ width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.bg, color: cycleId ? C.text : C.textTertiary, fontFamily: C.font, outline: 'none', cursor: 'pointer' }}>
+          onChange={e => { setCycleId(e.target.value); resetForm(); setActionMsg(null); }}
+          style={S.input}>
           <option value="">Select a cycle…</option>
           {(sortedCycles as any[]).map((c: any) => (
             <option key={c.id} value={c.id}>{c.name}</option>
@@ -308,7 +362,7 @@ function ScorecardManagement({ employeeId, employeeName }: { employeeId: string;
           {kpisLoading ? (
             <div style={{ fontSize: 12, color: C.textTertiary }}>Loading status…</div>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12, color: C.textSecond }}>Current status:</span>
               <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px', borderRadius: 10, background: scorecardStatus.bg, color: scorecardStatus.color }}>
                 {scorecardStatus.label}
@@ -328,105 +382,114 @@ function ScorecardManagement({ employeeId, employeeName }: { employeeId: string;
         </div>
       )}
 
-      {cycleId && (kpis as any[]).length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {cycleId && !kpisLoading && !hasScorecard && (
+        <div style={{ fontSize: 12, color: C.textTertiary, fontStyle: 'italic' }}>
+          No KPIs found for this cycle.
+        </div>
+      )}
 
-          {/* Reset to Draft */}
-          {!resetConfirm && deleteStep === null && (
-            <button
-              onClick={() => setResetConfirm(true)}
-              style={{ width: '100%', padding: '8px 14px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font, textAlign: 'left' }}>
-              Reset to Draft
-            </button>
-          )}
+      {cycleId && hasScorecard && deleteStep === null && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Move to Stage dropdown */}
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 500, color: C.textSecond, display: 'block', marginBottom: 4 }}>
+              Move to Stage
+            </label>
+            <select
+              value={actionKey}
+              onChange={e => {
+                const k = e.target.value;
+                setActionKey(k);
+                setComment('');
+                const a = STAGE_ACTIONS.find(x => x.key === k);
+                if (a?.isDelete) setDeleteStep('warn1');
+              }}
+              style={S.input}>
+              <option value="">Select a stage action…</option>
+              {visibleActions.map(a => (
+                <option key={a.key} value={a.key}>{a.label}</option>
+              ))}
+            </select>
+          </div>
 
-          {resetConfirm && (
-            <div style={{ padding: 12, background: C.bgWarning, borderRadius: 8, border: `1px solid #fde68a` }}>
-              <div style={{ fontSize: 12, color: '#78350f', marginBottom: 10, fontWeight: 500 }}>
-                Reset {employeeName}'s scorecard to Draft? This cannot be undone.
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={() => resetMutation.mutate()}
-                  disabled={resetMutation.isPending}
-                  style={{ padding: '7px 14px', border: 'none', borderRadius: 8, background: '#92400e', color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: C.font, opacity: resetMutation.isPending ? 0.6 : 1 }}>
-                  {resetMutation.isPending ? 'Resetting…' : 'Confirm Reset'}
-                </button>
-                <button
-                  onClick={() => setResetConfirm(false)}
-                  style={{ padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font }}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Delete Scorecard */}
-          {!resetConfirm && deleteStep === null && (
-            <button
-              onClick={() => setDeleteStep('warn1')}
-              style={{ width: '100%', padding: '8px 14px', border: `1px solid #fca5a5`, borderRadius: 8, background: C.bg, color: '#991b1b', fontSize: 12, cursor: 'pointer', fontFamily: C.font, textAlign: 'left' }}>
-              Delete Scorecard
-            </button>
-          )}
-
-          {deleteStep === 'warn1' && (
-            <div style={{ padding: 12, background: '#fee2e2', borderRadius: 8, border: `1px solid #fca5a5` }}>
-              <div style={{ fontSize: 12, color: '#991b1b', marginBottom: 10, fontWeight: 500 }}>
-                Are you sure you want to delete {employeeName}'s scorecard
-                {selectedCycle ? ` for ${selectedCycle.name}` : ''}?
-                All KPIs will be permanently removed.
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={() => { setDeleteStep('warn2'); setDeleteInput(''); }}
-                  style={{ padding: '7px 14px', border: 'none', borderRadius: 8, background: '#991b1b', color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: C.font }}>
-                  Yes, continue
-                </button>
-                <button
-                  onClick={() => setDeleteStep(null)}
-                  style={{ padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font }}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-
-          {deleteStep === 'warn2' && (
-            <div style={{ padding: 12, background: '#fee2e2', borderRadius: 8, border: `2px solid #991b1b` }}>
-              <div style={{ fontSize: 12, color: '#991b1b', marginBottom: 4, fontWeight: 700 }}>
-                This action is PERMANENT and cannot be undone.
-              </div>
-              <div style={{ fontSize: 12, color: '#991b1b', marginBottom: 10 }}>
-                Type <strong>DELETE</strong> to confirm.
-              </div>
-              <input
-                value={deleteInput}
-                onChange={e => setDeleteInput(e.target.value)}
-                placeholder="Type DELETE"
-                style={{ width: '100%', padding: '7px 10px', border: `1px solid #fca5a5`, borderRadius: 8, fontSize: 13, background: C.bg, color: C.text, fontFamily: C.font, outline: 'none', marginBottom: 10, boxSizing: 'border-box' }}
+          {/* Comment field */}
+          {selectedAction && !isDeleteSelected && (
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 500, color: C.textSecond, display: 'block', marginBottom: 4 }}>
+                Comment {commentRequired ? <span style={{ color: '#991b1b' }}>*</span> : <span style={{ color: C.textTertiary }}>(optional)</span>}
+              </label>
+              <textarea
+                value={comment}
+                onChange={e => setComment(e.target.value)}
+                placeholder={commentRequired ? 'Reason for this action (required)' : 'Optional comment recorded in audit log'}
+                rows={3}
+                style={{ ...S.input, resize: 'vertical', minHeight: 60 }}
               />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={() => deleteMutation.mutate()}
-                  disabled={deleteInput !== 'DELETE' || deleteMutation.isPending}
-                  style={{ padding: '7px 14px', border: 'none', borderRadius: 8, background: '#991b1b', color: '#ffffff', fontSize: 12, fontWeight: 500, fontFamily: C.font, cursor: deleteInput !== 'DELETE' ? 'not-allowed' : 'pointer', opacity: deleteInput !== 'DELETE' ? 0.4 : 1 }}>
-                  {deleteMutation.isPending ? 'Deleting…' : 'Delete Permanently'}
-                </button>
-                <button
-                  onClick={() => { setDeleteStep(null); setDeleteInput(''); }}
-                  style={{ padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font }}>
-                  Cancel
-                </button>
-              </div>
             </div>
+          )}
+
+          {/* Move Stage button */}
+          {selectedAction && !isDeleteSelected && (
+            <button
+              onClick={() => moveMutation.mutate()}
+              disabled={moveDisabled}
+              style={{ ...S.btnPrimary, opacity: moveDisabled ? 0.5 : 1, cursor: moveDisabled ? 'not-allowed' : 'pointer' }}>
+              {moveMutation.isPending ? 'Moving…' : 'Move Stage'}
+            </button>
           )}
         </div>
       )}
 
-      {cycleId && !kpisLoading && (kpis as any[]).length === 0 && (
-        <div style={{ fontSize: 12, color: C.textTertiary, fontStyle: 'italic' }}>
-          No KPIs found for this cycle.
+      {/* Delete double confirmation */}
+      {cycleId && hasScorecard && deleteStep === 'warn1' && (
+        <div style={{ padding: 12, background: '#fee2e2', borderRadius: 8, border: `1px solid #fca5a5`, marginTop: 10 }}>
+          <div style={{ fontSize: 12, color: '#991b1b', marginBottom: 10, fontWeight: 500 }}>
+            Are you sure you want to delete {employeeName}'s scorecard
+            {selectedCycle ? ` for ${selectedCycle.name}` : ''}?
+            All KPIs will be permanently removed.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => { setDeleteStep('warn2'); setDeleteInput(''); }}
+              style={{ padding: '7px 14px', border: 'none', borderRadius: 8, background: '#991b1b', color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: C.font }}>
+              Yes, continue
+            </button>
+            <button
+              onClick={resetForm}
+              style={{ padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {cycleId && hasScorecard && deleteStep === 'warn2' && (
+        <div style={{ padding: 12, background: '#fee2e2', borderRadius: 8, border: `2px solid #991b1b`, marginTop: 10 }}>
+          <div style={{ fontSize: 12, color: '#991b1b', marginBottom: 4, fontWeight: 700 }}>
+            This action is PERMANENT and cannot be undone.
+          </div>
+          <div style={{ fontSize: 12, color: '#991b1b', marginBottom: 10 }}>
+            Type <strong>DELETE</strong> to confirm.
+          </div>
+          <input
+            value={deleteInput}
+            onChange={e => setDeleteInput(e.target.value)}
+            placeholder="Type DELETE"
+            style={{ ...S.input, border: `1px solid #fca5a5`, marginBottom: 10 }}
+          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteInput !== 'DELETE' || deleteMutation.isPending}
+              style={{ padding: '7px 14px', border: 'none', borderRadius: 8, background: '#991b1b', color: '#ffffff', fontSize: 12, fontWeight: 500, fontFamily: C.font, cursor: deleteInput !== 'DELETE' ? 'not-allowed' : 'pointer', opacity: deleteInput !== 'DELETE' ? 0.4 : 1 }}>
+              {deleteMutation.isPending ? 'Deleting…' : 'Delete Permanently'}
+            </button>
+            <button
+              onClick={resetForm}
+              style={{ padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font }}>
+              Cancel
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -447,7 +510,10 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
   const [levels,      setLevels]      = useState(3);
   const [saveOk,      setSaveOk]      = useState(false);
 
-  const isHrAdmin = useAuthStore(s => s.isHrAdmin());
+  const isHrAdmin     = useAuthStore(s => s.isHrAdmin());
+  const isSuperAdmin  = useAuthStore(s => s.isSuperAdmin());
+  const hasPermission = useAuthStore(s => s.hasPermission);
+  const canManageScorecard = isHrAdmin || isSuperAdmin || hasPermission('reset_scorecards');
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['user-profile', user.id],
@@ -738,8 +804,8 @@ export default function UserProfileDrawer({ user, users, depts, onClose }: Props
                 </div>
               )}
 
-              {/* Scorecard Management — HR Admin only */}
-              {isHrAdmin && (
+              {/* Scorecard Management — HR Admin, Super Admin, or reset_scorecards perm */}
+              {canManageScorecard && (
                 <ScorecardManagement
                   employeeId={user.id}
                   employeeName={user.full_name}
@@ -757,5 +823,16 @@ const S: Record<string, any> = {
   sectionLabel: {
     fontSize: 11, fontWeight: 600, color: C.textSecond,
     textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8,
+  },
+  input: {
+    width: '100%', padding: '8px 10px',
+    border: `1px solid ${C.border}`, borderRadius: 8,
+    fontSize: 13, background: C.bg, color: C.text,
+    fontFamily: C.font, outline: 'none', boxSizing: 'border-box',
+  },
+  btnPrimary: {
+    width: '100%', padding: '9px', border: 'none', borderRadius: 8,
+    background: C.text, color: '#ffffff', fontSize: 13, fontWeight: 500,
+    fontFamily: C.font, cursor: 'pointer',
   },
 };

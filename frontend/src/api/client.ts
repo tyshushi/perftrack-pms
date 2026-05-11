@@ -71,6 +71,7 @@ export const kpisApi = {
   reviewScorecard:  (data: any)                      => api.post('/kpis/review-scorecard', data),
   resetScorecard:   (cycleId: string, employeeId: string) =>
     api.post('/kpis/admin/reset-scorecard', { cycle_id: cycleId, employee_id: employeeId }),
+  moveStage:        (data: any) => api.post('/kpis/admin/move-stage', data),
   deleteScorecard:  (cycleId: string, employeeId: string) =>
     api.delete('/kpis/admin/delete-scorecard', { data: { cycle_id: cycleId, employee_id: employeeId } }),
   resetAllScorecards:  (cycleId: string) =>
