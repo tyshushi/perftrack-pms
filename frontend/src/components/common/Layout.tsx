@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore, ROLE_LABELS } from '../../store/auth';
+import { settingsApi } from '../../api/client';
 
 const C = {
   bg:           '#ffffff',
@@ -38,6 +40,15 @@ export default function Layout() {
   const isSuperAdmin = useAuthStore(s => s.isSuperAdmin());
   const hasPermission = useAuthStore(s => s.hasPermission);
   const showManagerSection = isManager || isHod || isHrAdmin;
+
+  const { data: systemSettings } = useQuery({
+    queryKey: ['system-settings'],
+    queryFn:  () => settingsApi.list().then(r => r.data),
+  });
+  const managerCascadeEnabled =
+    (systemSettings as any)?.manager_cascade_enabled?.value !== 'false';
+  const showQuickCascade =
+    isHrAdmin || isSuperAdmin || (isManager && managerCascadeEnabled);
 
   const [expanded, setExpanded] = useState<Set<string>>(() =>
     getAutoExpanded(location.pathname)
@@ -178,9 +189,11 @@ export default function Layout() {
                   <NavLink to="/tray/team-eval" style={({ isActive }) => l2LinkStyle(isActive)} end>
                     Team Evaluation
                   </NavLink>
-                  <NavLink to="/tray/cascade" style={({ isActive }) => l2LinkStyle(isActive)} end>
-                    Quick Cascade
-                  </NavLink>
+                  {showQuickCascade && (
+                    <NavLink to="/tray/cascade" style={({ isActive }) => l2LinkStyle(isActive)} end>
+                      Quick Cascade
+                    </NavLink>
+                  )}
                 </>
               )}
             </>

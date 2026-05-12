@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { useAuthStore } from './store/auth';
+import { settingsApi } from './api/client';
 import LoginPage from './pages/LoginPage';
 import Layout from './components/common/Layout';
 import KpiSettingPage from './pages/KpiSettingPage';
@@ -43,6 +44,21 @@ function RequireSuperAdmin({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RequireManagerCascade({ children }: { children: React.ReactNode }) {
+  const isHrAdmin    = useAuthStore(s => s.isHrAdmin());
+  const isSuperAdmin = useAuthStore(s => s.isSuperAdmin());
+  const { data: systemSettings, isLoading } = useQuery({
+    queryKey: ['system-settings'],
+    queryFn:  () => settingsApi.list().then(r => r.data),
+  });
+  if (isHrAdmin || isSuperAdmin) return <>{children}</>;
+  if (isLoading) return null;
+  const managerCascadeEnabled =
+    (systemSettings as any)?.manager_cascade_enabled?.value !== 'false';
+  if (!managerCascadeEnabled) return <Navigate to="/scorecard/setting" replace />;
+  return <>{children}</>;
+}
+
 export default function App() {
   const fetchMe = useAuthStore((s) => s.fetchMe);
 
@@ -62,7 +78,7 @@ export default function App() {
             <Route path="scorecard/self-eval"      element={<SelfEvalPage />} />
             <Route path="tray/approve"             element={<RequirePermission permission={["approve_scorecards"]}><ManagerApprovalPage /></RequirePermission>} />
             <Route path="tray/team-eval"           element={<ManagerEvalPage />} />
-            <Route path="tray/cascade"             element={<RequirePermission permission={["cascade_kpis"]}><QuickCascadePage /></RequirePermission>} />
+            <Route path="tray/cascade"             element={<RequireManagerCascade><RequirePermission permission={["cascade_kpis"]}><QuickCascadePage /></RequirePermission></RequireManagerCascade>} />
             <Route path="dashboard"                element={<RequirePermission permission={["view_team_dashboard", "view_org_dashboard"]}><DashboardPage /></RequirePermission>} />
             <Route path="admin/cycles"             element={<RequirePermission permission={["view_cycles", "manage_cycles"]}><AdminCyclesPage /></RequirePermission>} />
             <Route path="admin/users"              element={<RequirePermission permission={["view_employees", "edit_employee_profiles"]}><AdminPage /></RequirePermission>} />

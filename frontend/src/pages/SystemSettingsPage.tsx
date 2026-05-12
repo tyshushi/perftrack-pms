@@ -149,6 +149,10 @@ export default function SystemSettingsPage() {
             <ToggleSwitch on={cascadeOn} onChange={setCascadeOn} />
           </div>
 
+          <div style={{ marginTop: 8, fontSize: 12, color: C.textSecond, fontStyle: 'italic' }}>
+            When disabled, the Quick Cascade option will be hidden from managers' navigation.
+          </div>
+
           <div style={{ marginTop: 12, padding: '8px 12px', background: C.bgSecondary, borderRadius: 6, fontSize: 12, color: C.textSecond }}>
             Last updated by{' '}
             <strong style={{ color: C.text }}>{cascadeMeta?.updated_by_name || '—'}</strong>
