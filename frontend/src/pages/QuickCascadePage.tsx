@@ -116,10 +116,20 @@ export default function QuickCascadePage() {
     queryFn:  () => departmentsApi.list().then(r => r.data),
   });
 
-  const { data: users = [] } = useQuery({
+  const { data: users = [], error: usersError } = useQuery({
     queryKey: ['users'],
-    queryFn:  () => usersApi.list().then(r => r.data),
+    queryFn:  () => usersApi.list().then(r => {
+      console.log('[QuickCascadePage] users fetched:', r.data);
+      return r.data;
+    }),
+    retry: (_count, err: any) => err?.response?.status !== 401,
   });
+
+  useEffect(() => {
+    if ((usersError as any)?.response?.status === 401) {
+      window.location.href = '/login';
+    }
+  }, [usersError]);
 
   const [name,         setName]         = useState('');
   const [description,  setDescription]  = useState('');
@@ -147,11 +157,18 @@ export default function QuickCascadePage() {
   const directReports = useMemo(() => {
     const base = (users as any[]).filter(u => u.id !== user?.id && u.is_active !== false);
     if (isHrAdmin) return base;
-    return base.filter((u: any) =>
+    const filtered = base.filter((u: any) =>
       u.direct_manager_id    === user?.id ||
       u.reviewing_manager_id === user?.id ||
       u.hod_id               === user?.id
     );
+    console.log('[QuickCascadePage] direct reports filter:', {
+      currentUserId: user?.id,
+      totalUsers:    (users as any[]).length,
+      baseCount:     base.length,
+      filteredCount: filtered.length,
+    });
+    return filtered;
   }, [users, user, isHrAdmin]);
 
   const filteredReports = useMemo(() => {
