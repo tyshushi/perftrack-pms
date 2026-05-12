@@ -207,7 +207,7 @@ export default function QuickCascadePage() {
         cycle_id:     cycleId,
         name, description,
         kpi_dimension: kpiDimension,
-        weight, target, measurement,
+        weight, target: '', measurement,
         employee_ids: selected,
         rating_targets: inlineTargets,
       });
