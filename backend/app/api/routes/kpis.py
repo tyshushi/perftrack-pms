@@ -533,9 +533,30 @@ async def cascade_kpi(
     db:           AsyncSession = Depends(get_db),
     current_user: User         = Depends(get_current_user),
 ):
-    if current_user.role not in [
-        "HR_ADMIN", "SUPER_ADMIN", "MANAGER", "MGR2", "HOD"
-    ]:
+    from sqlalchemy import text
+
+    # Check if user has cascade_kpis permission via custom roles
+    has_cascade_permission = current_user.role in ["HR_ADMIN", "SUPER_ADMIN", "MANAGER", "HOD"]
+
+    if not has_cascade_permission:
+        perm_check = await db.execute(text("""
+            SELECT rp.permission
+            FROM user_roles ur
+            JOIN role_permissions rp ON rp.role_id = ur.role_id
+            WHERE ur.user_id = :uid AND rp.permission = 'cascade_kpis'
+        """), {"uid": str(current_user.id)})
+        has_cascade_permission = perm_check.scalar_one_or_none() is not None
+
+    # Also check derived MANAGER role (has direct reports)
+    if not has_cascade_permission:
+        direct_count = await db.execute(text("""
+            SELECT COUNT(*) FROM users
+            WHERE is_active = true
+            AND (direct_manager_id = :uid OR reviewing_manager_id = :uid OR hod_id = :uid)
+        """), {"uid": str(current_user.id)})
+        has_cascade_permission = (direct_count.scalar() or 0) > 0
+
+    if not has_cascade_permission:
         raise HTTPException(403, "Not authorised to cascade KPIs")
 
     global_min = await _get_global_min_weight(db, body.cycle_id)
