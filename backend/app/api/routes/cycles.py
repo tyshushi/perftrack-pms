@@ -6,12 +6,12 @@ from typing import List, Optional
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from pydantic import BaseModel
 
 from app.db.session import get_db
 from app.core.security import get_current_user, require_permission
-from app.models.user import PerformanceCycle, User, IncrementBand, BellCurveTarget, RatingScale, WeightRule
+from app.models.user import PerformanceCycle, User, IncrementBand, BellCurveTarget, RatingScale, WeightRule, Kpi
 
 router = APIRouter()
 
@@ -237,6 +237,74 @@ async def set_rating_scales(
         db.add(RatingScale(cycle_id=cycle_id, **s.model_dump()))
     await db.flush()
     return {"created": len(scales)}
+
+
+@router.get("/{cycle_id}/phase-status")
+async def get_phase_status(
+    cycle_id: UUID,
+    db:       AsyncSession = Depends(get_db),
+    _:        User         = Depends(get_current_user),
+):
+    result = await db.execute(select(PerformanceCycle).where(PerformanceCycle.id == cycle_id))
+    c = result.scalar_one_or_none()
+    if not c:
+        raise HTTPException(404, "Cycle not found")
+
+    today = date.today()
+
+    def phase_info(start, end):
+        if start and today < start:
+            return {
+                "start": str(start), "end": str(end) if end else None,
+                "is_open": False, "is_late": False,
+                "message": f"This window is not yet open. Opens on {start.strftime('%d/%m/%Y')}",
+            }
+        is_late = bool(end and today > end)
+        if is_late:
+            msg = f"Window closed on {end.strftime('%d/%m/%Y')}. This will be tagged as Late Submission."
+        elif end:
+            msg = f"Open until {end.strftime('%d/%m/%Y')}"
+        else:
+            msg = "No end date set"
+        return {
+            "start": str(start) if start else None,
+            "end":   str(end)   if end   else None,
+            "is_open": not is_late,
+            "is_late": is_late,
+            "message": msg,
+        }
+
+    return {
+        "cycle_id":   str(c.id),
+        "cycle_name": c.name,
+        "status":     c.status,
+        "kpi_setting": phase_info(c.kpi_setting_start, c.kpi_setting_end),
+        "self_eval":   phase_info(c.self_eval_start,   c.self_eval_end),
+        "mgr_eval":    phase_info(c.mgr_eval_start,    c.mgr_eval_end),
+    }
+
+
+@router.delete("/{cycle_id}")
+async def delete_cycle(
+    cycle_id: UUID,
+    db:       AsyncSession = Depends(get_db),
+    _:        User         = Depends(require_permission("manage_cycles")),
+):
+    result = await db.execute(select(PerformanceCycle).where(PerformanceCycle.id == cycle_id))
+    cycle = result.scalar_one_or_none()
+    if not cycle:
+        raise HTTPException(404, "Cycle not found")
+
+    kpi_count = await db.execute(
+        select(func.count()).select_from(Kpi).where(Kpi.cycle_id == cycle_id)
+    )
+    count = kpi_count.scalar()
+    if count and count > 0:
+        raise HTTPException(400, "Cannot delete cycle with existing KPIs. Delete all scorecards first.")
+
+    await db.delete(cycle)
+    await db.flush()
+    return {"message": "Cycle deleted"}
 
 
 @router.post("/{cycle_id}/weight-rules")

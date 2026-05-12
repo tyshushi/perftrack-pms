@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuthStore } from '../store/auth';
 import { kpisApi, cyclesApi } from '../api/client';
+import PhaseStatusBanner from '../components/common/PhaseStatusBanner';
 
 const C = {
   bg:           '#ffffff',
@@ -32,6 +34,7 @@ type Eval = { actual_achievement: string; self_rating: number | string | null; s
 
 export default function SelfEvalPage() {
   const qc = useQueryClient();
+  const isHrAdmin = useAuthStore(s => s.isHrAdmin());
   const [cycleId, setCycleId] = useState('');
   const [evals, setEvals] = useState<Record<string, Eval>>({});
   const [isEditing, setIsEditing] = useState(false);
@@ -166,6 +169,8 @@ export default function SelfEvalPage() {
           ))}
         </select>
       </div>
+
+      {cycleId && <PhaseStatusBanner cycleId={cycleId} phase="self_eval" isHrAdmin={isHrAdmin} />}
 
       {currentCycle && (
         <div style={{ ...S.card, background: C.bgInfo, borderColor: '#bae6fd' }}>

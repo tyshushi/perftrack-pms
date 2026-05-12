@@ -40,6 +40,8 @@ export const cyclesApi = {
   setRatingScales:   (id: string, scales: any[]) => api.post(`/cycles/${id}/rating-scales`, scales),
   setWeightRules:    (id: string, rules: any[])  => api.post(`/cycles/${id}/weight-rules`, rules),
   advanceStatus:     (id: string, status: string) => api.patch(`/cycles/${id}/status?status=${status}`),
+  getPhaseStatus:    (cycleId: string)        => api.get(`/cycles/${cycleId}/phase-status`),
+  delete:            (cycleId: string)        => api.delete(`/cycles/${cycleId}`),
 };
 
 export const kpisApi = {

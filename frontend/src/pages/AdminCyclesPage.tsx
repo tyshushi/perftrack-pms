@@ -88,6 +88,9 @@ export default function AdminCyclesPage() {
   const [deleteStep2, setDeleteStep2]   = useState<{ id: string; name: string } | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [actionMessage, setActionMessage]         = useState<string | null>(null);
+  const [deleteCycleStep1, setDeleteCycleStep1]   = useState<{ id: string; name: string } | null>(null);
+  const [deleteCycleStep2, setDeleteCycleStep2]   = useState<{ id: string; name: string } | null>(null);
+  const [deleteCycleText,  setDeleteCycleText]    = useState('');
 
   const resetAllMut = useMutation({
     mutationFn: (cycleId: string) => kpisApi.resetAllScorecards(cycleId).then(r => r.data),
@@ -112,6 +115,21 @@ export default function AdminCyclesPage() {
       setActionMessage(`Delete failed: ${e?.response?.data?.detail || e.message}`);
       setDeleteStep2(null);
       setDeleteConfirmText('');
+    },
+  });
+
+  const deleteCycleMut = useMutation({
+    mutationFn: (cycleId: string) => cyclesApi.delete(cycleId).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cycles'] });
+      setActionMessage('Cycle deleted successfully.');
+      setDeleteCycleStep2(null);
+      setDeleteCycleText('');
+    },
+    onError: (e: any) => {
+      setActionMessage(`Delete cycle failed: ${e?.response?.data?.detail || e.message}`);
+      setDeleteCycleStep2(null);
+      setDeleteCycleText('');
     },
   });
 
@@ -431,6 +449,14 @@ export default function AdminCyclesPage() {
                           Delete All Scorecards
                         </button>
                       )}
+                      {isSuperAdmin() && (
+                        <button
+                          type="button"
+                          style={{ ...S.btnDanger, background: '#7f1d1d', borderColor: '#7f1d1d' }}
+                          onClick={() => setDeleteCycleStep1({ id: c.id, name: c.name })}>
+                          Delete Cycle
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -526,6 +552,63 @@ export default function AdminCyclesPage() {
                 disabled={deleteConfirmText !== 'DELETE' || deleteAllMut.isPending}
                 onClick={() => deleteAllMut.mutate(deleteStep2.id)}>
                 {deleteAllMut.isPending ? 'Deleting…' : 'Delete All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteCycleStep1 && (
+        <div style={S.modalOverlay} onClick={() => setDeleteCycleStep1(null)}>
+          <div style={S.modal} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 600, marginBottom: 10, color: C.textDanger }}>Delete Cycle</div>
+            <div style={{ fontSize: 13, color: C.text, marginBottom: 16 }}>
+              Delete cycle <strong>{deleteCycleStep1.name}</strong>? This cannot be undone if no KPIs exist.
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" style={S.btnGhost} onClick={() => setDeleteCycleStep1(null)}>Cancel</button>
+              <button
+                type="button"
+                style={S.btnDanger}
+                onClick={() => {
+                  setDeleteCycleStep2(deleteCycleStep1);
+                  setDeleteCycleStep1(null);
+                  setDeleteCycleText('');
+                }}>
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteCycleStep2 && (
+        <div style={S.modalOverlay} onClick={() => { if (!deleteCycleMut.isPending) { setDeleteCycleStep2(null); setDeleteCycleText(''); } }}>
+          <div style={S.modal} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 600, marginBottom: 10, color: C.textDanger }}>Final Confirmation</div>
+            <div style={{ fontSize: 13, color: C.text, marginBottom: 12 }}>
+              Type <strong>DELETE</strong> to permanently delete cycle <strong>{deleteCycleStep2.name}</strong>.
+            </div>
+            <input
+              autoFocus
+              style={{ ...S.input, marginBottom: 16 }}
+              value={deleteCycleText}
+              onChange={e => setDeleteCycleText(e.target.value)}
+              placeholder="Type DELETE to confirm" />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                style={S.btnGhost}
+                disabled={deleteCycleMut.isPending}
+                onClick={() => { setDeleteCycleStep2(null); setDeleteCycleText(''); }}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={{ ...S.btnDanger, opacity: deleteCycleText === 'DELETE' && !deleteCycleMut.isPending ? 1 : 0.5 }}
+                disabled={deleteCycleText !== 'DELETE' || deleteCycleMut.isPending}
+                onClick={() => deleteCycleMut.mutate(deleteCycleStep2.id)}>
+                {deleteCycleMut.isPending ? 'Deleting…' : 'Delete Cycle'}
               </button>
             </div>
           </div>

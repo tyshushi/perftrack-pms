@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
 import { kpisApi, cyclesApi, usersApi } from '../api/client';
+import PhaseStatusBanner from '../components/common/PhaseStatusBanner';
 
 const C = {
   bg:           '#ffffff',
@@ -217,11 +218,16 @@ function EmployeeScorecard({
             <div key={kpi.id} style={{ padding: '10px 12px', background: C.bgSecondary, borderRadius: 8, marginBottom: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 500, fontSize: 13, color: C.text }}>{kpi.name}</span>
                     {kpi.kpi_type === 'FIXED' && (
                       <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#e0f2fe', color: '#0369a1', fontWeight: 500 }}>
                         Cascaded
+                      </span>
+                    )}
+                    {kpi.is_late && (
+                      <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontWeight: 500 }}>
+                        🕐 Late
                       </span>
                     )}
                   </div>
@@ -324,6 +330,7 @@ function EmployeeScorecard({
 
 export default function ManagerApprovalPage() {
   const { user } = useAuthStore();
+  const isHrAdmin = useAuthStore(s => s.isHrAdmin());
   const currentUserId = user?.id ?? '';
   const [cycleId, setCycleId] = useState('');
   const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>({});
@@ -439,6 +446,8 @@ export default function ManagerApprovalPage() {
           ))}
         </select>
       </div>
+
+      {cycleId && <PhaseStatusBanner cycleId={cycleId} phase="kpi_setting" isHrAdmin={isHrAdmin} />}
 
       {cycleId && (
         <div>

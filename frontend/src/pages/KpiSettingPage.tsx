@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
 import { kpisApi, cyclesApi } from '../api/client';
+import PhaseStatusBanner from '../components/common/PhaseStatusBanner';
 
 const C = {
   bg:           '#ffffff',
@@ -430,6 +431,11 @@ function KpiCard({
               </button>
             )}
             <StatusPill status={kpi.status} />
+            {kpi.is_late && (
+              <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontWeight: 500 }}>
+                🕐 Late
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 18, fontWeight: 600, color: C.text }}>{kpi.weight}%</div>
         </div>
@@ -514,6 +520,7 @@ function KpiCard({
 
 export default function KpiSettingPage() {
   const { user } = useAuthStore();
+  const isHrAdmin = useAuthStore(s => s.isHrAdmin());
   const qc = useQueryClient();
   const [cycleId, setCycleId] = useState('');
   const [adding,  setAdding]  = useState(false);
@@ -724,6 +731,8 @@ export default function KpiSettingPage() {
           ))}
         </select>
       </div>
+
+      {cycleId && <PhaseStatusBanner cycleId={cycleId} phase="kpi_setting" isHrAdmin={isHrAdmin} />}
 
       {cycleId && (() => {
         if (!applicableRule) {
