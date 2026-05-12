@@ -4,7 +4,7 @@ from sqlalchemy import text
 from pydantic import BaseModel
 
 from app.db.session import get_db
-from app.core.security import require_roles
+from app.core.security import require_roles, get_current_user
 from app.models.user import User
 
 router = APIRouter()
@@ -20,8 +20,8 @@ class SettingUpdate(BaseModel):
 
 @router.get("/")
 async def list_settings(
-    db: AsyncSession = Depends(get_db),
-    _:  User         = Depends(require_hr_admin),
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(get_current_user),
 ):
     result = await db.execute(text("""
         SELECT s.key, s.value, s.updated_by, s.updated_at, u.full_name AS updated_by_name
