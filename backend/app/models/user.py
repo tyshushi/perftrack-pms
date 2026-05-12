@@ -194,6 +194,7 @@ class Kpi(Base):
     actual_achievement = Column(Text)
     self_rating        = Column(Numeric(4, 2))
     self_remarks       = Column(Text)
+    is_late            = Column(Boolean, default=False)
     status          = Column(String(20), default="DRAFT", nullable=False)
     created_at      = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at      = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

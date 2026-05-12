@@ -1,5 +1,6 @@
 from uuid import UUID
 from typing import List, Optional
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -182,6 +183,7 @@ def kpi_to_dict(k: Kpi) -> dict:
         "actual_achievement": k.actual_achievement,
         "self_rating":        float(k.self_rating) if k.self_rating is not None else None,
         "self_remarks":       k.self_remarks,
+        "is_late":            k.is_late or False,
     }
 
 def rule_to_dict(r: WeightRule, creator_role: Optional[str] = None) -> dict:
@@ -205,6 +207,51 @@ def rule_to_dict(r: WeightRule, creator_role: Optional[str] = None) -> dict:
             "Leadership & Culture": {"min": r.lc_min   or 0, "max": r.lc_max   or 100},
         },
     }
+
+
+async def check_phase_and_tag_late(cycle_id, phase: str, db) -> dict:
+    """
+    Returns: {'allowed': bool, 'is_late': bool, 'message': str, 'cycle': cycle_obj}
+    phase: 'kpi_setting' | 'self_eval' | 'mgr_eval'
+    """
+    cycle_result = await db.execute(
+        select(PerformanceCycle).where(PerformanceCycle.id == cycle_id)
+    )
+    cycle = cycle_result.scalar_one_or_none()
+    if not cycle:
+        return {'allowed': False, 'is_late': False, 'message': 'Cycle not found', 'cycle': None}
+
+    if cycle.status != 'ACTIVE':
+        return {'allowed': False, 'is_late': False,
+                'message': f'This cycle is not active (status: {cycle.status})', 'cycle': cycle}
+
+    today = date.today()
+
+    if phase == 'kpi_setting':
+        start = cycle.kpi_setting_start
+        end = cycle.kpi_setting_end
+    elif phase == 'self_eval':
+        start = cycle.self_eval_start
+        end = cycle.self_eval_end
+    elif phase == 'mgr_eval':
+        start = cycle.mgr_eval_start
+        end = cycle.mgr_eval_end
+    else:
+        return {'allowed': True, 'is_late': False, 'message': '', 'cycle': cycle}
+
+    if start and today < start:
+        return {'allowed': False, 'is_late': False,
+                'message': f'This window is not yet open. Opens on {start.strftime("%d/%m/%Y")}',
+                'cycle': cycle}
+
+    is_late = bool(end and today > end)
+    message = ''
+    if is_late:
+        message = f'Window closed on {end.strftime("%d/%m/%Y")}. This will be tagged as Late Submission.'
+    elif end:
+        message = f'Open until {end.strftime("%d/%m/%Y")}'
+
+    return {'allowed': True, 'is_late': is_late, 'message': message, 'cycle': cycle}
 
 
 # ── Rule resolution ────────────────────────────────────────────────────────
@@ -1333,6 +1380,12 @@ async def submit_scorecard(
     db:           AsyncSession = Depends(get_db),
     current_user: User         = Depends(get_current_user),
 ):
+    is_admin = current_user.role in ("HR_ADMIN", "SUPER_ADMIN")
+    if not is_admin:
+        phase_check = await check_phase_and_tag_late(body.cycle_id, 'kpi_setting', db)
+        if not phase_check['allowed']:
+            raise HTTPException(400, phase_check['message'])
+
     chain = await get_cycle_chain(db, body.cycle_id)
 
     if "DM" in chain and not current_user.direct_manager_id:
@@ -1376,10 +1429,14 @@ async def submit_scorecard(
     if not submittable:
         raise HTTPException(400, "No KPIs in submittable status (DRAFT, REJECTED, or APPROVED)")
 
+    tag_late = (not is_admin) and phase_check['is_late']
+
     from app.models.user import KpiAuditLog, Notification  # noqa
     for kpi in submittable:
         old = kpi.status
         kpi.status = "PENDING_DM"
+        if tag_late:
+            kpi.is_late = True
         db.add(KpiAuditLog(
             kpi_id=kpi.id, actor_id=current_user.id,
             from_status=old, to_status="PENDING_DM",
@@ -1394,7 +1451,10 @@ async def submit_scorecard(
         ))
 
     await db.flush()
-    return {"submitted": len(submittable), "message": "Scorecard submitted for approval"}
+    msg = "Scorecard submitted for approval"
+    if tag_late:
+        msg += " (tagged as Late Submission)"
+    return {"submitted": len(submittable), "message": msg}
 
 
 @router.post("/review-scorecard")
@@ -1532,6 +1592,12 @@ async def self_evaluate_all(
     db:           AsyncSession = Depends(get_db),
     current_user: User         = Depends(get_current_user),
 ):
+    is_admin = current_user.role in ("HR_ADMIN", "SUPER_ADMIN")
+    if not is_admin:
+        phase_check = await check_phase_and_tag_late(body.cycle_id, 'self_eval', db)
+        if not phase_check['allowed']:
+            raise HTTPException(400, phase_check['message'])
+
     locked_res = await db.execute(
         select(Kpi).where(
             Kpi.cycle_id == body.cycle_id,
@@ -1550,6 +1616,8 @@ async def self_evaluate_all(
             "All locked KPIs for this cycle must be evaluated before submission",
         )
 
+    tag_late = (not is_admin) and phase_check['is_late']
+
     by_id = {str(k.id): k for k in locked_kpis}
     count = 0
     for ev in body.evaluations:
@@ -1562,10 +1630,15 @@ async def self_evaluate_all(
         kpi.self_rating        = ev.self_rating
         kpi.self_remarks       = ev.self_remarks or ""
         kpi.status             = "SELF_EVALUATED"
+        if tag_late:
+            kpi.is_late = True
         count += 1
 
     await db.flush()
-    return {"evaluated": count, "message": "Self evaluation submitted"}
+    msg = "Self evaluation submitted"
+    if tag_late:
+        msg += " (tagged as Late Submission)"
+    return {"evaluated": count, "message": msg}
 
 
 @router.post("/evaluate-all")
@@ -1598,6 +1671,12 @@ async def manager_evaluate_all(
 
     if not (is_admin or is_direct_mgr or is_review_mgr or is_hod or has_approve_perm):
         raise HTTPException(403, "Not authorised to evaluate this employee's scorecard")
+
+    mgr_phase_check = None
+    if not is_admin:
+        mgr_phase_check = await check_phase_and_tag_late(body.cycle_id, 'mgr_eval', db)
+        if not mgr_phase_check['allowed']:
+            raise HTTPException(400, mgr_phase_check['message'])
 
     cycle_res = await db.execute(
         select(PerformanceCycle).where(PerformanceCycle.id == body.cycle_id)
@@ -1636,6 +1715,8 @@ async def manager_evaluate_all(
 
     from app.models.user import KpiAuditLog
 
+    tag_late = (not is_admin) and mgr_phase_check is not None and mgr_phase_check['is_late']
+
     count = 0
     for ev in body.evaluations:
         kpi = by_id.get(str(ev.kpi_id))
@@ -1647,6 +1728,8 @@ async def manager_evaluate_all(
         kpi.mgr_score   = ev.mgr_rating
         kpi.mgr_comment = ev.mgr_remarks or ""
         kpi.status      = "MGR_EVALUATED"
+        if tag_late:
+            kpi.is_late = True
         db.add(KpiAuditLog(
             kpi_id=kpi.id, actor_id=current_user.id,
             from_status=old_status, to_status="MGR_EVALUATED",
@@ -1661,10 +1744,13 @@ async def manager_evaluate_all(
             total_weighted += float(kpi.weight) * float(kpi.mgr_score) / float(max_rating)
 
     await db.flush()
+    msg = "Manager evaluation submitted"
+    if tag_late:
+        msg += " (tagged as Late Submission)"
     return {
         "evaluated":     count,
         "overall_score": round(total_weighted, 2),
-        "message":       "Manager evaluation submitted",
+        "message":       msg,
     }
 
 

@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { kpisApi, usersApi, cyclesApi } from '../api/client';
 import { useAuthStore } from '../store/auth';
+import PhaseStatusBanner from '../components/common/PhaseStatusBanner';
 
 const C = {
   bg:           '#ffffff',
@@ -301,7 +302,14 @@ function EmployeeScorecard({
                   </div>
                 )}
               </div>
-              <StatusPill status={kpi.status} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <StatusPill status={kpi.status} />
+                {kpi.is_late && (
+                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontWeight: 500 }}>
+                    🕐 Late
+                  </span>
+                )}
+              </div>
             </div>
 
             <SelfEvalSection kpi={kpi} cycle={cycle} />
@@ -566,6 +574,8 @@ export default function ManagerEvalPage() {
           ))}
         </select>
       </div>
+
+      {cycleId && <PhaseStatusBanner cycleId={cycleId} phase="mgr_eval" isHrAdmin={isHrAdmin} />}
 
       {cycleId && myReports.length === 0 && (
         <div style={{ textAlign: 'center', padding: 32, color: C.textSecond, fontSize: 13, border: `0.5px dashed ${C.border}`, borderRadius: 10 }}>
