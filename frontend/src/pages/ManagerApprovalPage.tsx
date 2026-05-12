@@ -335,6 +335,7 @@ export default function ManagerApprovalPage() {
   const [cycleId, setCycleId] = useState('');
   const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>({});
   const [indirectSectionExpanded, setIndirectSectionExpanded] = useState(false);
+  const [showPendingOnly, setShowPendingOnly] = useState(false);
 
   const { data: cycles = [] } = useQuery({
     queryKey: ['cycles'],
@@ -423,6 +424,19 @@ export default function ManagerApprovalPage() {
     { awaiting: 0, approved: 0 },
   );
 
+  const filteredDirectReportData = showPendingOnly
+    ? directReportData.filter(d => d.status === 'PENDING_YOURS')
+    : directReportData;
+
+  const filteredIndirectReportData = showPendingOnly
+    ? indirectReportData.filter(d => ['PENDING_YOURS', 'PENDING_RM', 'PENDING_HOD'].includes(d.status))
+    : indirectReportData;
+
+  const totalAwaiting = directSummary.awaiting + indirectSummary.awaiting;
+
+  const indirectEffectivelyExpanded =
+    indirectSectionExpanded || (showPendingOnly && filteredIndirectReportData.length > 0);
+
   const isOpen = (id: string, status: ReportStatus) =>
     expandOverrides[id] !== undefined ? expandOverrides[id] : status === 'PENDING_YOURS';
 
@@ -458,7 +472,7 @@ export default function ManagerApprovalPage() {
         </div>
         <select
           value={cycleId}
-          onChange={e => { setCycleId(e.target.value); setExpandOverrides({}); setIndirectSectionExpanded(false); }}
+          onChange={e => { setCycleId(e.target.value); setExpandOverrides({}); setIndirectSectionExpanded(false); setShowPendingOnly(false); }}
           style={{ width: '100%', padding: '12px 14px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 15, fontWeight: 600, background: C.bg, color: cycleId ? C.text : C.textTertiary, fontFamily: C.font, outline: 'none', cursor: 'pointer' }}>
           <option value="">Select a performance cycle to begin…</option>
           {sortedCycles.map((c: any) => (
@@ -483,12 +497,29 @@ export default function ManagerApprovalPage() {
               <span style={{ margin: '0 8px', color: C.textTertiary }}>·</span>
               <strong style={{ color: C.text, fontWeight: 600 }}>{indirectReports.length}</strong> indirect
               <span style={{ margin: '0 8px', color: C.textTertiary }}>·</span>
-              <strong style={{ color: C.text, fontWeight: 600 }}>{directSummary.awaiting + indirectSummary.awaiting}</strong> awaiting approval total
+              <button
+                onClick={() => setShowPendingOnly(p => !p)}
+                style={{ background: 'none', border: 'none', padding: 0, margin: 0, fontSize: 13, fontFamily: C.font, cursor: 'pointer', color: showPendingOnly ? C.textInfo : C.textSecond, textDecoration: 'none' }}
+                onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')}
+                onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}
+              >
+                {showPendingOnly
+                  ? <><strong style={{ color: C.textInfo, fontWeight: 600 }}>Showing {totalAwaiting} pending</strong> — Show All ✕</>
+                  : <><strong style={{ color: C.text, fontWeight: 600 }}>{totalAwaiting}</strong> awaiting approval total</>
+                }
+              </button>
+            </div>
+          )}
+
+          {/* Pending filter banner */}
+          {showPendingOnly && (
+            <div style={{ marginBottom: 12, padding: '8px 14px', background: C.bgInfo, border: `0.5px solid #bae6fd`, borderRadius: 8, fontSize: 12, color: C.textInfo, fontWeight: 500 }}>
+              Filtered: showing pending approvals only
             </div>
           )}
 
           {/* Direct Reports Section */}
-          {directReportData.length > 0 && (
+          {filteredDirectReportData.length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: C.text, borderBottom: `1px solid ${C.borderLight}`, paddingBottom: 8, marginBottom: 8 }}>
                 Direct Reports ({directReports.length})
@@ -498,7 +529,7 @@ export default function ManagerApprovalPage() {
                 <span style={{ margin: '0 6px', color: C.textTertiary }}>·</span>
                 <strong style={{ color: C.text }}>{directSummary.approved}</strong> approved
               </div>
-              {directReportData.map(({ report, status, isLoading }) => {
+              {filteredDirectReportData.map(({ report, status, isLoading }) => {
                 const kpis = kpisByEmployeeId[report.id] ?? [];
                 const expanded = isOpen(report.id, status);
                 const badge    = REPORT_STATUS_STYLE[status];
@@ -548,16 +579,16 @@ export default function ManagerApprovalPage() {
                 onClick={() => setIndirectSectionExpanded(p => !p)}
                 style={{ fontWeight: 600, fontSize: 13, color: C.text, borderBottom: `1px solid ${C.borderLight}`, paddingBottom: 8, marginBottom: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span>Indirect Reports ({indirectReports.length})</span>
-                <span style={{ fontSize: 11, color: C.textTertiary, transform: indirectSectionExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
+                <span style={{ fontSize: 11, color: C.textTertiary, transform: indirectEffectivelyExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
               </div>
-              {indirectSectionExpanded && (
+              {indirectEffectivelyExpanded && (
                 <>
                   <div style={{ marginBottom: 12, fontSize: 12, color: C.textSecond }}>
                     <strong style={{ color: C.text }}>{indirectSummary.awaiting}</strong> awaiting approval
                     <span style={{ margin: '0 6px', color: C.textTertiary }}>·</span>
                     <strong style={{ color: C.text }}>{indirectSummary.approved}</strong> approved
                   </div>
-                  {indirectReportData.map(({ report, status, isLoading }) => {
+                  {filteredIndirectReportData.map(({ report, status, isLoading }) => {
                     const kpis = kpisByEmployeeId[report.id] ?? [];
                     const expanded = isOpen(report.id, status);
                     const badge    = REPORT_STATUS_STYLE[status];
