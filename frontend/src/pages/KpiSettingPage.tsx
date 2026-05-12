@@ -505,8 +505,9 @@ function KpiCard({
         </div>
       )}
 
-      {/* Delete for optional DRAFT or REJECTED KPIs */}
-      {!editing && canDelete && (
+      {/* Delete for optional DRAFT KPIs (REJECTED delete button is rendered
+          below the manager comment further down) */}
+      {!editing && canDelete && kpi.status !== 'REJECTED' && (
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
           <button onClick={onDelete} style={{ ...S.btnSm, color: '#991b1b', borderColor: '#fca5a5' }}>
             Delete
@@ -518,6 +519,14 @@ function KpiCard({
       {kpi.status === 'REJECTED' && kpi.mgr_comment && (
         <div style={{ marginTop: 8, fontSize: 12, color: '#991b1b', padding: '6px 10px', background: '#fee2e2', borderRadius: 6 }}>
           Manager comment: {kpi.mgr_comment}
+        </div>
+      )}
+
+      {!editing && canDelete && kpi.status === 'REJECTED' && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+          <button onClick={onDelete} style={{ ...S.btnSm, color: '#991b1b', borderColor: '#fca5a5' }}>
+            Delete
+          </button>
         </div>
       )}
 
@@ -585,7 +594,7 @@ export default function KpiSettingPage() {
 
   const currentCycle = sortedCycles.find((c: any) => c.id === cycleId) ?? null;
 
-  const { data: kpis = [] } = useQuery({
+  const { data: kpis = [], refetch: refetchKpis } = useQuery({
     queryKey: ['kpis', cycleId, user?.id],
     queryFn:  () => kpisApi.list(cycleId, user?.id).then(r => r.data),
     enabled:  !!cycleId && !!user?.id,
@@ -661,6 +670,7 @@ export default function KpiSettingPage() {
       }
     }
     await qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] });
+    await refetchKpis();
   };
 
   const totalWeight = (kpis as any[]).reduce((sum, k) => sum + k.weight, 0);
