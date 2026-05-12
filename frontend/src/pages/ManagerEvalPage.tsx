@@ -41,26 +41,26 @@ const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
   SELF_EVALUATED: { bg: '#ccfbf1', color: '#115e59' },
 };
 
-type EvalStage = 'NOT_STARTED' | 'SELF_SUBMITTED' | 'IN_PROGRESS' | 'COMPLETE';
+type EvalStage = 'NOT_STARTED' | 'SELF_SUBMITTED' | 'EVAL_IN_PROGRESS' | 'EVAL_COMPLETE';
 
 const STAGE_STYLE: Record<EvalStage, { bg: string; color: string; label: string }> = {
-  NOT_STARTED:    { bg: '#efefec', color: '#6b6b6b', label: 'Not Started' },
-  SELF_SUBMITTED: { bg: '#e0f2fe', color: '#0369a1', label: 'Self Eval Submitted' },
-  IN_PROGRESS:    { bg: '#fef9c3', color: '#854d0e', label: 'Evaluation In Progress' },
-  COMPLETE:       { bg: '#dcfce7', color: '#166534', label: 'Evaluation Complete' },
+  NOT_STARTED:      { bg: '#efefec', color: '#6b6b6b', label: 'Not Started' },
+  SELF_SUBMITTED:   { bg: '#e0f2fe', color: '#0369a1', label: 'Self Eval Submitted' },
+  EVAL_IN_PROGRESS: { bg: '#fef9c3', color: '#854d0e', label: 'Evaluation In Progress' },
+  EVAL_COMPLETE:    { bg: '#dcfce7', color: '#166534', label: 'Evaluation Complete' },
 };
 
 function computeStage(kpis: any[]): EvalStage {
   if (!kpis || kpis.length === 0) return 'NOT_STARTED';
-  const scored        = kpis.filter(k => k.mgr_score !== null && k.mgr_score !== undefined);
-  const allMgrScored  = scored.length === kpis.length;
-  const anyMgrScored  = scored.length > 0;
-  const anySelfEval   = kpis.some(k => k.status === 'SELF_EVALUATED');
-  const allLocked     = kpis.every(k => k.status === 'LOCKED');
-  if (allMgrScored)               return 'COMPLETE';
-  if (anyMgrScored)               return 'IN_PROGRESS';
-  if (anySelfEval)                return 'SELF_SUBMITTED';
-  if (allLocked || kpis.length === 0) return 'NOT_STARTED';
+  const scored             = kpis.filter(k => k.mgr_score !== null && k.mgr_score !== undefined);
+  const allMgrScored       = scored.length === kpis.length;
+  const anyMgrScored       = scored.length > 0;
+  const anyReadyForReview  = kpis.some(k =>
+    (k.mgr_score === null || k.mgr_score === undefined) && k.status === 'SELF_EVALUATED'
+  );
+  if (allMgrScored)       return 'EVAL_COMPLETE';
+  if (anyMgrScored)       return 'EVAL_IN_PROGRESS';
+  if (anyReadyForReview)  return 'SELF_SUBMITTED';
   return 'NOT_STARTED';
 }
 
@@ -185,7 +185,7 @@ export default function ManagerEvalPage() {
   const summary = reportData.reduce(
     (acc, r) => {
       if (r.stage === 'SELF_SUBMITTED') acc.ready += 1;
-      if (r.stage === 'COMPLETE')       acc.complete += 1;
+      if (r.stage === 'EVAL_COMPLETE')  acc.complete += 1;
       if (r.stage === 'NOT_STARTED')    acc.notStarted += 1;
       return acc;
     },
@@ -261,9 +261,8 @@ export default function ManagerEvalPage() {
         const expanded = isOpen(report.id, stage);
         const badge    = STAGE_STYLE[stage];
         const tab      = tabs[report.id] || 'pending';
-        const pendingStatuses = myPendingStatuses(report);
-        const pendingKpis = (kpis as any[]).filter(k => pendingStatuses.includes(k.status));
-        const doneKpis    = (kpis as any[]).filter(k => !pendingStatuses.includes(k.status) && k.status !== 'DRAFT');
+        const pendingKpis = (kpis as any[]).filter(k => k.mgr_score === null || k.mgr_score === undefined);
+        const doneKpis    = (kpis as any[]).filter(k => k.mgr_score !== null && k.mgr_score !== undefined);
         const displayKpis = tab === 'pending' ? pendingKpis : doneKpis;
 
         return (
