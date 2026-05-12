@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { kpisApi, usersApi, cyclesApi } from '../api/client';
 import { useAuthStore } from '../store/auth';
@@ -28,6 +28,7 @@ const STATUS_LABELS: Record<string, string> = {
   REJECTED:       'Rejected',
   LOCKED:         'Locked',
   SELF_EVALUATED: 'Self Evaluated',
+  MGR_EVALUATED:  'Manager Evaluated',
 };
 
 const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
@@ -39,6 +40,15 @@ const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
   REJECTED:       { bg: '#fee2e2', color: '#991b1b' },
   LOCKED:         { bg: '#e0f2fe', color: '#0c4a6e' },
   SELF_EVALUATED: { bg: '#ccfbf1', color: '#115e59' },
+  MGR_EVALUATED:  { bg: '#dcfce7', color: '#166534' },
+};
+
+const DIMENSION_COLORS: Record<string, string> = {
+  Financials:              '#0369a1',
+  Customer:                '#6d28d9',
+  'Internal Process':      '#92400e',
+  'Learning & Growth':     '#166534',
+  'Leadership & Culture':  '#9d174d',
 };
 
 type EvalStage = 'NOT_STARTED' | 'SELF_SUBMITTED' | 'EVAL_IN_PROGRESS' | 'EVAL_COMPLETE';
@@ -52,15 +62,11 @@ const STAGE_STYLE: Record<EvalStage, { bg: string; color: string; label: string 
 
 function computeStage(kpis: any[]): EvalStage {
   if (!kpis || kpis.length === 0) return 'NOT_STARTED';
-  const scored             = kpis.filter(k => k.mgr_score !== null && k.mgr_score !== undefined);
-  const allMgrScored       = scored.length === kpis.length;
-  const anyMgrScored       = scored.length > 0;
-  const anyReadyForReview  = kpis.some(k =>
-    (k.mgr_score === null || k.mgr_score === undefined) && k.status === 'SELF_EVALUATED'
-  );
-  if (allMgrScored)       return 'EVAL_COMPLETE';
-  if (anyMgrScored)       return 'EVAL_IN_PROGRESS';
-  if (anyReadyForReview)  return 'SELF_SUBMITTED';
+  const mgrEvaluated = kpis.filter(k => k.status === 'MGR_EVALUATED');
+  if (mgrEvaluated.length === kpis.length) return 'EVAL_COMPLETE';
+  if (mgrEvaluated.length > 0)             return 'EVAL_IN_PROGRESS';
+  const anyReadyForReview = kpis.some(k => k.status === 'SELF_EVALUATED');
+  if (anyReadyForReview)                   return 'SELF_SUBMITTED';
   return 'NOT_STARTED';
 }
 
@@ -74,23 +80,31 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-const RATINGS  = [1, 2, 3, 4, 5];
-const R_LABELS = ['', 'Unsatisfactory', 'Needs Improvement',
-                  'Meets Expectations', 'Exceeds Expectations', 'Outstanding'];
+const R_LABELS_DEFAULT = ['', 'Unsatisfactory', 'Needs Improvement',
+                          'Meets Expectations', 'Exceeds Expectations', 'Outstanding'];
 
 function ratingLabelFor(value: any, cycle: any): string {
   const levels: any[] = Array.isArray(cycle?.rating_levels) ? cycle.rating_levels : [];
   const ratingType = cycle?.rating_type || 'NUMERIC';
   if (ratingType === 'NUMERIC') {
     const lv = levels.find(l => Number(l.value) === Number(value));
-    return lv?.label || (R_LABELS[Number(value)] || '');
+    return lv?.label || (R_LABELS_DEFAULT[Number(value)] || '');
   }
   const lv = levels.find(l => l.value === value);
   return lv?.label || (typeof value === 'string' ? value : '');
 }
 
+function ratingDescriptionFor(value: any, levels: any[]): string {
+  if (!Array.isArray(levels)) return '';
+  const lv = levels.find(l => Number(l.value) === Number(value));
+  return lv?.description || '';
+}
+
 function SelfEvalSection({ kpi, cycle }: { kpi: any; cycle: any }) {
-  const hasAnything = kpi.actual_achievement || kpi.self_rating !== null && kpi.self_rating !== undefined || kpi.self_remarks;
+  const hasAnything =
+    kpi.actual_achievement ||
+    (kpi.self_rating !== null && kpi.self_rating !== undefined) ||
+    kpi.self_remarks;
   if (!hasAnything) return null;
   const label = ratingLabelFor(kpi.self_rating, cycle);
   const ratingDisplay = (kpi.self_rating !== null && kpi.self_rating !== undefined)
@@ -121,14 +135,387 @@ function SelfEvalSection({ kpi, cycle }: { kpi: any; cycle: any }) {
   );
 }
 
+function RatingTargetsTable({ kpi, levels }: { kpi: any; levels: any[] }) {
+  const [open, setOpen] = useState(false);
+  const targets: any[] = Array.isArray(kpi.rating_targets) ? kpi.rating_targets : [];
+  if (targets.length === 0 && (!levels || levels.length === 0)) return null;
+
+  const rows = (levels && levels.length > 0 ? levels : targets).map((lv: any) => {
+    const t = targets.find((x: any) => Number(x.rating) === Number(lv.value));
+    return {
+      value:       lv.value,
+      label:       lv.label || '',
+      description: t?.target || lv.description || '',
+    };
+  });
+
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+          background: C.bgSecondary, border: `0.5px solid ${C.borderLight}`,
+          borderRadius: 6, cursor: 'pointer', fontFamily: C.font, fontSize: 12,
+          color: C.textSecond }}>
+        <span style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', fontSize: 10 }}>▶</span>
+        Rating Targets Reference
+      </button>
+      {open && (
+        <div style={{ marginTop: 8, border: `0.5px solid ${C.borderLight}`, borderRadius: 6, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: C.bgSecondary }}>
+                <th style={{ ...S.th, width: 60 }}>Rating</th>
+                <th style={S.th}>Label</th>
+                <th style={S.th}>Target Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r: any) => (
+                <tr key={r.value} style={{ borderTop: `0.5px solid ${C.borderLight}` }}>
+                  <td style={S.td}><strong>{r.value}</strong></td>
+                  <td style={S.td}>{r.label || '—'}</td>
+                  <td style={{ ...S.td, color: C.textSecond, whiteSpace: 'pre-wrap' }}>{r.description || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DimensionBadge({ dimension }: { dimension: string }) {
+  const color = DIMENSION_COLORS[dimension] || C.textSecond;
+  return (
+    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 8,
+      background: color + '18', color, fontWeight: 500 }}>
+      {dimension}
+    </span>
+  );
+}
+
+function EmployeeScorecard({
+  report, kpis, stage, cycle, user, isHrAdmin, onSubmitted,
+}: {
+  report: any;
+  kpis: any[];
+  stage: EvalStage;
+  cycle: any;
+  user: any;
+  isHrAdmin: boolean;
+  onSubmitted: () => void;
+}) {
+  const qc = useQueryClient();
+  const maxRating: number    = cycle?.rating_scale_max || 5;
+  const ratingLevels: any[]  = Array.isArray(cycle?.rating_levels) ? cycle.rating_levels : [];
+  const ratingOptions        = useMemo(() => {
+    if (ratingLevels.length > 0) {
+      return ratingLevels.map((l: any) => ({ value: Number(l.value), label: l.label || '' }));
+    }
+    return Array.from({ length: maxRating }, (_, i) => ({
+      value: i + 1,
+      label: R_LABELS_DEFAULT[i + 1] || '',
+    }));
+  }, [ratingLevels, maxRating]);
+
+  const initialRatings: Record<string, number> = useMemo(() => {
+    const init: Record<string, number> = {};
+    kpis.forEach((k: any) => {
+      if (k.mgr_score !== null && k.mgr_score !== undefined) {
+        init[k.id] = Number(k.mgr_score);
+      } else if (k.self_rating !== null && k.self_rating !== undefined) {
+        init[k.id] = Number(k.self_rating);
+      }
+    });
+    return init;
+  }, [kpis]);
+
+  const initialRemarks: Record<string, string> = useMemo(() => {
+    const init: Record<string, string> = {};
+    kpis.forEach((k: any) => { init[k.id] = k.mgr_comment || ''; });
+    return init;
+  }, [kpis]);
+
+  const [ratings, setRatings] = useState<Record<string, number>>(initialRatings);
+  const [remarks, setRemarks] = useState<Record<string, string>>(initialRemarks);
+
+  useEffect(() => { setRatings(initialRatings); }, [initialRatings]);
+  useEffect(() => { setRemarks(initialRemarks); }, [initialRemarks]);
+
+  const totalWeighted = useMemo(() => {
+    let sum = 0;
+    kpis.forEach((k: any) => {
+      const r = ratings[k.id];
+      if (r != null && k.weight != null && maxRating) {
+        sum += (Number(k.weight) * Number(r)) / Number(maxRating);
+      }
+    });
+    return sum;
+  }, [kpis, ratings, maxRating]);
+
+  const allRated = kpis.length > 0 && kpis.every(k =>
+    ratings[k.id] !== null && ratings[k.id] !== undefined);
+
+  const submitMutation = useMutation({
+    mutationFn: () => kpisApi.evaluateAll({
+      cycle_id:    cycle.id,
+      employee_id: report.id,
+      evaluations: kpis
+        .filter(k => k.status === 'SELF_EVALUATED' || k.status === 'MGR_EVALUATED')
+        .map(k => ({
+          kpi_id:      k.id,
+          mgr_rating:  ratings[k.id],
+          mgr_remarks: remarks[k.id] || '',
+        })),
+    }),
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ['eval-kpis'] });
+      qc.invalidateQueries({ queryKey: ['kpis'] });
+      onSubmitted();
+      if (res?.data?.overall_score !== undefined) {
+        alert(`Evaluation submitted. Overall score: ${res.data.overall_score} / 100`);
+      }
+    },
+    onError: (e: any) => {
+      alert(e?.response?.data?.detail || 'Failed to submit evaluation');
+    },
+  });
+
+  const badge = STAGE_STYLE[stage];
+
+  return (
+    <div style={{ padding: '0 16px 16px' }}>
+      {/* Role badges */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        {report.direct_manager_id    === user?.id && <span style={S.roleBadge('#0369a1')}>Direct Manager</span>}
+        {report.reviewing_manager_id === user?.id && <span style={S.roleBadge('#6d28d9')}>Reviewing Manager</span>}
+        {report.hod_id               === user?.id && <span style={S.roleBadge('#92400e')}>HOD</span>}
+        {isHrAdmin && <span style={S.roleBadge('#166534')}>HR Admin (full access)</span>}
+      </div>
+
+      {/* Header summary */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '12px 14px', background: C.bgSecondary,
+        border: `0.5px solid ${C.borderLight}`, borderRadius: 8, marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div style={{ fontWeight: 500, fontSize: 14, color: C.text }}>{report.full_name}</div>
+          <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 9px',
+            borderRadius: 10, background: badge.bg, color: badge.color }}>
+            {badge.label}
+          </span>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 11, color: C.textSecond }}>Weighted Score Preview</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: C.text }}>
+            {totalWeighted.toFixed(2)} / 100
+          </div>
+        </div>
+      </div>
+
+      {kpis.length === 0 && (
+        <div style={{ textAlign: 'center', padding: 32, color: C.textSecond, fontSize: 13 }}>
+          No KPIs found for this employee.
+        </div>
+      )}
+
+      {kpis.map((kpi: any) => {
+        const selected = ratings[kpi.id];
+        const weighted = (selected != null && maxRating)
+          ? (Number(kpi.weight) * Number(selected)) / Number(maxRating)
+          : 0;
+        const isLocked = kpi.status === 'MGR_EVALUATED';
+
+        return (
+          <div key={kpi.id} style={S.card}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
+                  <div style={{ fontWeight: 500, color: C.text, fontSize: 14 }}>{kpi.name}</div>
+                  {kpi.kpi_dimension && <DimensionBadge dimension={kpi.kpi_dimension} />}
+                  <span style={{ fontSize: 11, color: C.textSecond,
+                    padding: '2px 8px', background: C.bgTertiary, borderRadius: 8 }}>
+                    Weight: {kpi.weight}%
+                  </span>
+                </div>
+                {kpi.measurement && (
+                  <div style={{ fontSize: 12, color: C.textSecond, marginTop: 4 }}>
+                    <strong style={{ fontWeight: 600 }}>Measurement:</strong> {kpi.measurement}
+                  </div>
+                )}
+                {kpi.target && (
+                  <div style={{ fontSize: 12, color: C.textSecond, marginTop: 2 }}>
+                    <strong style={{ fontWeight: 600 }}>Target:</strong> {kpi.target}
+                  </div>
+                )}
+              </div>
+              <StatusPill status={kpi.status} />
+            </div>
+
+            <RatingTargetsTable kpi={kpi} levels={ratingLevels} />
+
+            <SelfEvalSection kpi={kpi} cycle={cycle} />
+
+            <div style={{ marginTop: 10, marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: C.textSecond,
+                textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>
+                Manager Rating
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {ratingOptions.map(opt => {
+                  const isSel = Number(selected) === Number(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      disabled={isLocked}
+                      onClick={() => setRatings(p => ({ ...p, [kpi.id]: opt.value }))}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        border: `0.5px solid ${isSel ? C.text : C.border}`,
+                        background: isSel ? C.text : 'transparent',
+                        color:      isSel ? '#fff'  : C.text,
+                        fontSize:   12,
+                        cursor:     isLocked ? 'not-allowed' : 'pointer',
+                        opacity:    isLocked ? 0.6 : 1,
+                        fontFamily: C.font,
+                        textAlign:  'left',
+                        minWidth:   90,
+                      }}>
+                      <div style={{ fontWeight: 600 }}>{opt.value}</div>
+                      {opt.label && (
+                        <div style={{ fontSize: 10, marginTop: 2,
+                          color: isSel ? '#fff' : C.textSecond }}>
+                          {opt.label}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              {selected != null && (
+                <div style={{ marginTop: 8, fontSize: 12, color: C.textSecond }}>
+                  Selected: <strong style={{ color: C.text }}>
+                    {selected} — {ratingLabelFor(selected, cycle)}
+                  </strong>
+                  {ratingDescriptionFor(selected, ratingLevels) && (
+                    <span style={{ marginLeft: 6 }}>
+                      · {ratingDescriptionFor(selected, ratingLevels)}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <textarea
+              placeholder="Manager remarks (optional)..."
+              value={remarks[kpi.id] || ''}
+              disabled={isLocked}
+              onChange={e => setRemarks(p => ({ ...p, [kpi.id]: e.target.value }))}
+              style={{ ...S.input, width: '100%', minHeight: 60, resize: 'vertical',
+                marginBottom: 10, boxSizing: 'border-box',
+                opacity: isLocked ? 0.6 : 1 }}
+            />
+
+            {selected != null && (
+              <div style={{ fontSize: 12, color: C.textInfo, background: C.bgInfo,
+                border: `0.5px solid #bae6fd`, padding: '8px 10px', borderRadius: 6 }}>
+                This KPI contributes {kpi.weight}% × {selected}/{maxRating} =
+                <strong style={{ marginLeft: 4 }}>{weighted.toFixed(2)} weighted points</strong>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Summary table */}
+      {kpis.length > 0 && (
+        <div style={{ marginTop: 16, border: `0.5px solid ${C.borderLight}`,
+          borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ padding: '10px 14px', background: C.bgSecondary,
+            fontSize: 12, fontWeight: 600, color: C.textSecond,
+            textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Weighted Score Summary
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: C.bg }}>
+                <th style={S.th}>KPI</th>
+                <th style={{ ...S.th, width: 90 }}>Weight</th>
+                <th style={{ ...S.th, width: 130 }}>Manager Rating</th>
+                <th style={{ ...S.th, width: 130, textAlign: 'right' }}>Weighted Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {kpis.map((kpi: any) => {
+                const r = ratings[kpi.id];
+                const w = (r != null && maxRating)
+                  ? (Number(kpi.weight) * Number(r)) / Number(maxRating)
+                  : null;
+                return (
+                  <tr key={kpi.id} style={{ borderTop: `0.5px solid ${C.borderLight}` }}>
+                    <td style={S.td}>{kpi.name}</td>
+                    <td style={S.td}>{kpi.weight}%</td>
+                    <td style={S.td}>
+                      {r != null ? `${r} / ${maxRating}` : <span style={{ color: C.textTertiary }}>—</span>}
+                    </td>
+                    <td style={{ ...S.td, textAlign: 'right' }}>
+                      {w != null ? w.toFixed(2) : <span style={{ color: C.textTertiary }}>—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr style={{ borderTop: `1px solid ${C.border}`, background: C.bgSecondary }}>
+                <td style={{ ...S.td, fontWeight: 600 }}>Total</td>
+                <td style={{ ...S.td, fontWeight: 600 }}>
+                  {kpis.reduce((s, k) => s + Number(k.weight || 0), 0)}%
+                </td>
+                <td style={S.td}></td>
+                <td style={{ ...S.td, textAlign: 'right', fontWeight: 600 }}>
+                  {totalWeighted.toFixed(2)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {kpis.length > 0 && (
+        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center',
+          justifyContent: 'space-between', padding: '14px 16px',
+          background: C.bgSecondary, border: `0.5px solid ${C.borderLight}`,
+          borderRadius: 8 }}>
+          <div>
+            <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 2 }}>Overall Score</div>
+            <div style={{ fontSize: 22, fontWeight: 600, color: C.text }}>
+              {totalWeighted.toFixed(2)} <span style={{ fontSize: 14, color: C.textSecond, fontWeight: 400 }}>/ 100</span>
+            </div>
+          </div>
+          <button
+            disabled={!allRated || submitMutation.isPending}
+            onClick={() => submitMutation.mutate()}
+            style={{ ...S.btnPrimary,
+              padding: '10px 20px', fontSize: 13,
+              opacity: !allRated || submitMutation.isPending ? 0.5 : 1,
+              cursor: !allRated || submitMutation.isPending ? 'not-allowed' : 'pointer' }}>
+            {submitMutation.isPending ? 'Submitting…' : 'Submit All Ratings'}
+          </button>
+        </div>
+      )}
+      {!allRated && kpis.length > 0 && (
+        <div style={{ marginTop: 8, fontSize: 12, color: C.textDanger, textAlign: 'right' }}>
+          Rate every KPI before submitting.
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ManagerEvalPage() {
   const { user } = useAuthStore();
   const isHrAdmin = useAuthStore(s => s.isHrAdmin());
-  const qc = useQueryClient();
-  const [cycleId, setCycleId]               = useState('');
-  const [scores, setScores]                 = useState<Record<string, number>>({});
-  const [comments, setComments]             = useState<Record<string, string>>({});
-  const [tabs, setTabs]                     = useState<Record<string, 'pending' | 'done'>>({});
+  const [cycleId, setCycleId]                 = useState('');
   const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>({});
 
   const { data: cycles = [] } = useQuery({
@@ -179,51 +566,24 @@ export default function ManagerEvalPage() {
   const reportData = myReports.map((report: any) => {
     const kpis = kpisByEmployeeId[report.id] ?? [];
     const stage = computeStage(kpis);
-    console.log('Employee:', report.full_name, 'KPIs:', kpis.map((k: any) => k.status));
     return { report, kpis, stage, isLoading: loadingByEmployeeId[report.id] };
   });
 
   const summary = reportData.reduce(
     (acc, r) => {
-      if (r.stage === 'SELF_SUBMITTED') acc.ready += 1;
-      if (r.stage === 'EVAL_COMPLETE')  acc.complete += 1;
-      if (r.stage === 'NOT_STARTED')    acc.notStarted += 1;
+      if (r.stage === 'SELF_SUBMITTED')   acc.ready += 1;
+      if (r.stage === 'EVAL_IN_PROGRESS') acc.inProgress += 1;
+      if (r.stage === 'EVAL_COMPLETE')    acc.complete += 1;
+      if (r.stage === 'NOT_STARTED')      acc.notStarted += 1;
       return acc;
     },
-    { ready: 0, complete: 0, notStarted: 0 },
+    { ready: 0, inProgress: 0, complete: 0, notStarted: 0 },
   );
 
-  function myPendingStatuses(report: any): string[] {
-    if (!user || !report) return [];
-    const uid = user.id;
-    const statuses: string[] = [];
-    if (report.direct_manager_id    === uid) statuses.push('PENDING_DM');
-    if (report.reviewing_manager_id === uid) statuses.push('PENDING_RM');
-    if (report.hod_id               === uid) statuses.push('PENDING_HOD');
-    if (isHrAdmin) {
-      statuses.push('PENDING_DM', 'PENDING_RM', 'PENDING_HOD');
-    }
-    return [...new Set(statuses)];
-  }
-
-  const evalMutation = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: string }) =>
-      kpisApi.evaluate(id, scores[id], comments[id] || '', action),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['kpis'] });
-      qc.invalidateQueries({ queryKey: ['eval-kpis'] });
-    },
-  });
-
-  function scoreSectionLabel(status: string): string {
-    if (status === 'PENDING_DM')  return 'Direct Manager Rating';
-    if (status === 'PENDING_RM')  return 'Reviewing Manager Rating';
-    if (status === 'PENDING_HOD') return 'HOD Rating';
-    return 'Rating';
-  }
-
   const isOpen = (id: string, stage: EvalStage) =>
-    expandOverrides[id] !== undefined ? expandOverrides[id] : stage === 'SELF_SUBMITTED';
+    expandOverrides[id] !== undefined
+      ? expandOverrides[id]
+      : (stage === 'SELF_SUBMITTED' || stage === 'EVAL_IN_PROGRESS');
 
   const toggle = (id: string, stage: EvalStage) =>
     setExpandOverrides(prev => ({ ...prev, [id]: !isOpen(id, stage) }));
@@ -253,7 +613,9 @@ export default function ManagerEvalPage() {
 
       {cycleId && myReports.length > 0 && (
         <div style={{ marginBottom: 12, padding: '10px 14px', background: C.bgSecondary, border: `0.5px solid ${C.borderLight}`, borderRadius: 8, fontSize: 13, color: C.textSecond }}>
-          <strong style={{ color: C.text, fontWeight: 600 }}>{summary.ready}</strong> ready for evaluation
+          <strong style={{ color: C.text, fontWeight: 600 }}>{summary.ready}</strong> ready
+          <span style={{ margin: '0 8px', color: C.textTertiary }}>·</span>
+          <strong style={{ color: C.text, fontWeight: 600 }}>{summary.inProgress}</strong> in progress
           <span style={{ margin: '0 8px', color: C.textTertiary }}>·</span>
           <strong style={{ color: C.text, fontWeight: 600 }}>{summary.complete}</strong> complete
           <span style={{ margin: '0 8px', color: C.textTertiary }}>·</span>
@@ -264,10 +626,6 @@ export default function ManagerEvalPage() {
       {cycleId && reportData.map(({ report, stage, kpis, isLoading }) => {
         const expanded = isOpen(report.id, stage);
         const badge    = STAGE_STYLE[stage];
-        const tab      = tabs[report.id] || 'pending';
-        const pendingKpis = (kpis as any[]).filter(k => k.mgr_score === null || k.mgr_score === undefined);
-        const doneKpis    = (kpis as any[]).filter(k => k.mgr_score !== null && k.mgr_score !== undefined);
-        const displayKpis = tab === 'pending' ? pendingKpis : doneKpis;
 
         return (
           <div key={report.id} style={{ background: C.bg, border: `1px solid ${expanded ? C.border : C.borderLight}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
@@ -294,129 +652,22 @@ export default function ManagerEvalPage() {
             </button>
 
             {expanded && (
-              <div style={{ padding: '0 16px 16px' }}>
+              <>
                 {isLoading && (
                   <div style={{ padding: 16, color: C.textSecond, fontSize: 13 }}>Loading…</div>
                 )}
-
                 {!isLoading && (
-                  <>
-                    {/* Role badges */}
-                    <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-                      {report.direct_manager_id    === user?.id && <span style={S.roleBadge('#0369a1')}>Direct Manager</span>}
-                      {report.reviewing_manager_id === user?.id && <span style={S.roleBadge('#6d28d9')}>Reviewing Manager</span>}
-                      {report.hod_id               === user?.id && <span style={S.roleBadge('#92400e')}>HOD</span>}
-                      {isHrAdmin && <span style={S.roleBadge('#166534')}>HR Admin (full access)</span>}
-                    </div>
-
-                    {/* Tabs */}
-                    <div style={{ display: 'flex', gap: 2, borderBottom: `0.5px solid ${C.borderLight}`, marginBottom: 16 }}>
-                      {(['pending', 'done'] as const).map(t => (
-                        <button key={t} onClick={() => setTabs(p => ({ ...p, [report.id]: t }))}
-                          style={{ padding: '8px 16px', border: 'none', background: 'transparent',
-                            cursor: 'pointer', fontSize: 13,
-                            color: tab === t ? C.text : C.textSecond,
-                            fontWeight: tab === t ? 500 : 400,
-                            borderBottom: tab === t ? `2px solid ${C.text}` : '2px solid transparent',
-                            marginBottom: -0.5, fontFamily: C.font }}>
-                          {t === 'pending'
-                            ? `Pending Review (${pendingKpis.length})`
-                            : `Reviewed (${doneKpis.length})`}
-                        </button>
-                      ))}
-                    </div>
-
-                    {displayKpis.length === 0 && (
-                      <div style={{ textAlign: 'center', padding: 32, color: C.textSecond, fontSize: 13 }}>
-                        {tab === 'pending'
-                          ? 'No KPIs pending your review for this employee.'
-                          : 'No reviewed KPIs yet.'}
-                      </div>
-                    )}
-
-                    {displayKpis.map((kpi: any) => (
-                      <div key={kpi.id} style={S.card}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-                          <div>
-                            <div style={{ fontWeight: 500, color: C.text }}>{kpi.name}</div>
-                            <div style={{ fontSize: 12, color: C.textSecond, marginTop: 2 }}>
-                              Target: {kpi.target || '—'} · Weight: {kpi.weight}%
-                            </div>
-                          </div>
-                          <StatusPill status={kpi.status} />
-                        </div>
-
-                        <SelfEvalSection kpi={kpi} cycle={currentCycle} />
-
-                        {kpi.self_comment && (
-                          <div style={S.note}><strong>Self comment:</strong> {kpi.self_comment}</div>
-                        )}
-                        {kpi.mgr_comment && (
-                          <div style={S.note}><strong>Direct manager:</strong> {kpi.mgr_score ?? '—'}/5 — {kpi.mgr_comment}</div>
-                        )}
-                        {kpi.mgr2_comment && (
-                          <div style={S.note}><strong>Reviewing manager:</strong> {kpi.mgr2_score ?? '—'}/5 — {kpi.mgr2_comment}</div>
-                        )}
-
-                        {tab === 'pending' && (
-                          <>
-                            <div style={{ marginBottom: 10 }}>
-                              <div style={{ fontSize: 12, fontWeight: 500, color: C.textSecond, marginBottom: 6 }}>
-                                {scoreSectionLabel(kpi.status)}
-                              </div>
-                              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                                {RATINGS.map(n => (
-                                  <button key={n} onClick={() => setScores(p => ({ ...p, [kpi.id]: n }))}
-                                    style={{ width: 34, height: 34, borderRadius: '50%',
-                                      border: `0.5px solid ${scores[kpi.id] === n ? C.text : C.border}`,
-                                      background: scores[kpi.id] === n ? C.text : 'transparent',
-                                      color: scores[kpi.id] === n ? '#fff' : C.text,
-                                      fontSize: 12, cursor: 'pointer', fontFamily: C.font }}>
-                                    {n}
-                                  </button>
-                                ))}
-                                {scores[kpi.id] && (
-                                  <span style={{ fontSize: 11, color: C.textSecond }}>
-                                    {R_LABELS[scores[kpi.id]]}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            <textarea
-                              placeholder="Provide your assessment and feedback..."
-                              value={comments[kpi.id] || ''}
-                              onChange={e => setComments(p => ({ ...p, [kpi.id]: e.target.value }))}
-                              style={{ ...S.input, width: '100%', minHeight: 70, resize: 'vertical', marginBottom: 10, boxSizing: 'border-box' }}
-                            />
-
-                            <div style={{ display: 'flex', gap: 8 }}>
-                              <button
-                                disabled={!scores[kpi.id] || evalMutation.isPending}
-                                onClick={() => evalMutation.mutate({ id: kpi.id, action: 'approve' })}
-                                style={{ ...S.btnPrimary, opacity: !scores[kpi.id] ? 0.5 : 1 }}>
-                                Approve &amp; Forward →
-                              </button>
-                              <button
-                                onClick={() => evalMutation.mutate({ id: kpi.id, action: 'reject' })}
-                                style={S.btnDanger}>
-                                Reject
-                              </button>
-                            </div>
-                          </>
-                        )}
-
-                        {tab === 'done' && (
-                          <div style={S.note}>
-                            Status: {STATUS_LABELS[kpi.status] || kpi.status}
-                            {kpi.hod_score != null && ` · HOD score: ${kpi.hod_score}/5`}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </>
+                  <EmployeeScorecard
+                    report={report}
+                    kpis={kpis as any[]}
+                    stage={stage}
+                    cycle={currentCycle}
+                    user={user}
+                    isHrAdmin={isHrAdmin}
+                    onSubmitted={() => setExpandOverrides(prev => ({ ...prev, [report.id]: true }))}
+                  />
                 )}
-              </div>
+              </>
             )}
           </div>
         );
@@ -433,4 +684,6 @@ const S: Record<string, any> = {
   btnPrimary:{ padding: '6px 14px', border: 'none', borderRadius: 8, background: C.text, color: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: C.font },
   btnDanger: { padding: '6px 14px', border: '0.5px solid #fca5a5', borderRadius: 8, background: 'transparent', color: '#991b1b', fontSize: 12, cursor: 'pointer', fontFamily: C.font },
   roleBadge: (color: string) => ({ fontSize: 11, padding: '3px 10px', borderRadius: 10, background: color + '18', color, fontWeight: 500 }),
+  th:        { textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, color: C.textSecond, textTransform: 'uppercase', letterSpacing: '0.04em' },
+  td:        { padding: '8px 12px', fontSize: 13, color: C.text, verticalAlign: 'top' },
 };

@@ -137,6 +137,18 @@ class SelfEvaluateAllRequest(BaseModel):
     evaluations: List[SelfEvaluationItem]
 
 
+class ManagerEvaluationItem(BaseModel):
+    kpi_id:      UUID
+    mgr_rating:  float
+    mgr_remarks: Optional[str] = ""
+
+
+class ManagerEvaluateAllRequest(BaseModel):
+    cycle_id:    UUID
+    employee_id: UUID
+    evaluations: List[ManagerEvaluationItem]
+
+
 class RatingTargetsRequest(BaseModel):
     rating_targets: list
 
@@ -1522,6 +1534,106 @@ async def self_evaluate_all(
 
     await db.flush()
     return {"evaluated": count, "message": "Self evaluation submitted"}
+
+
+@router.post("/evaluate-all")
+async def manager_evaluate_all(
+    body:         ManagerEvaluateAllRequest,
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(get_current_user),
+):
+    emp_res = await db.execute(select(User).where(User.id == body.employee_id))
+    employee = emp_res.scalar_one_or_none()
+    if not employee:
+        raise HTTPException(404, "Employee not found")
+
+    is_admin = current_user.role in ("HR_ADMIN", "SUPER_ADMIN")
+    is_direct_mgr = employee.direct_manager_id    and str(employee.direct_manager_id)    == str(current_user.id)
+    is_review_mgr = employee.reviewing_manager_id and str(employee.reviewing_manager_id) == str(current_user.id)
+    is_hod        = employee.hod_id               and str(employee.hod_id)               == str(current_user.id)
+
+    has_approve_perm = False
+    if not is_admin and not (is_direct_mgr or is_review_mgr or is_hod):
+        from sqlalchemy import text
+        perm_check = await db.execute(text("""
+            SELECT rp.permission
+            FROM user_roles ur
+            JOIN role_permissions rp ON rp.role_id = ur.role_id
+            WHERE ur.user_id = :uid AND rp.permission = 'approve_scorecards'
+            LIMIT 1
+        """), {"uid": str(current_user.id)})
+        has_approve_perm = perm_check.scalar_one_or_none() is not None
+
+    if not (is_admin or is_direct_mgr or is_review_mgr or is_hod or has_approve_perm):
+        raise HTTPException(403, "Not authorised to evaluate this employee's scorecard")
+
+    cycle_res = await db.execute(
+        select(PerformanceCycle).where(PerformanceCycle.id == body.cycle_id)
+    )
+    cycle = cycle_res.scalar_one_or_none()
+    if not cycle:
+        raise HTTPException(404, "Cycle not found")
+    max_rating = cycle.rating_scale_max or 5
+
+    self_eval_res = await db.execute(
+        select(Kpi).where(
+            Kpi.cycle_id == body.cycle_id,
+            Kpi.user_id  == body.employee_id,
+            Kpi.status   == "SELF_EVALUATED",
+        )
+    )
+    self_eval_kpis = self_eval_res.scalars().all()
+    required_ids = {str(k.id) for k in self_eval_kpis}
+    submitted_ids = {str(e.kpi_id) for e in body.evaluations}
+
+    missing = required_ids - submitted_ids
+    if missing:
+        raise HTTPException(
+            400,
+            "All self-evaluated KPIs for this employee must be rated before submission",
+        )
+
+    all_res = await db.execute(
+        select(Kpi).where(
+            Kpi.cycle_id == body.cycle_id,
+            Kpi.user_id  == body.employee_id,
+        )
+    )
+    all_kpis = all_res.scalars().all()
+    by_id = {str(k.id): k for k in all_kpis}
+
+    from app.models.user import KpiAuditLog
+
+    count = 0
+    for ev in body.evaluations:
+        kpi = by_id.get(str(ev.kpi_id))
+        if not kpi:
+            raise HTTPException(404, f"KPI {ev.kpi_id} not found for this employee")
+        if str(kpi.user_id) != str(body.employee_id):
+            raise HTTPException(403, "KPI does not belong to this employee")
+        old_status = kpi.status
+        kpi.mgr_score   = ev.mgr_rating
+        kpi.mgr_comment = ev.mgr_remarks or ""
+        kpi.status      = "MGR_EVALUATED"
+        db.add(KpiAuditLog(
+            kpi_id=kpi.id, actor_id=current_user.id,
+            from_status=old_status, to_status="MGR_EVALUATED",
+            comment=ev.mgr_remarks or None,
+            score_given=ev.mgr_rating,
+        ))
+        count += 1
+
+    total_weighted = 0.0
+    for kpi in all_kpis:
+        if kpi.mgr_score is not None and kpi.weight is not None and max_rating:
+            total_weighted += float(kpi.weight) * float(kpi.mgr_score) / float(max_rating)
+
+    await db.flush()
+    return {
+        "evaluated":     count,
+        "overall_score": round(total_weighted, 2),
+        "message":       "Manager evaluation submitted",
+    }
 
 
 # ── Parameterised routes ───────────────────────────────────────────────────
