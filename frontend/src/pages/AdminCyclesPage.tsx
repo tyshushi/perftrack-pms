@@ -25,19 +25,23 @@ const S: Record<string, any> = {
   grid2:      { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 },
   fg:         { marginBottom: 10 },
   label:      { fontSize: 12, fontWeight: 500, color: C.textSecond, display: 'block', marginBottom: 4 },
-  input:      { width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.bg, color: C.text, fontFamily: C.font, outline: 'none' },
+  input:      { width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.bg, color: C.text, fontFamily: C.font, outline: 'none', boxSizing: 'border-box' as const },
+  select:     { width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.bg, color: C.text, fontFamily: C.font, outline: 'none', boxSizing: 'border-box' as const },
   btnPrimary: { padding: '8px 16px', border: 'none', borderRadius: 8, background: C.text, color: '#ffffff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
   btnWarning: { padding: '6px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bgWarning, color: C.text, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
   btnDanger:  { padding: '6px 12px', border: 'none', borderRadius: 8, background: C.textDanger, color: '#ffffff', fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
   btnGhost:   { padding: '6px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.text, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
+  btnEdit:    { padding: '6px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bgSecondary, color: C.text, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
   modalOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal:        { background: C.bg, borderRadius: 10, padding: 20, width: 'min(480px, 90vw)', boxShadow: '0 10px 30px rgba(0,0,0,0.2)' },
+  modal:        { background: C.bg, borderRadius: 10, padding: 20, width: 'min(480px, 90vw)', boxShadow: '0 10px 30px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' as const },
+  modalWide:    { background: C.bg, borderRadius: 10, padding: 20, width: 'min(640px, 95vw)', boxShadow: '0 10px 30px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' as const },
   th:         { textAlign: 'left', padding: '10px', borderBottom: `1px solid ${C.borderLight}`, fontSize: 11, color: C.textSecond, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' },
   td:         { padding: '10px', fontSize: 13, color: C.text },
   radioRow:   { display: 'flex', gap: 12, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' as const },
   radioOpt:   { display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.text, cursor: 'pointer' },
   note:       { fontSize: 11, color: C.textTertiary, marginTop: 4 },
   subCard:    { background: C.bgSecondary, border: `1px solid ${C.borderLight}`, borderRadius: 8, padding: 12, marginTop: 8 },
+  errorMsg:   { fontSize: 12, color: C.textDanger, background: '#fef2f2', border: `1px solid #fecaca`, borderRadius: 6, padding: '8px 10px', marginBottom: 12 },
 };
 
 const NUMERIC_DEFAULTS_5: { value: number; label: string; description: string }[] = [
@@ -77,8 +81,7 @@ export default function AdminCyclesPage() {
 
   const [ratingType, setRatingType] = useState<'NUMERIC' | 'MET_NOT_MET' | 'OKR'>('NUMERIC');
   const [scaleMax, setScaleMax]     = useState(5);
-  const [numericLevels, setNumericLevels] =
-    useState(defaultNumericLevels(5));
+  const [numericLevels, setNumericLevels] = useState(defaultNumericLevels(5));
   const [metLevels, setMetLevels]   = useState(MET_NOT_MET_DEFAULT);
   const [includeRM,  setIncludeRM]  = useState(false);
   const [includeHOD, setIncludeHOD] = useState(false);
@@ -91,6 +94,14 @@ export default function AdminCyclesPage() {
   const [deleteCycleStep1, setDeleteCycleStep1]   = useState<{ id: string; name: string } | null>(null);
   const [deleteCycleStep2, setDeleteCycleStep2]   = useState<{ id: string; name: string } | null>(null);
   const [deleteCycleText,  setDeleteCycleText]    = useState('');
+  const [deleteCycleError, setDeleteCycleError]   = useState<string | null>(null);
+
+  // Edit cycle state
+  const [editCycle, setEditCycle]       = useState<any | null>(null);
+  const [editForm,  setEditForm]        = useState<Record<string, any>>({});
+  const [editIncludeRM,  setEditIncludeRM]  = useState(false);
+  const [editIncludeHOD, setEditIncludeHOD] = useState(false);
+  const [editError, setEditError]       = useState<string | null>(null);
 
   const resetAllMut = useMutation({
     mutationFn: (cycleId: string) => kpisApi.resetAllScorecards(cycleId).then(r => r.data),
@@ -125,11 +136,23 @@ export default function AdminCyclesPage() {
       setActionMessage('Cycle deleted successfully.');
       setDeleteCycleStep2(null);
       setDeleteCycleText('');
+      setDeleteCycleError(null);
     },
     onError: (e: any) => {
-      setActionMessage(`Delete cycle failed: ${e?.response?.data?.detail || e.message}`);
-      setDeleteCycleStep2(null);
-      setDeleteCycleText('');
+      setDeleteCycleError(e?.response?.data?.detail || 'Delete failed');
+    },
+  });
+
+  const updateCycleMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) =>
+      cyclesApi.update(id, data).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cycles'] });
+      setEditCycle(null);
+      setEditError(null);
+    },
+    onError: (e: any) => {
+      setEditError(e?.response?.data?.detail || 'Update failed');
     },
   });
 
@@ -176,13 +199,44 @@ export default function AdminCyclesPage() {
       rating_type: ratingType,
       rating_scale_max: ratingType === 'NUMERIC' ? scaleMax : null,
       rating_levels:
-        ratingType === 'NUMERIC'    ? numericLevels :
+        ratingType === 'NUMERIC'     ? numericLevels :
         ratingType === 'MET_NOT_MET' ? metLevels :
         null,
       approval_chain: approvalChain,
     };
     createCycle.mutate(payload);
   };
+
+  const openEdit = (c: any) => {
+    setEditCycle(c);
+    setEditForm({
+      name:              c.name,
+      year:              String(c.year),
+      status:            c.status,
+      kpi_setting_start: c.kpi_setting_start || '',
+      kpi_setting_end:   c.kpi_setting_end   || '',
+      self_eval_start:   c.self_eval_start   || '',
+      self_eval_end:     c.self_eval_end     || '',
+      mgr_eval_start:    c.mgr_eval_start    || '',
+      mgr_eval_end:      c.mgr_eval_end      || '',
+    });
+    setEditIncludeRM(Array.isArray(c.approval_chain) && c.approval_chain.includes('RM'));
+    setEditIncludeHOD(Array.isArray(c.approval_chain) && c.approval_chain.includes('HOD'));
+    setEditError(null);
+  };
+
+  const onEditSave = () => {
+    const approvalChain = ['DM'];
+    if (editIncludeRM)  approvalChain.push('RM');
+    if (editIncludeHOD) approvalChain.push('HOD');
+    const data: Record<string, any> = { ...editForm, approval_chain: approvalChain };
+    if (data.year) data.year = Number(data.year);
+    Object.keys(data).forEach(k => { if (data[k] === '') delete data[k]; });
+    updateCycleMut.mutate({ id: editCycle.id, data });
+  };
+
+  const setEF = (key: string, val: any) =>
+    setEditForm(prev => ({ ...prev, [key]: val }));
 
   return (
     <div style={{ fontFamily: C.font, color: C.text }}>
@@ -404,7 +458,14 @@ export default function AdminCyclesPage() {
               {(cycles as any[]).map((c: any, i: number, arr: any[]) => (
                 <tr key={c.id} style={{ background: C.bg }}>
                   <td style={{ ...S.td, borderBottom: i < arr.length - 1 ? `1px solid ${C.borderLight}` : 'none' }}>
-                    {c.name}
+                    <span>{c.name}</span>
+                    <span style={{
+                      fontSize: 10, padding: '2px 6px', borderRadius: 10, marginLeft: 6,
+                      background: (c.kpi_count ?? 0) > 0 ? '#dcfce7' : C.bgTertiary,
+                      color:      (c.kpi_count ?? 0) > 0 ? '#166534' : C.textTertiary,
+                    }}>
+                      {c.kpi_count ?? 0} KPIs
+                    </span>
                   </td>
                   <td style={{ ...S.td, borderBottom: i < arr.length - 1 ? `1px solid ${C.borderLight}` : 'none' }}>
                     {c.year}
@@ -433,6 +494,14 @@ export default function AdminCyclesPage() {
                   </td>
                   <td style={{ ...S.td, borderBottom: i < arr.length - 1 ? `1px solid ${C.borderLight}` : 'none' }}>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {isSuperAdmin() && (
+                        <button
+                          type="button"
+                          style={S.btnEdit}
+                          onClick={() => openEdit(c)}>
+                          Edit
+                        </button>
+                      )}
                       {isHrAdmin() && (
                         <button
                           type="button"
@@ -465,6 +534,106 @@ export default function AdminCyclesPage() {
           </table>
         </div>
       </div>
+
+      {/* Edit Cycle Modal */}
+      {editCycle && (
+        <div style={S.modalOverlay} onClick={() => { if (!updateCycleMut.isPending) setEditCycle(null); }}>
+          <div style={S.modalWide} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 600, marginBottom: 14, color: C.text, fontSize: 15 }}>
+              Edit Cycle — {editCycle.name}
+            </div>
+            {editError && <div style={S.errorMsg}>{editError}</div>}
+            <div style={S.grid2}>
+              <div style={S.fg}>
+                <label style={S.label}>Cycle Name</label>
+                <input style={S.input} value={editForm.name || ''}
+                  onChange={e => setEF('name', e.target.value)} />
+              </div>
+              <div style={S.fg}>
+                <label style={S.label}>Year</label>
+                <input style={S.input} type="number" value={editForm.year || ''}
+                  onChange={e => setEF('year', e.target.value)} />
+              </div>
+              <div style={S.fg}>
+                <label style={S.label}>Status</label>
+                <select style={S.select} value={editForm.status || ''}
+                  onChange={e => setEF('status', e.target.value)}>
+                  <option value="DRAFT">DRAFT</option>
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="CLOSED">CLOSED</option>
+                  <option value="ARCHIVED">ARCHIVED</option>
+                </select>
+              </div>
+            </div>
+            <div style={S.grid2}>
+              <div style={S.fg}>
+                <label style={S.label}>KPI Setting Start</label>
+                <input style={S.input} type="date" value={editForm.kpi_setting_start || ''}
+                  onChange={e => setEF('kpi_setting_start', e.target.value)} />
+              </div>
+              <div style={S.fg}>
+                <label style={S.label}>KPI Setting End</label>
+                <input style={S.input} type="date" value={editForm.kpi_setting_end || ''}
+                  onChange={e => setEF('kpi_setting_end', e.target.value)} />
+              </div>
+              <div style={S.fg}>
+                <label style={S.label}>Self Eval Start</label>
+                <input style={S.input} type="date" value={editForm.self_eval_start || ''}
+                  onChange={e => setEF('self_eval_start', e.target.value)} />
+              </div>
+              <div style={S.fg}>
+                <label style={S.label}>Self Eval End</label>
+                <input style={S.input} type="date" value={editForm.self_eval_end || ''}
+                  onChange={e => setEF('self_eval_end', e.target.value)} />
+              </div>
+              <div style={S.fg}>
+                <label style={S.label}>Manager Eval Start</label>
+                <input style={S.input} type="date" value={editForm.mgr_eval_start || ''}
+                  onChange={e => setEF('mgr_eval_start', e.target.value)} />
+              </div>
+              <div style={S.fg}>
+                <label style={S.label}>Manager Eval End</label>
+                <input style={S.input} type="date" value={editForm.mgr_eval_end || ''}
+                  onChange={e => setEF('mgr_eval_end', e.target.value)} />
+              </div>
+            </div>
+            <div style={{ borderTop: `1px solid ${C.borderLight}`, paddingTop: 12, marginBottom: 12 }}>
+              <div style={{ fontWeight: 500, marginBottom: 8, fontSize: 13, color: C.text }}>Approval Chain</div>
+              <div style={S.radioRow}>
+                <label style={{ ...S.radioOpt, opacity: 0.7, cursor: 'not-allowed' }}>
+                  <input type="checkbox" checked disabled />
+                  Direct Manager (DM)
+                </label>
+                <label style={S.radioOpt}>
+                  <input type="checkbox" checked={editIncludeRM}
+                    onChange={e => setEditIncludeRM(e.target.checked)} />
+                  Reviewing Manager (RM)
+                </label>
+                <label style={S.radioOpt}>
+                  <input type="checkbox" checked={editIncludeHOD}
+                    onChange={e => setEditIncludeHOD(e.target.checked)} />
+                  HOD
+                </label>
+              </div>
+              <div style={S.note}>
+                Order: DM{editIncludeRM ? ' → RM' : ''}{editIncludeHOD ? ' → HOD' : ''}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" style={S.btnGhost}
+                disabled={updateCycleMut.isPending}
+                onClick={() => { setEditCycle(null); setEditError(null); }}>
+                Cancel
+              </button>
+              <button type="button" style={S.btnPrimary}
+                disabled={updateCycleMut.isPending}
+                onClick={onEditSave}>
+                {updateCycleMut.isPending ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {actionMessage && (
         <div style={S.modalOverlay} onClick={() => setActionMessage(null)}>
@@ -574,6 +743,7 @@ export default function AdminCyclesPage() {
                   setDeleteCycleStep2(deleteCycleStep1);
                   setDeleteCycleStep1(null);
                   setDeleteCycleText('');
+                  setDeleteCycleError(null);
                 }}>
                 Continue
               </button>
@@ -583,7 +753,7 @@ export default function AdminCyclesPage() {
       )}
 
       {deleteCycleStep2 && (
-        <div style={S.modalOverlay} onClick={() => { if (!deleteCycleMut.isPending) { setDeleteCycleStep2(null); setDeleteCycleText(''); } }}>
+        <div style={S.modalOverlay} onClick={() => { if (!deleteCycleMut.isPending) { setDeleteCycleStep2(null); setDeleteCycleText(''); setDeleteCycleError(null); } }}>
           <div style={S.modal} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight: 600, marginBottom: 10, color: C.textDanger }}>Final Confirmation</div>
             <div style={{ fontSize: 13, color: C.text, marginBottom: 12 }}>
@@ -591,16 +761,19 @@ export default function AdminCyclesPage() {
             </div>
             <input
               autoFocus
-              style={{ ...S.input, marginBottom: 16 }}
+              style={{ ...S.input, marginBottom: 12 }}
               value={deleteCycleText}
               onChange={e => setDeleteCycleText(e.target.value)}
               placeholder="Type DELETE to confirm" />
+            {deleteCycleError && (
+              <div style={{ ...S.errorMsg, marginBottom: 12 }}>{deleteCycleError}</div>
+            )}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button
                 type="button"
                 style={S.btnGhost}
                 disabled={deleteCycleMut.isPending}
-                onClick={() => { setDeleteCycleStep2(null); setDeleteCycleText(''); }}>
+                onClick={() => { setDeleteCycleStep2(null); setDeleteCycleText(''); setDeleteCycleError(null); }}>
                 Cancel
               </button>
               <button
