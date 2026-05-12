@@ -178,6 +178,7 @@ export default function ManagerEvalPage() {
   const reportData = myReports.map((report: any) => {
     const kpis = kpisByEmployeeId[report.id] ?? [];
     const stage = computeStage(kpis);
+    console.log('Employee:', report.full_name, 'KPIs:', kpis.map((k: any) => k.status));
     return { report, kpis, stage, isLoading: loadingByEmployeeId[report.id] };
   });
 
