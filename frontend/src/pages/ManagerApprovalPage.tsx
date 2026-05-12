@@ -334,6 +334,7 @@ export default function ManagerApprovalPage() {
   const currentUserId = user?.id ?? '';
   const [cycleId, setCycleId] = useState('');
   const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>({});
+  const [indirectSectionExpanded, setIndirectSectionExpanded] = useState(false);
 
   const { data: cycles = [] } = useQuery({
     queryKey: ['cycles'],
@@ -355,6 +356,11 @@ export default function ManagerApprovalPage() {
   });
 
   const myReports = (reports as any[]);
+  const directReports = myReports.filter(r => r.direct_manager_id === currentUserId);
+  const indirectReports = myReports.filter(r =>
+    r.direct_manager_id !== currentUserId &&
+    (r.reviewing_manager_id === currentUserId || r.hod_id === currentUserId)
+  );
 
   // Fetch each direct report's KPIs separately so we can compute per-employee status
   const reportKpiQueries = useQueries({
@@ -393,14 +399,28 @@ export default function ManagerApprovalPage() {
     return { report, kpis, status, isLoading: loadingByEmployeeId[report.id] };
   });
 
-  const summary = reportData.reduce(
+  const directReportData = reportData.filter(d => d.report.direct_manager_id === currentUserId);
+  const indirectReportData = reportData.filter(d =>
+    d.report.direct_manager_id !== currentUserId &&
+    (d.report.reviewing_manager_id === currentUserId || d.report.hod_id === currentUserId)
+  );
+
+  const directSummary = directReportData.reduce(
     (acc, r) => {
       if (r.status === 'PENDING_YOURS') acc.awaiting += 1;
       if (r.status === 'LOCKED')        acc.approved += 1;
-      if (r.status === 'NOT_STARTED')   acc.notStarted += 1;
       return acc;
     },
-    { awaiting: 0, approved: 0, notStarted: 0 },
+    { awaiting: 0, approved: 0 },
+  );
+
+  const indirectSummary = indirectReportData.reduce(
+    (acc, r) => {
+      if (r.status === 'PENDING_YOURS') acc.awaiting += 1;
+      if (r.status === 'LOCKED')        acc.approved += 1;
+      return acc;
+    },
+    { awaiting: 0, approved: 0 },
   );
 
   const isOpen = (id: string, status: ReportStatus) =>
@@ -438,7 +458,7 @@ export default function ManagerApprovalPage() {
         </div>
         <select
           value={cycleId}
-          onChange={e => { setCycleId(e.target.value); setExpandOverrides({}); }}
+          onChange={e => { setCycleId(e.target.value); setExpandOverrides({}); setIndirectSectionExpanded(false); }}
           style={{ width: '100%', padding: '12px 14px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 15, fontWeight: 600, background: C.bg, color: cycleId ? C.text : C.textTertiary, fontFamily: C.font, outline: 'none', cursor: 'pointer' }}>
           <option value="">Select a performance cycle to begin…</option>
           {sortedCycles.map((c: any) => (
@@ -458,58 +478,129 @@ export default function ManagerApprovalPage() {
           )}
 
           {myReports.length > 0 && (
-            <div style={{ marginBottom: 12, padding: '10px 14px', background: C.bgSecondary, border: `0.5px solid ${C.borderLight}`, borderRadius: 8, fontSize: 13, color: C.textSecond }}>
-              <strong style={{ color: C.text, fontWeight: 600 }}>{summary.awaiting}</strong> awaiting your approval
+            <div style={{ marginBottom: 16, padding: '10px 14px', background: C.bgSecondary, border: `0.5px solid ${C.borderLight}`, borderRadius: 8, fontSize: 13, color: C.textSecond }}>
+              <strong style={{ color: C.text, fontWeight: 600 }}>{directReports.length}</strong> direct
               <span style={{ margin: '0 8px', color: C.textTertiary }}>·</span>
-              <strong style={{ color: C.text, fontWeight: 600 }}>{summary.approved}</strong> approved
+              <strong style={{ color: C.text, fontWeight: 600 }}>{indirectReports.length}</strong> indirect
               <span style={{ margin: '0 8px', color: C.textTertiary }}>·</span>
-              <strong style={{ color: C.text, fontWeight: 600 }}>{summary.notStarted}</strong> not started
+              <strong style={{ color: C.text, fontWeight: 600 }}>{directSummary.awaiting + indirectSummary.awaiting}</strong> awaiting approval total
             </div>
           )}
 
-          {reportData.map(({ report, status, isLoading }) => {
-            const kpis = kpisByEmployeeId[report.id] ?? [];
-            const expanded = isOpen(report.id, status);
-            const badge    = REPORT_STATUS_STYLE[status];
-            return (
-              <div key={report.id} style={{ background: C.bg, border: `1px solid ${expanded ? C.border : C.borderLight}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
-                {/* Employee header row */}
-                <button
-                  onClick={() => toggle(report.id, status)}
-                  style={{ width: '100%', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: C.font, textAlign: 'left' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 500, fontSize: 14, color: C.text }}>{report.full_name}</div>
-                      {report.position_title && (
-                        <div style={{ fontSize: 12, color: C.textSecond, marginTop: 1 }}>{report.position_title}</div>
-                      )}
-                    </div>
-                    <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 9px', borderRadius: 10, background: badge.bg, color: badge.color, whiteSpace: 'nowrap' }}>
-                      {badge.label}
-                    </span>
-                  </div>
-                  <span style={{ fontSize: 14, color: C.textTertiary, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
-                    ▾
-                  </span>
-                </button>
-
-                {/* Expanded scorecard */}
-                {expanded && (
-                  <div style={{ padding: '0 16px 16px' }}>
-                    <EmployeeScorecard
-                      employee={report}
-                      cycleId={cycleId}
-                      cycle={currentCycle}
-                      currentUserId={currentUserId}
-                      kpis={kpis}
-                      isLoading={isLoading}
-                      onDone={() => setExpandOverrides(prev => ({ ...prev, [report.id]: false }))}
-                    />
-                  </div>
-                )}
+          {/* Direct Reports Section */}
+          {directReportData.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: C.text, borderBottom: `1px solid ${C.borderLight}`, paddingBottom: 8, marginBottom: 8 }}>
+                Direct Reports ({directReports.length})
               </div>
-            );
-          })}
+              <div style={{ marginBottom: 12, fontSize: 12, color: C.textSecond }}>
+                <strong style={{ color: C.text }}>{directSummary.awaiting}</strong> awaiting approval
+                <span style={{ margin: '0 6px', color: C.textTertiary }}>·</span>
+                <strong style={{ color: C.text }}>{directSummary.approved}</strong> approved
+              </div>
+              {directReportData.map(({ report, status, isLoading }) => {
+                const kpis = kpisByEmployeeId[report.id] ?? [];
+                const expanded = isOpen(report.id, status);
+                const badge    = REPORT_STATUS_STYLE[status];
+                return (
+                  <div key={report.id} style={{ background: C.bg, border: `1px solid ${expanded ? C.border : C.borderLight}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
+                    <button
+                      onClick={() => toggle(report.id, status)}
+                      style={{ width: '100%', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: C.font, textAlign: 'left' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 500, fontSize: 14, color: C.text }}>{report.full_name}</div>
+                          {report.position_title && (
+                            <div style={{ fontSize: 12, color: C.textSecond, marginTop: 1 }}>{report.position_title}</div>
+                          )}
+                        </div>
+                        <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 9px', borderRadius: 10, background: badge.bg, color: badge.color, whiteSpace: 'nowrap' }}>
+                          {badge.label}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: 14, color: C.textTertiary, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+                        ▾
+                      </span>
+                    </button>
+                    {expanded && (
+                      <div style={{ padding: '0 16px 16px' }}>
+                        <EmployeeScorecard
+                          employee={report}
+                          cycleId={cycleId}
+                          cycle={currentCycle}
+                          currentUserId={currentUserId}
+                          kpis={kpis}
+                          isLoading={isLoading}
+                          onDone={() => setExpandOverrides(prev => ({ ...prev, [report.id]: false }))}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Indirect Reports Section */}
+          {indirectReportData.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <div
+                onClick={() => setIndirectSectionExpanded(p => !p)}
+                style={{ fontWeight: 600, fontSize: 13, color: C.text, borderBottom: `1px solid ${C.borderLight}`, paddingBottom: 8, marginBottom: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>Indirect Reports ({indirectReports.length})</span>
+                <span style={{ fontSize: 11, color: C.textTertiary, transform: indirectSectionExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
+              </div>
+              {indirectSectionExpanded && (
+                <>
+                  <div style={{ marginBottom: 12, fontSize: 12, color: C.textSecond }}>
+                    <strong style={{ color: C.text }}>{indirectSummary.awaiting}</strong> awaiting approval
+                    <span style={{ margin: '0 6px', color: C.textTertiary }}>·</span>
+                    <strong style={{ color: C.text }}>{indirectSummary.approved}</strong> approved
+                  </div>
+                  {indirectReportData.map(({ report, status, isLoading }) => {
+                    const kpis = kpisByEmployeeId[report.id] ?? [];
+                    const expanded = isOpen(report.id, status);
+                    const badge    = REPORT_STATUS_STYLE[status];
+                    return (
+                      <div key={report.id} style={{ background: C.bg, border: `1px solid ${expanded ? C.border : C.borderLight}`, borderLeft: '3px solid #e5e7eb', borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
+                        <button
+                          onClick={() => toggle(report.id, status)}
+                          style={{ width: '100%', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: C.font, textAlign: 'left' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 500, fontSize: 14, color: C.text }}>{report.full_name}</div>
+                              {report.position_title && (
+                                <div style={{ fontSize: 12, color: C.textSecond, marginTop: 1 }}>{report.position_title}</div>
+                              )}
+                            </div>
+                            <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 9px', borderRadius: 10, background: badge.bg, color: badge.color, whiteSpace: 'nowrap' }}>
+                              {badge.label}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: 14, color: C.textTertiary, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+                            ▾
+                          </span>
+                        </button>
+                        {expanded && (
+                          <div style={{ padding: '0 16px 16px' }}>
+                            <EmployeeScorecard
+                              employee={report}
+                              cycleId={cycleId}
+                              cycle={currentCycle}
+                              currentUserId={currentUserId}
+                              kpis={kpis}
+                              isLoading={isLoading}
+                              onDone={() => setExpandOverrides(prev => ({ ...prev, [report.id]: false }))}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
