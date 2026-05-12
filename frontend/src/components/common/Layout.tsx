@@ -246,6 +246,11 @@ export default function Layout() {
                       Role Management
                     </NavLink>
                   )}
+                  {isSuperAdmin && (
+                    <NavLink to="/admin/settings" style={({ isActive }) => l1LinkStyle(isActive)} end>
+                      System Settings
+                    </NavLink>
+                  )}
 
                   {/* KPI Setup sub-group */}
                   {(isHrAdmin || hasPermission('manage_templates')) && (

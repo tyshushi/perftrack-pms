@@ -234,11 +234,9 @@ function RatingTargetsEditor({ kpi, cycle, onSave }: {
   );
 }
 
-function EditKpiForm({ kpi, cycle, isFixed, rule, onSave, onCancel }: {
+function EditKpiForm({ kpi, cycle, onSave, onCancel }: {
   kpi:      any;
   cycle:    any;
-  isFixed:  boolean;
-  rule:     any;
   onSave:   (data: { fields: any; targets: any[] | null }) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -254,20 +252,16 @@ function EditKpiForm({ kpi, cycle, isFixed, rule, onSave, onCancel }: {
   const ratingType = cycle?.rating_type || 'NUMERIC';
   const targetsOk = hasCompleteTargets(targets, cycle);
   const nameOk = name.trim().length > 0;
-  const canSave = isFixed ? Number.isFinite(weight) : (nameOk && targetsOk);
+  const canSave = nameOk && targetsOk;
 
   const handleSave = async () => {
     setErr(null);
     setSaving(true);
     try {
-      if (isFixed) {
-        await onSave({ fields: { weight }, targets: null });
-      } else {
-        await onSave({
-          fields: { name, description: desc, kpi_dimension: dim, weight, measurement: meas },
-          targets,
-        });
-      }
+      await onSave({
+        fields: { name, description: desc, kpi_dimension: dim, weight, measurement: meas },
+        targets,
+      });
     } catch (e: any) {
       setErr(e?.response?.data?.detail || 'Save failed');
     } finally {
@@ -278,55 +272,37 @@ function EditKpiForm({ kpi, cycle, isFixed, rule, onSave, onCancel }: {
   return (
     <div style={{ marginTop: 10, padding: 12, background: C.bgSecondary, border: `0.5px solid ${C.borderLight}`, borderRadius: 8 }}>
       <div style={{ fontWeight: 500, fontSize: 13, color: C.text, marginBottom: 10 }}>
-        Edit KPI{isFixed ? ' Weight (Cascaded)' : ''}
+        Edit KPI
       </div>
 
-      {!isFixed && (
-        <div style={S.grid2}>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={S.label}>KPI Name</label>
-            <input style={S.input} value={name} onChange={e => setName(e.target.value)} />
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={S.label}>Description</label>
-            <textarea style={{ ...S.input, minHeight: 54, resize: 'vertical' }}
-              value={desc} onChange={e => setDesc(e.target.value)} />
-          </div>
-          <div>
-            <label style={S.label}>KPI Dimension</label>
-            <select style={S.input} value={dim} onChange={e => setDim(e.target.value)}>
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={S.label}>Weight %</label>
-            <input style={S.input} type="number" min={0} max={100}
-              value={weight} onChange={e => setWeight(Number(e.target.value))} />
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={S.label}>Measurement</label>
-            <input style={S.input} value={meas} onChange={e => setMeas(e.target.value)} />
-          </div>
+      <div style={S.grid2}>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <label style={S.label}>KPI Name</label>
+          <input style={S.input} value={name} onChange={e => setName(e.target.value)} />
         </div>
-      )}
-
-      {isFixed && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-          <label style={{ ...S.label, marginBottom: 0 }}>Weight %</label>
-          <input type="number"
-            min={rule?.min_weight || 0} max={rule?.max_weight || 100}
-            style={{ ...S.input, width: 90 }}
-            value={weight}
-            onChange={e => setWeight(Number(e.target.value))} />
-          {rule && (
-            <span style={{ fontSize: 11, color: C.textTertiary }}>
-              ({rule.min_weight}–{rule.max_weight}%)
-            </span>
-          )}
+        <div style={{ gridColumn: '1 / -1' }}>
+          <label style={S.label}>Description</label>
+          <textarea style={{ ...S.input, minHeight: 54, resize: 'vertical' }}
+            value={desc} onChange={e => setDesc(e.target.value)} />
         </div>
-      )}
+        <div>
+          <label style={S.label}>KPI Dimension</label>
+          <select style={S.input} value={dim} onChange={e => setDim(e.target.value)}>
+            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={S.label}>Weight %</label>
+          <input style={S.input} type="number" min={0} max={100}
+            value={weight} onChange={e => setWeight(Number(e.target.value))} />
+        </div>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <label style={S.label}>Measurement</label>
+          <input style={S.input} value={meas} onChange={e => setMeas(e.target.value)} />
+        </div>
+      </div>
 
-      {!isFixed && cycle && (
+      {cycle && (
         <div style={{ marginTop: 4, padding: 12, background: C.bg, borderRadius: 8, border: `0.5px solid ${C.borderLight}` }}>
           <div style={{ fontWeight: 500, fontSize: 13, color: C.text, marginBottom: 4 }}>
             Rating Targets <span style={{ color: C.textDanger }}>*</span>
@@ -382,7 +358,7 @@ function EditKpiForm({ kpi, cycle, isFixed, rule, onSave, onCancel }: {
         </button>
         <button onClick={onCancel} style={S.btnSm} disabled={saving}>Cancel</button>
       </div>
-      {!isFixed && !targetsOk && (
+      {!targetsOk && (
         <div style={{ marginTop: 6, fontSize: 12, color: C.textDanger }}>
           Fill in all rating target descriptions before saving.
         </div>
@@ -392,29 +368,24 @@ function EditKpiForm({ kpi, cycle, isFixed, rule, onSave, onCancel }: {
 }
 
 function KpiCard({
-  kpi, weightRules, cycle, onDelete, onAdjustWeight, onSaveTargets, onSaveEdit,
+  kpi, cycle, onDelete, onSaveTargets, onSaveEdit,
 }: {
   kpi:            any;
-  weightRules:    any[];
   cycle:          any;
   onDelete:       () => void;
-  onAdjustWeight: (w: number) => void;
   onSaveTargets:  (targets: any[]) => void;
   onSaveEdit:     (payload: { fields: any; targets: any[] | null }) => Promise<void>;
 }) {
   const targetsComplete = hasCompleteTargets(kpi.rating_targets, cycle);
   const needsTargets = !targetsComplete && (kpi.status === 'DRAFT' || kpi.status === 'REJECTED' || kpi.status === 'APPROVED');
   const isFixed = kpi.kpi_type === 'FIXED';
-  const [editWeight, setEditWeight] = useState(false);
-  const [newWeight,  setNewWeight]  = useState(kpi.weight);
   const [showTargets, setShowTargets] = useState(needsTargets && !isFixed);
   const [editing,    setEditing]    = useState(false);
   const [flash,      setFlash]      = useState(false);
-  const rule    = weightRules.find((r: any) => r.kpi_dimension === kpi.kpi_dimension);
   const canDelete = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED') && !isFixed;
   const showTargetsSection = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED' || kpi.status === 'APPROVED') && !!cycle;
   const canEditTargets = showTargetsSection && !isFixed;
-  const canEditKpi = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED') && !!cycle;
+  const canEditKpi = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED') && !!cycle && !isFixed;
 
   const handleSave = async (payload: { fields: any; targets: any[] | null }) => {
     await onSaveEdit(payload);
@@ -474,40 +445,8 @@ function KpiCard({
         <EditKpiForm
           kpi={kpi}
           cycle={cycle}
-          isFixed={isFixed}
-          rule={rule}
           onSave={handleSave}
           onCancel={() => setEditing(false)} />
-      )}
-
-      {/* Weight adjustment for cascaded KPIs */}
-      {!editing && isFixed && kpi.status !== 'LOCKED' && (
-        <div style={{ marginTop: 8 }}>
-          {!editWeight ? (
-            <button onClick={() => { setEditWeight(true); setNewWeight(kpi.weight); }}
-              style={{ fontSize: 11, padding: '3px 8px', border: `0.5px solid ${C.border}`, borderRadius: 6, background: 'transparent', cursor: 'pointer', color: C.textSecond, fontFamily: C.font }}>
-              Adjust weight
-            </button>
-          ) : (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <input type="number"
-                min={rule?.min_weight || 0} max={rule?.max_weight || 100}
-                style={{ ...S.input, width: 70 }}
-                value={newWeight}
-                onChange={e => setNewWeight(Number(e.target.value))} />
-              <span style={{ fontSize: 12, color: C.textSecond }}>%</span>
-              {rule && (
-                <span style={{ fontSize: 11, color: C.textTertiary }}>
-                  ({rule.min_weight}–{rule.max_weight}%)
-                </span>
-              )}
-              <button onClick={() => { onAdjustWeight(newWeight); setEditWeight(false); }} style={S.btnPrimary}>
-                Save
-              </button>
-              <button onClick={() => setEditWeight(false)} style={S.btnSm}>Cancel</button>
-            </div>
-          )}
-        </div>
       )}
 
       {/* Delete for optional DRAFT KPIs (REJECTED delete button is rendered
@@ -639,12 +578,6 @@ export default function KpiSettingPage() {
     },
   });
 
-  const adjustMutation = useMutation({
-    mutationFn: ({ id, weight }: { id: string; weight: number }) =>
-      kpisApi.adjustWeight(id, weight),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] }),
-  });
-
   const deleteMutation = useMutation({
     mutationFn: (id: string) => kpisApi.delete(id),
     onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] }),
@@ -665,14 +598,10 @@ export default function KpiSettingPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] }),
   });
 
-  const handleSaveEdit = async (kpiId: string, isFixed: boolean, payload: { fields: any; targets: any[] | null }) => {
-    if (isFixed) {
-      await kpisApi.adjustWeight(kpiId, payload.fields.weight);
-    } else {
-      await kpisApi.update(kpiId, payload.fields);
-      if (payload.targets) {
-        await kpisApi.updateRatingTargets(kpiId, payload.targets);
-      }
+  const handleSaveEdit = async (kpiId: string, payload: { fields: any; targets: any[] | null }) => {
+    await kpisApi.update(kpiId, payload.fields);
+    if (payload.targets) {
+      await kpisApi.updateRatingTargets(kpiId, payload.targets);
     }
     await qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] });
     await refetchKpis();
@@ -993,12 +922,10 @@ export default function KpiSettingPage() {
             <KpiCard
               key={kpi.id}
               kpi={kpi}
-              weightRules={weightRules as any[]}
               cycle={currentCycle}
               onDelete={() => deleteMutation.mutate(kpi.id)}
-              onAdjustWeight={w => adjustMutation.mutate({ id: kpi.id, weight: w })}
               onSaveTargets={targets => ratingTargetsMutation.mutate({ id: kpi.id, targets })}
-              onSaveEdit={payload => handleSaveEdit(kpi.id, kpi.kpi_type === 'FIXED', payload)}
+              onSaveEdit={payload => handleSaveEdit(kpi.id, payload)}
             />
           ))}
 

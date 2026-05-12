@@ -17,6 +17,7 @@ from app.api.routes.notifications import router as notifications_router
 from app.api.routes.admin import router as admin_router
 from app.api.routes.groups import router as groups_router
 from app.api.routes.roles import router as roles_router
+from app.api.routes.settings import router as settings_router
 
 MIGRATIONS = """
     DO $$ BEGIN ALTER TABLE users ADD COLUMN employment_unit VARCHAR(100);
@@ -422,6 +423,20 @@ DO $$ BEGIN
   ON CONFLICT DO NOTHING;
 EXCEPTION WHEN others THEN NULL; END $$;
 
+DO $$ BEGIN
+  CREATE TABLE IF NOT EXISTS system_settings (
+    key VARCHAR(100) PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_by UUID REFERENCES users(id),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+EXCEPTION WHEN duplicate_table THEN NULL; END $$;
+
+DO $$ BEGIN
+  INSERT INTO system_settings (key, value) VALUES ('manager_cascade_enabled', 'true')
+  ON CONFLICT DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+
 """
 
 
@@ -549,6 +564,7 @@ app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["
 app.include_router(admin_router,         prefix="/api/v1/admin",         tags=["Admin"])
 app.include_router(groups_router,        prefix="/api/v1/groups",        tags=["Groups"])
 app.include_router(roles_router,         prefix="/api/v1/roles",         tags=["Roles"])
+app.include_router(settings_router,      prefix="/api/v1/settings",      tags=["Settings"])
 
 
 @app.get("/health")
