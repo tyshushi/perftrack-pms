@@ -153,9 +153,10 @@ export default function ManagerEvalPage() {
 
   const reportKpiQueries = useQueries({
     queries: myReports.map((r: any) => ({
-      queryKey: ['kpis', cycleId, r.id],
+      queryKey: ['eval-kpis', cycleId, r.id],
       queryFn:  () => kpisApi.list(cycleId, r.id).then(res => res.data),
       enabled:  !!cycleId && !!r.id,
+      staleTime: 0,
     })),
   });
 
@@ -208,7 +209,10 @@ export default function ManagerEvalPage() {
   const evalMutation = useMutation({
     mutationFn: ({ id, action }: { id: string; action: string }) =>
       kpisApi.evaluate(id, scores[id], comments[id] || '', action),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['kpis'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['kpis'] });
+      qc.invalidateQueries({ queryKey: ['eval-kpis'] });
+    },
   });
 
   function scoreSectionLabel(status: string): string {
