@@ -140,14 +140,17 @@ function RatingTargetsTable({ kpi, levels }: { kpi: any; levels: any[] }) {
   const targets: any[] = Array.isArray(kpi.rating_targets) ? kpi.rating_targets : [];
   if (targets.length === 0 && (!levels || levels.length === 0)) return null;
 
-  const rows = (levels && levels.length > 0 ? levels : targets).map((lv: any) => {
-    const t = targets.find((x: any) => Number(x.rating) === Number(lv.value));
-    return {
-      value:       lv.value,
-      label:       lv.label || '',
-      description: t?.target || lv.description || '',
-    };
-  });
+  const source = levels && levels.length > 0 ? levels : targets;
+  const rows = source
+    .map((lv: any) => {
+      const t = targets.find((x: any) => Number(x.value) === Number(lv.value));
+      return {
+        value:       lv.value,
+        label:       t?.label || lv.label || '',
+        description: t?.target || lv.description || '',
+      };
+    })
+    .sort((a: any, b: any) => Number(a.value) - Number(b.value));
 
   return (
     <div style={{ marginBottom: 10 }}>
@@ -212,7 +215,9 @@ function EmployeeScorecard({
   const ratingLevels: any[]  = Array.isArray(cycle?.rating_levels) ? cycle.rating_levels : [];
   const ratingOptions        = useMemo(() => {
     if (ratingLevels.length > 0) {
-      return ratingLevels.map((l: any) => ({ value: Number(l.value), label: l.label || '' }));
+      return ratingLevels
+        .map((l: any) => ({ value: Number(l.value), label: l.label || '' }))
+        .sort((a, b) => a.value - b.value);
     }
     return Array.from({ length: maxRating }, (_, i) => ({
       value: i + 1,
