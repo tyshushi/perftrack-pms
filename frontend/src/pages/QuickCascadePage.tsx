@@ -90,6 +90,7 @@ export default function QuickCascadePage() {
   const { user } = useAuthStore();
   const qc = useQueryClient();
   const isHrAdmin = useAuthStore().isHrAdmin();
+  const isAdmin = useAuthStore(s => s.isHrAdmin()) || useAuthStore(s => s.isSuperAdmin());
   const [cycleId, setCycleId] = useState('');
 
   const { data: cycles = [] } = useQuery({
@@ -116,14 +117,19 @@ export default function QuickCascadePage() {
     queryFn:  () => departmentsApi.list().then(r => r.data),
   });
 
-  const { data: users = [], error: usersError } = useQuery({
+  const { data: allUsers = [], error: usersError } = useQuery({
     queryKey: ['users'],
-    queryFn:  () => usersApi.list().then(r => {
-      console.log('[QuickCascadePage] users fetched:', r.data);
-      return r.data;
-    }),
-    retry: (_count, err: any) => err?.response?.status !== 401,
+    queryFn:  () => usersApi.list().then(r => r.data),
+    enabled: isAdmin,
   });
+
+  const { data: directReportsData = [] } = useQuery({
+    queryKey: ['direct-reports'],
+    queryFn:  () => usersApi.directReports().then(r => r.data),
+    enabled: !isAdmin,
+  });
+
+  const eligibleUsers = isAdmin ? allUsers : directReportsData;
 
   useEffect(() => {
     if ((usersError as any)?.response?.status === 401) {
@@ -153,23 +159,10 @@ export default function QuickCascadePage() {
     setInlineTargets(buildEmptyTargetRows(currentCycle));
   }, [cycleId]);
 
-  // For managers: direct reports only. For HR: all active users except self.
+  // For managers: direct reports from the server. For HR: all active users except self.
   const directReports = useMemo(() => {
-    const base = (users as any[]).filter(u => u.id !== user?.id && u.is_active !== false);
-    if (isHrAdmin) return base;
-    const filtered = base.filter((u: any) =>
-      u.direct_manager_id    === user?.id ||
-      u.reviewing_manager_id === user?.id ||
-      u.hod_id               === user?.id
-    );
-    console.log('[QuickCascadePage] direct reports filter:', {
-      currentUserId: user?.id,
-      totalUsers:    (users as any[]).length,
-      baseCount:     base.length,
-      filteredCount: filtered.length,
-    });
-    return filtered;
-  }, [users, user, isHrAdmin]);
+    return (eligibleUsers as any[]).filter(u => u.id !== user?.id && u.is_active !== false);
+  }, [eligibleUsers, user]);
 
   const filteredReports = useMemo(() => {
     const q = search.toLowerCase();
