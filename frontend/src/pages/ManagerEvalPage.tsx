@@ -135,60 +135,6 @@ function SelfEvalSection({ kpi, cycle }: { kpi: any; cycle: any }) {
   );
 }
 
-function RatingTargetsTable({ kpi, levels }: { kpi: any; levels: any[] }) {
-  const [open, setOpen] = useState(false);
-  const targets: any[] = Array.isArray(kpi.rating_targets) ? kpi.rating_targets : [];
-  if (targets.length === 0 && (!levels || levels.length === 0)) return null;
-
-  const source = levels && levels.length > 0 ? levels : targets;
-  const rows = source
-    .map((lv: any) => {
-      const t = targets.find((x: any) => Number(x.value) === Number(lv.value));
-      return {
-        value:       lv.value,
-        label:       t?.label || lv.label || '',
-        description: t?.target || lv.description || '',
-      };
-    })
-    .sort((a: any, b: any) => Number(a.value) - Number(b.value));
-
-  return (
-    <div style={{ marginBottom: 10 }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
-          background: C.bgSecondary, border: `0.5px solid ${C.borderLight}`,
-          borderRadius: 6, cursor: 'pointer', fontFamily: C.font, fontSize: 12,
-          color: C.textSecond }}>
-        <span style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', fontSize: 10 }}>▶</span>
-        Rating Targets Reference
-      </button>
-      {open && (
-        <div style={{ marginTop: 8, border: `0.5px solid ${C.borderLight}`, borderRadius: 6, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-            <thead>
-              <tr style={{ background: C.bgSecondary }}>
-                <th style={{ ...S.th, width: 60 }}>Rating</th>
-                <th style={S.th}>Label</th>
-                <th style={S.th}>Target Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r: any) => (
-                <tr key={r.value} style={{ borderTop: `0.5px solid ${C.borderLight}` }}>
-                  <td style={S.td}><strong>{r.value}</strong></td>
-                  <td style={S.td}>{r.label || '—'}</td>
-                  <td style={{ ...S.td, color: C.textSecond, whiteSpace: 'pre-wrap' }}>{r.description || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function DimensionBadge({ dimension }: { dimension: string }) {
   const color = DIMENSION_COLORS[dimension] || C.textSecond;
   return (
@@ -358,8 +304,6 @@ function EmployeeScorecard({
               <StatusPill status={kpi.status} />
             </div>
 
-            <RatingTargetsTable kpi={kpi} levels={ratingLevels} />
-
             <SelfEvalSection kpi={kpi} cycle={cycle} />
 
             <div style={{ marginTop: 10, marginBottom: 10 }}>
@@ -367,32 +311,45 @@ function EmployeeScorecard({
                 textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>
                 Manager Rating
               </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
                 {ratingOptions.map(opt => {
                   const isSel = Number(selected) === Number(opt.value);
+                  const targets: any[] = Array.isArray(kpi.rating_targets) ? kpi.rating_targets : [];
+                  const targetEntry = targets.find((t: any) => Number(t.value) === Number(opt.value));
+                  const targetDesc = targetEntry?.target || '';
                   return (
                     <button
                       key={opt.value}
                       disabled={isLocked}
                       onClick={() => setRatings(p => ({ ...p, [kpi.id]: opt.value }))}
                       style={{
-                        padding: '8px 12px',
+                        flex: 1,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'flex-start',
+                        gap: 4,
+                        padding: '10px 8px',
                         borderRadius: 8,
                         border: `0.5px solid ${isSel ? C.text : C.border}`,
-                        background: isSel ? C.text : 'transparent',
+                        background: isSel ? C.text : C.bg,
                         color:      isSel ? '#fff'  : C.text,
-                        fontSize:   12,
                         cursor:     isLocked ? 'not-allowed' : 'pointer',
                         opacity:    isLocked ? 0.6 : 1,
                         fontFamily: C.font,
-                        textAlign:  'left',
-                        minWidth:   90,
+                        textAlign:  'center',
                       }}>
-                      <div style={{ fontWeight: 600 }}>{opt.value}</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.1 }}>{opt.value}</div>
                       {opt.label && (
-                        <div style={{ fontSize: 10, marginTop: 2,
-                          color: isSel ? '#fff' : C.textSecond }}>
+                        <div style={{ fontSize: 11, fontWeight: 500,
+                          color: isSel ? '#fff' : C.text }}>
                           {opt.label}
+                        </div>
+                      )}
+                      {targetDesc && (
+                        <div style={{ fontSize: 10, fontStyle: 'italic', lineHeight: 1.3,
+                          color: isSel ? '#d4d4d4' : C.textSecond, whiteSpace: 'pre-wrap' }}>
+                          {targetDesc}
                         </div>
                       )}
                     </button>
