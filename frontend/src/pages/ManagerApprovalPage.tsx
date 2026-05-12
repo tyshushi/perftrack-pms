@@ -499,13 +499,35 @@ export default function ManagerApprovalPage() {
               <span style={{ margin: '0 8px', color: C.textTertiary }}>·</span>
               <button
                 onClick={() => setShowPendingOnly(p => !p)}
-                style={{ background: 'none', border: 'none', padding: 0, margin: 0, fontSize: 13, fontFamily: C.font, cursor: 'pointer', color: showPendingOnly ? C.textInfo : C.textSecond, textDecoration: 'none' }}
-                onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')}
-                onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}
+                style={{
+                  padding: '3px 10px',
+                  borderRadius: 12,
+                  background: showPendingOnly ? '#1d4ed8' : '#dbeafe',
+                  color: showPendingOnly ? '#ffffff' : '#1d4ed8',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  border: `1px solid ${showPendingOnly ? '#1d4ed8' : '#bfdbfe'}`,
+                  fontFamily: C.font,
+                  textDecoration: 'underline',
+                  transition: 'background 0.1s, color 0.1s',
+                }}
+                onMouseEnter={e => {
+                  if (!showPendingOnly) {
+                    e.currentTarget.style.background = '#bfdbfe';
+                    e.currentTarget.style.color = '#1e40af';
+                  } else {
+                    e.currentTarget.style.background = '#1e40af';
+                  }
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = showPendingOnly ? '#1d4ed8' : '#dbeafe';
+                  e.currentTarget.style.color = showPendingOnly ? '#ffffff' : '#1d4ed8';
+                }}
               >
                 {showPendingOnly
-                  ? <><strong style={{ color: C.textInfo, fontWeight: 600 }}>Showing {totalAwaiting} pending</strong> — Show All ✕</>
-                  : <><strong style={{ color: C.text, fontWeight: 600 }}>{totalAwaiting}</strong> awaiting approval total</>
+                  ? <>Showing {totalAwaiting} pending — Show All ✕</>
+                  : <>⚡ {totalAwaiting} awaiting approval</>
                 }
               </button>
             </div>
