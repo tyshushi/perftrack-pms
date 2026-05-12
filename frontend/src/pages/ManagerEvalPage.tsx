@@ -341,13 +341,13 @@ function EmployeeScorecard({
                       }}>
                       <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.1 }}>{opt.value}</div>
                       {opt.label && (
-                        <div style={{ fontSize: 11, fontWeight: 500,
+                        <div style={{ fontSize: 12, fontWeight: 500,
                           color: isSel ? '#fff' : C.text }}>
                           {opt.label}
                         </div>
                       )}
                       {targetDesc && (
-                        <div style={{ fontSize: 10, fontStyle: 'italic', lineHeight: 1.3,
+                        <div style={{ fontSize: 13, fontStyle: 'italic', lineHeight: 1.3,
                           color: isSel ? '#d4d4d4' : C.textSecond, whiteSpace: 'pre-wrap' }}>
                           {targetDesc}
                         </div>
