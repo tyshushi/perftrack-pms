@@ -61,7 +61,7 @@ export default function SelfEvalPage() {
     enabled:  !!cycleId,
   });
 
-  const lockedKpis = useMemo(
+  const eligibleKpis = useMemo(
     () => (allKpis as any[]).filter(k => k.status === 'LOCKED' || k.status === 'SELF_EVALUATED'),
     [allKpis]
   );
@@ -70,7 +70,7 @@ export default function SelfEvalPage() {
   useEffect(() => {
     setEvals(prev => {
       const next: Record<string, Eval> = { ...prev };
-      lockedKpis.forEach((k: any) => {
+      eligibleKpis.forEach((k: any) => {
         if (!next[k.id]) {
           next[k.id] = {
             actual_achievement: k.actual_achievement || '',
@@ -81,7 +81,7 @@ export default function SelfEvalPage() {
       });
       return next;
     });
-  }, [lockedKpis]);
+  }, [eligibleKpis]);
 
   const submitMutation = useMutation({
     mutationFn: (payload: any) => kpisApi.selfEvaluateAll(payload),
@@ -91,8 +91,8 @@ export default function SelfEvalPage() {
     },
   });
 
-  const allSubmitted = lockedKpis.length > 0 &&
-    lockedKpis.every((k: any) => k.status === 'SELF_EVALUATED');
+  const allSubmitted = eligibleKpis.length > 0 &&
+    eligibleKpis.every((k: any) => k.status === 'SELF_EVALUATED');
   const readOnly = allSubmitted && !isEditing;
 
   const updateEval = (id: string, patch: Partial<Eval>) => {
@@ -112,7 +112,7 @@ export default function SelfEvalPage() {
     ];
   }, [cycleLevels]);
 
-  const allValid = lockedKpis.length > 0 && lockedKpis.every((k: any) => {
+  const allValid = eligibleKpis.length > 0 && eligibleKpis.every((k: any) => {
     const e = evals[k.id];
     if (!e) return false;
     if (!e.actual_achievement || e.actual_achievement.trim() === '') return false;
@@ -123,7 +123,7 @@ export default function SelfEvalPage() {
   const handleSubmit = () => {
     const payload = {
       cycle_id: cycleId,
-      evaluations: lockedKpis.map((k: any) => ({
+      evaluations: eligibleKpis.map((k: any) => ({
         kpi_id:             k.id,
         actual_achievement: evals[k.id].actual_achievement,
         self_rating:        ratingType === 'MET_NOT_MET'
@@ -200,7 +200,7 @@ export default function SelfEvalPage() {
         </div>
       )}
 
-      {cycleId && lockedKpis.length === 0 && (
+      {cycleId && eligibleKpis.length === 0 && (
         <div style={{ ...S.card, textAlign: 'center', padding: 32, color: C.textSecond, fontSize: 13 }}>
           No KPIs ready for self evaluation. Your scorecard must be approved and locked by your manager first.
         </div>
@@ -229,7 +229,7 @@ export default function SelfEvalPage() {
         </div>
       )}
 
-      {lockedKpis.map((kpi: any) => {
+      {eligibleKpis.map((kpi: any) => {
         const e = evals[kpi.id] || { actual_achievement: '', self_rating: null, self_remarks: '' };
         const targets: any[] = Array.isArray(kpi.rating_targets) ? kpi.rating_targets : [];
         const targetFor = (val: any): string => {
@@ -408,7 +408,7 @@ export default function SelfEvalPage() {
         );
       })}
 
-      {lockedKpis.length > 0 && !readOnly && (
+      {eligibleKpis.length > 0 && !readOnly && (
         <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.borderLight}` }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button

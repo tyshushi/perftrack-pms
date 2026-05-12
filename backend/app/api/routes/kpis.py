@@ -386,6 +386,7 @@ async def list_kpis(
     current_user: User           = Depends(get_current_user),
 ):
     q = select(Kpi).where(Kpi.cycle_id == cycle_id)
+    is_manager_of_employee = False
 
     if pending_for_me:
         # Show KPIs awaiting approval at this manager's level in the chain
@@ -405,7 +406,6 @@ async def list_kpis(
         is_admin = current_user.role in ["HR_ADMIN", "SUPER_ADMIN"]
 
         # Check if user is a manager of the requested employee (org-chart derived)
-        is_manager_of_employee = False
         if user_id and not is_admin:
             from sqlalchemy import or_
             emp_result = await db.execute(
@@ -436,6 +436,8 @@ async def list_kpis(
             if user_id:
                 q = q.where(Kpi.user_id == user_id)
         elif is_manager_of_employee:
+            # Managers see all KPI statuses for their reports, including
+            # SELF_EVALUATED — no status filter is applied on this branch.
             q = q.where(Kpi.user_id == user_id)
         elif current_user.role in ["MANAGER", "HOD"] and user_id:
             # Legacy role-based check
@@ -443,7 +445,7 @@ async def list_kpis(
         else:
             q = q.where(Kpi.user_id == current_user.id)
 
-    if status:
+    if status and not is_manager_of_employee:
         q = q.where(Kpi.status == status)
 
     result = await db.execute(q.order_by(Kpi.created_at))
@@ -1543,8 +1545,19 @@ async def update_kpi(
     if kpi.kpi_type == "FIXED":
         raise HTTPException(400,
             "Use /weight endpoint to adjust cascaded KPI weight")
+    was_rejected = kpi.status == "REJECTED"
     for field, val in body.model_dump(exclude_none=True).items():
         setattr(kpi, field, val)
+    # Editing a REJECTED KPI means staff is addressing the rejection, so it
+    # transitions back to DRAFT and re-enters the weight calculation.
+    if was_rejected:
+        from app.models.user import KpiAuditLog
+        kpi.status = "DRAFT"
+        db.add(KpiAuditLog(
+            kpi_id=kpi.id, actor_id=current_user.id,
+            from_status="REJECTED", to_status="DRAFT",
+            comment="KPI edited by staff after rejection",
+        ))
     await db.flush()
     await db.refresh(kpi)
     return kpi_to_dict(kpi)
