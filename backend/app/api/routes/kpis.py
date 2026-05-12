@@ -559,6 +559,17 @@ async def cascade_kpi(
     if not has_cascade_permission:
         raise HTTPException(403, "Not authorised to cascade KPIs")
 
+    if current_user.role not in ("HR_ADMIN", "SUPER_ADMIN"):
+        cascade_setting = await db.execute(text(
+            "SELECT value FROM system_settings WHERE key = 'manager_cascade_enabled'"
+        ))
+        cascade_value = cascade_setting.scalar_one_or_none()
+        if cascade_value == 'false':
+            raise HTTPException(
+                403,
+                "Manager KPI cascade is currently disabled. Contact HR Admin.",
+            )
+
     global_min = await _get_global_min_weight(db, body.cycle_id)
     if global_min and body.weight < global_min:
         raise HTTPException(
@@ -1784,6 +1795,8 @@ async def adjust_weight(
         raise HTTPException(404, "KPI not found")
     if str(kpi.user_id) != str(current_user.id):
         raise HTTPException(403, "Not your KPI")
+    if kpi.kpi_type == "FIXED":
+        raise HTTPException(403, "Cascaded KPI weights cannot be modified")
     if kpi.kpi_type != "FIXED":
         raise HTTPException(400,
             "Use PATCH /kpis/{id} to edit optional KPIs")

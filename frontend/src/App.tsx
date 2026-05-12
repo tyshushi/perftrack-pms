@@ -16,6 +16,7 @@ import GroupsPage from './pages/GroupsPage';
 import WeightRulesPage from './pages/WeightRulesPage';
 import KpiTemplatesPage from './pages/KpiTemplatesPage';
 import RoleManagementPage from './pages/RoleManagementPage';
+import SystemSettingsPage from './pages/SystemSettingsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -33,6 +34,12 @@ function RequirePermission({ permission, children }: { permission: string | stri
   const perms = Array.isArray(permission) ? permission : [permission];
   const allowed = isSuperAdmin || perms.some(p => hasPermission(p));
   if (!allowed) return <Navigate to="/scorecard/setting" replace />;
+  return <>{children}</>;
+}
+
+function RequireSuperAdmin({ children }: { children: React.ReactNode }) {
+  const isSuperAdmin = useAuthStore(s => s.isSuperAdmin());
+  if (!isSuperAdmin) return <Navigate to="/scorecard/setting" replace />;
   return <>{children}</>;
 }
 
@@ -63,6 +70,7 @@ export default function App() {
             <Route path="admin/weight-rules"       element={<RequirePermission permission={["manage_weight_rules"]}><WeightRulesPage /></RequirePermission>} />
             <Route path="admin/kpi-setup/templates" element={<RequirePermission permission={["manage_templates", "cascade_kpis"]}><KpiTemplatesPage /></RequirePermission>} />
             <Route path="admin/roles"              element={<RequirePermission permission={["manage_custom_roles"]}><RoleManagementPage /></RequirePermission>} />
+            <Route path="admin/settings"           element={<RequireSuperAdmin><SystemSettingsPage /></RequireSuperAdmin>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

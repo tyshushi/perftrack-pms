@@ -128,6 +128,11 @@ export const rolesApi = {
     api.delete(`/roles/${roleId}/users/${userId}`),
 };
 
+export const settingsApi = {
+  list:   ()                            => api.get('/settings/'),
+  update: (key: string, value: string)  => api.patch(`/settings/${key}`, { value }),
+};
+
 export const groupsApi = {
   list:          (cycleId?: string) =>
     api.get('/groups/', { params: cycleId ? { cycle_id: cycleId } : {} }),
