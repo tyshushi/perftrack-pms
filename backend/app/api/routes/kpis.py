@@ -1563,7 +1563,7 @@ async def delete_kpi(
     if str(kpi.user_id) != str(current_user.id) and \
             current_user.role not in ["HR_ADMIN", "SUPER_ADMIN"]:
         raise HTTPException(403)
-    if kpi.status != "DRAFT":
+    if kpi.status not in ("DRAFT", "REJECTED"):
         raise HTTPException(400, "Cannot delete a submitted KPI")
     if kpi.kpi_type == "FIXED":
         raise HTTPException(400, "Cannot delete a cascaded KPI")

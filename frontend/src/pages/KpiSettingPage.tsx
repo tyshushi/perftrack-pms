@@ -406,7 +406,7 @@ function KpiCard({
   const [editing,    setEditing]    = useState(false);
   const [flash,      setFlash]      = useState(false);
   const rule    = weightRules.find((r: any) => r.kpi_dimension === kpi.kpi_dimension);
-  const canDelete = kpi.status === 'DRAFT' && !isFixed;
+  const canDelete = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED') && !isFixed;
   const showTargetsSection = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED' || kpi.status === 'APPROVED') && !!cycle;
   const canEditTargets = showTargetsSection && !isFixed;
   const canEditKpi = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED') && !!cycle;
@@ -505,7 +505,7 @@ function KpiCard({
         </div>
       )}
 
-      {/* Delete for optional DRAFT KPIs */}
+      {/* Delete for optional DRAFT or REJECTED KPIs */}
       {!editing && canDelete && (
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
           <button onClick={onDelete} style={{ ...S.btnSm, color: '#991b1b', borderColor: '#fca5a5' }}>
@@ -671,7 +671,10 @@ export default function KpiSettingPage() {
   const ruleDims: Record<string, { min: number; max: number }> =
     (applicableRule as any)?.dimensions || {};
 
-  const bykpi_dimension = CATEGORIES.map(c => {
+  // Recomputes whenever kpis or the applicable rule changes — ensures the
+  // weight summary cards reflect fresh data after a KPI edit invalidates
+  // the query cache.
+  const bykpi_dimension = useMemo(() => CATEGORIES.map(c => {
     const total = (kpis as any[])
       .filter(k => k.kpi_dimension === c && k.status !== 'REJECTED')
       .reduce((s, k) => s + k.weight, 0);
@@ -679,7 +682,7 @@ export default function KpiSettingPage() {
     const min = d?.min ?? 0;
     const max = d?.max ?? 100;
     return { cat: c, total, min, max, hasRule: !!d };
-  });
+  }), [kpis, applicableRule]);
 
   // Mathematical impossibility check: any dimension under-min that needs
   // more weight than remains of the 100% total.

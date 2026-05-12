@@ -387,7 +387,7 @@ export default function QuickCascadePage() {
               <div style={{ border: `0.5px solid ${C.border}`, borderRadius: 8, maxHeight: 260, overflowY: 'auto' }}>
                 {filteredReports.length === 0 && (
                   <div style={{ padding: 20, textAlign: 'center', color: C.textTertiary, fontSize: 13 }}>
-                    No direct reports found
+                    No direct reports found. Make sure reporting lines are set up correctly.
                   </div>
                 )}
                 {filteredReports.map((u: any, i: number) => {
