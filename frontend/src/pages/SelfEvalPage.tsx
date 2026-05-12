@@ -34,6 +34,7 @@ export default function SelfEvalPage() {
   const qc = useQueryClient();
   const [cycleId, setCycleId] = useState('');
   const [evals, setEvals] = useState<Record<string, Eval>>({});
+  const [isEditing, setIsEditing] = useState(false);
 
   const { data: cycles = [] } = useQuery({
     queryKey: ['cycles'],
@@ -84,8 +85,15 @@ export default function SelfEvalPage() {
 
   const submitMutation = useMutation({
     mutationFn: (payload: any) => kpisApi.selfEvaluateAll(payload),
-    onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpis', cycleId] }),
+    onSuccess:  () => {
+      setIsEditing(false);
+      qc.invalidateQueries({ queryKey: ['kpis', cycleId] });
+    },
   });
+
+  const allSubmitted = lockedKpis.length > 0 &&
+    lockedKpis.every((k: any) => k.status === 'SELF_EVALUATED');
+  const readOnly = allSubmitted && !isEditing;
 
   const updateEval = (id: string, patch: Partial<Eval>) => {
     setEvals(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
@@ -198,6 +206,29 @@ export default function SelfEvalPage() {
         </div>
       )}
 
+      {allSubmitted && (
+        <div style={{
+          background: '#ccfbf1', border: '1px solid #5eead4', borderRadius: 10,
+          padding: '14px 16px', marginBottom: 12,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+        }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: '#115e59' }}>
+              ✓ Self Evaluation Submitted Successfully
+            </div>
+            <div style={{ fontSize: 12, color: '#115e59', marginTop: 2 }}>
+              Your self evaluation has been recorded. You may re-edit and resubmit if needed before manager evaluation.
+            </div>
+          </div>
+          {readOnly && (
+            <button onClick={() => setIsEditing(true)}
+              style={{ ...S.pillBtn, background: C.bg, color: C.text, whiteSpace: 'nowrap' }}>
+              Edit &amp; Resubmit
+            </button>
+          )}
+        </div>
+      )}
+
       {lockedKpis.map((kpi: any) => {
         const e = evals[kpi.id] || { actual_achievement: '', self_rating: null, self_remarks: '' };
         const targets: any[] = Array.isArray(kpi.rating_targets) ? kpi.rating_targets : [];
@@ -250,16 +281,33 @@ export default function SelfEvalPage() {
             {/* Actual Achievement */}
             <div style={{ marginBottom: 10 }}>
               <label style={S.label}>Actual Achievement *</label>
-              <textarea style={S.textarea}
-                value={e.actual_achievement}
-                onChange={ev => updateEval(kpi.id, { actual_achievement: ev.target.value })}
-                placeholder="Describe what you actually delivered against this KPI" />
+              {readOnly ? (
+                <div style={{ padding: '8px 10px', background: C.bgSecondary, borderRadius: 8, fontSize: 13, color: C.text, whiteSpace: 'pre-wrap', minHeight: 36 }}>
+                  {e.actual_achievement || '—'}
+                </div>
+              ) : (
+                <textarea style={S.textarea}
+                  value={e.actual_achievement}
+                  onChange={ev => updateEval(kpi.id, { actual_achievement: ev.target.value })}
+                  placeholder="Describe what you actually delivered against this KPI" />
+              )}
             </div>
 
             {/* Self Rating */}
             <div style={{ marginBottom: 10 }}>
               <label style={S.label}>Self Rating *</label>
-              {ratingType === 'NUMERIC' && (
+              {readOnly && (
+                <div style={{ padding: '8px 10px', background: C.bgSecondary, borderRadius: 8, fontSize: 13, color: C.text }}>
+                  {ratingType === 'OKR'
+                    ? (e.self_rating === null || e.self_rating === '' ? '—' : `${e.self_rating}%`)
+                    : ratingType === 'NUMERIC'
+                      ? (e.self_rating === null || e.self_rating === ''
+                          ? '—'
+                          : `${e.self_rating}${numericLabelFor(e.self_rating) ? ` — ${numericLabelFor(e.self_rating)}` : ''}`)
+                      : (e.self_rating || '—')}
+                </div>
+              )}
+              {!readOnly && ratingType === 'NUMERIC' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
                   {numericLevels.map((lv: any) => {
                     const selected = Number(e.self_rating) === Number(lv.value);
@@ -288,7 +336,7 @@ export default function SelfEvalPage() {
                   })}
                 </div>
               )}
-              {ratingType === 'MET_NOT_MET' && (
+              {!readOnly && ratingType === 'MET_NOT_MET' && (
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   {['Met', 'Not Met'].map(opt => {
                     const selected = e.self_rating === opt;
@@ -316,7 +364,7 @@ export default function SelfEvalPage() {
                   })}
                 </div>
               )}
-              {ratingType === 'OKR' && (
+              {!readOnly && ratingType === 'OKR' && (
                 <div>
                   {targets[0]?.target && (
                     <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 6, padding: '6px 10px', background: C.bgSecondary, borderRadius: 6 }}>
@@ -335,7 +383,7 @@ export default function SelfEvalPage() {
                   </div>
                 </div>
               )}
-              {ratingType === 'NUMERIC' && e.self_rating !== null && e.self_rating !== '' && (
+              {!readOnly && ratingType === 'NUMERIC' && e.self_rating !== null && e.self_rating !== '' && (
                 <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 4 }}>
                   {numericLabelFor(e.self_rating)}
                 </div>
@@ -345,31 +393,43 @@ export default function SelfEvalPage() {
             {/* Remarks */}
             <div>
               <label style={S.label}>Remarks (optional)</label>
-              <textarea style={S.textarea}
-                value={e.self_remarks}
-                onChange={ev => updateEval(kpi.id, { self_remarks: ev.target.value })}
-                placeholder="Additional context, evidence, or notes" />
+              {readOnly ? (
+                <div style={{ padding: '8px 10px', background: C.bgSecondary, borderRadius: 8, fontSize: 13, color: C.text, whiteSpace: 'pre-wrap', minHeight: 36 }}>
+                  {e.self_remarks || '—'}
+                </div>
+              ) : (
+                <textarea style={S.textarea}
+                  value={e.self_remarks}
+                  onChange={ev => updateEval(kpi.id, { self_remarks: ev.target.value })}
+                  placeholder="Additional context, evidence, or notes" />
+              )}
             </div>
           </div>
         );
       })}
 
-      {lockedKpis.length > 0 && (
+      {lockedKpis.length > 0 && !readOnly && (
         <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.borderLight}` }}>
-          <button
-            onClick={handleSubmit}
-            disabled={!allValid || submitMutation.isPending}
-            style={{ ...S.btnPrimary, opacity: !allValid ? 0.5 : 1, cursor: !allValid ? 'not-allowed' : 'pointer' }}>
-            {submitMutation.isPending ? 'Submitting…' : 'Submit Self Evaluation'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button
+              onClick={handleSubmit}
+              disabled={!allValid || submitMutation.isPending}
+              style={{ ...S.btnPrimary, opacity: !allValid ? 0.5 : 1, cursor: !allValid ? 'not-allowed' : 'pointer' }}>
+              {submitMutation.isPending
+                ? 'Submitting…'
+                : allSubmitted
+                  ? 'Resubmit Self Evaluation'
+                  : 'Submit Self Evaluation'}
+            </button>
+            {allSubmitted && isEditing && (
+              <button onClick={() => setIsEditing(false)} style={S.pillBtn}>
+                Cancel
+              </button>
+            )}
+          </div>
           {!allValid && (
             <div style={{ marginTop: 6, fontSize: 12, color: C.textDanger }}>
               All KPIs must have an Actual Achievement and a Self Rating before you can submit.
-            </div>
-          )}
-          {submitMutation.isSuccess && (
-            <div style={{ marginTop: 6, fontSize: 12, color: '#166534', fontWeight: 500 }}>
-              ✓ Self evaluation submitted
             </div>
           )}
           {submitMutation.isError && (

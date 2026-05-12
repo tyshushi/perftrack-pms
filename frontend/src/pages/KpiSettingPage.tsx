@@ -52,9 +52,14 @@ function scorecardStatusSummary(kpis: any[]): { label: string; bg: string; color
   const statuses = new Set(kpis.map((k: any) => k.status));
   if (statuses.size === 1) {
     const s = [...statuses][0];
-    if (s === 'LOCKED')     return { label: 'Approved & Locked', bg: '#e0f2fe', color: '#0c4a6e' };
-    if (s === 'PENDING_DM') return { label: 'Pending Manager Approval', bg: '#fef9c3', color: '#854d0e' };
-    if (s === 'APPROVED')   return { label: 'Approved', bg: '#dcfce7', color: '#166534' };
+    if (s === 'LOCKED')         return { label: 'Approved & Locked', bg: '#e0f2fe', color: '#0c4a6e' };
+    if (s === 'PENDING_DM')     return { label: 'Pending Manager Approval', bg: '#fef9c3', color: '#854d0e' };
+    if (s === 'APPROVED')       return { label: 'Approved', bg: '#dcfce7', color: '#166534' };
+    if (s === 'SELF_EVALUATED') return { label: 'Self Evaluation Submitted — Awaiting Manager Evaluation', bg: '#ccfbf1', color: '#115e59' };
+  }
+  if ([...statuses].some(s => s === 'SELF_EVALUATED') &&
+      [...statuses].every(s => s === 'SELF_EVALUATED' || s === 'LOCKED')) {
+    return { label: 'Self Evaluation In Progress', bg: '#ccfbf1', color: '#115e59' };
   }
   if ([...statuses].every(s => s === 'LOCKED' || s === 'APPROVED')) {
     return { label: 'Approved & Locked', bg: '#e0f2fe', color: '#0c4a6e' };
@@ -665,6 +670,8 @@ export default function KpiSettingPage() {
 
   const totalWeight = (kpis as any[]).reduce((sum, k) => sum + k.weight, 0);
   const hasSubmittable = (kpis as any[]).some(k => k.status === 'DRAFT' || k.status === 'REJECTED');
+  const allSelfEvaluated = (kpis as any[]).length > 0 &&
+    (kpis as any[]).every(k => k.status === 'SELF_EVALUATED');
   const allTargetsSet = (kpis as any[]).length > 0 &&
     (kpis as any[]).every(k => hasCompleteTargets(k.rating_targets, currentCycle));
 
@@ -1122,24 +1129,32 @@ export default function KpiSettingPage() {
 
           {/* Submit Scorecard */}
           <div style={{ marginTop: 20, paddingTop: 16, borderTop: `0.5px solid ${C.borderLight}` }}>
-            <button
-              onClick={() => submitScorecardMutation.mutate()}
-              disabled={!!submitDisabledReason || submitScorecardMutation.isPending}
-              style={{ ...S.btnPrimary, opacity: submitDisabledReason ? 0.5 : 1, cursor: submitDisabledReason ? 'not-allowed' : 'pointer' }}>
-              {submitScorecardMutation.isPending ? 'Submitting…' : 'Submit Scorecard for Approval'}
-            </button>
-            {submitDisabledReason && (
-              <div style={{ marginTop: 6, fontSize: 12, color: '#991b1b' }}>{submitDisabledReason}</div>
-            )}
-            {submitScorecardMutation.isSuccess && (
-              <div style={{ marginTop: 6, fontSize: 12, color: '#166534', fontWeight: 500 }}>
-                ✓ Scorecard submitted for manager approval
+            {allSelfEvaluated ? (
+              <div style={{ padding: '10px 14px', borderRadius: 8, background: '#ccfbf1', color: '#115e59', fontSize: 13, fontWeight: 500 }}>
+                Self evaluation submitted. Awaiting manager evaluation.
               </div>
-            )}
-            {submitScorecardMutation.isError && (
-              <div style={{ marginTop: 6, fontSize: 12, color: '#991b1b' }}>
-                {(submitScorecardMutation.error as any)?.response?.data?.detail || 'Submission failed'}
-              </div>
+            ) : (
+              <>
+                <button
+                  onClick={() => submitScorecardMutation.mutate()}
+                  disabled={!!submitDisabledReason || submitScorecardMutation.isPending}
+                  style={{ ...S.btnPrimary, opacity: submitDisabledReason ? 0.5 : 1, cursor: submitDisabledReason ? 'not-allowed' : 'pointer' }}>
+                  {submitScorecardMutation.isPending ? 'Submitting…' : 'Submit Scorecard for Approval'}
+                </button>
+                {submitDisabledReason && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#991b1b' }}>{submitDisabledReason}</div>
+                )}
+                {submitScorecardMutation.isSuccess && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#166534', fontWeight: 500 }}>
+                    ✓ Scorecard submitted for manager approval
+                  </div>
+                )}
+                {submitScorecardMutation.isError && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#991b1b' }}>
+                    {(submitScorecardMutation.error as any)?.response?.data?.detail || 'Submission failed'}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
