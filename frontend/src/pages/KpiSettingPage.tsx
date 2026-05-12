@@ -147,41 +147,40 @@ function ReadOnlyTargetsView({ kpi, cycle }: { kpi: any; cycle: any }) {
   );
 }
 
+function buildTargetsForKpi(kpi: any, cycle: any) {
+  const ratingType = cycle?.rating_type || 'NUMERIC';
+  const scaleMax   = cycle?.rating_scale_max || 5;
+  const levels: any[] = cycle?.rating_levels || [];
+  const existing: any[] = Array.isArray(kpi?.rating_targets) ? kpi.rating_targets : [];
+  if (ratingType === 'NUMERIC') {
+    const ordered = levels.length
+      ? [...levels].sort((a, b) => Number(b.value) - Number(a.value))
+      : Array.from({ length: scaleMax }, (_, i) => ({ value: scaleMax - i, label: `Level ${scaleMax - i}`, description: '' }));
+    return ordered.map((lv: any) => {
+      const found = existing.find(t => Number(t.value) === Number(lv.value));
+      return { value: lv.value, label: lv.label, target: found?.target || '' };
+    });
+  }
+  if (ratingType === 'MET_NOT_MET') {
+    const ordered = levels.length
+      ? levels
+      : [{ value: 'Met', label: 'Met' }, { value: 'Not Met', label: 'Not Met' }];
+    return ordered.map((lv: any) => {
+      const found = existing.find(t => t.value === lv.value);
+      return { value: lv.value, label: lv.label || lv.value, target: found?.target || '' };
+    });
+  }
+  const found = existing[0];
+  return [{ value: 'OKR', label: 'OKR', target: found?.target || '' }];
+}
+
 function RatingTargetsEditor({ kpi, cycle, onSave }: {
   kpi: any;
   cycle: any;
   onSave: (targets: any[]) => void;
 }) {
   const ratingType = cycle?.rating_type || 'NUMERIC';
-  const scaleMax   = cycle?.rating_scale_max || 5;
-  const levels: any[] = cycle?.rating_levels || [];
-
-  const initial = (() => {
-    const existing: any[] = Array.isArray(kpi.rating_targets) ? kpi.rating_targets : [];
-    if (ratingType === 'NUMERIC') {
-      const ordered = levels.length
-        ? [...levels].sort((a, b) => b.value - a.value)
-        : Array.from({ length: scaleMax }, (_, i) => ({ value: scaleMax - i, label: `Level ${scaleMax - i}`, description: '' }));
-      return ordered.map((lv: any) => {
-        const found = existing.find(t => Number(t.value) === Number(lv.value));
-        return { value: lv.value, label: lv.label, target: found?.target || '' };
-      });
-    }
-    if (ratingType === 'MET_NOT_MET') {
-      const ordered = levels.length
-        ? levels
-        : [{ value: 'Met', label: 'Met' }, { value: 'Not Met', label: 'Not Met' }];
-      return ordered.map((lv: any) => {
-        const found = existing.find(t => t.value === lv.value);
-        return { value: lv.value, label: lv.label || lv.value, target: found?.target || '' };
-      });
-    }
-    // OKR
-    const found = existing[0];
-    return [{ value: 'OKR', label: 'OKR', target: found?.target || '' }];
-  })();
-
-  const [rows, setRows] = useState(initial);
+  const [rows, setRows] = useState(() => buildTargetsForKpi(kpi, cycle));
 
   const updateRow = (idx: number, val: string) => {
     setRows(prev => prev.map((r, i) => i === idx ? { ...r, target: val } : r));
@@ -230,8 +229,165 @@ function RatingTargetsEditor({ kpi, cycle, onSave }: {
   );
 }
 
+function EditKpiForm({ kpi, cycle, isFixed, rule, onSave, onCancel }: {
+  kpi:      any;
+  cycle:    any;
+  isFixed:  boolean;
+  rule:     any;
+  onSave:   (data: { fields: any; targets: any[] | null }) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [name,   setName]   = useState(kpi.name || '');
+  const [desc,   setDesc]   = useState(kpi.description || '');
+  const [dim,    setDim]    = useState(kpi.kpi_dimension || CATEGORIES[0]);
+  const [weight, setWeight] = useState<number>(kpi.weight ?? 0);
+  const [meas,   setMeas]   = useState(kpi.measurement || '');
+  const [targets, setTargets] = useState<any[]>(() => buildTargetsForKpi(kpi, cycle));
+  const [saving, setSaving] = useState(false);
+  const [err,    setErr]    = useState<string | null>(null);
+
+  const ratingType = cycle?.rating_type || 'NUMERIC';
+  const targetsOk = hasCompleteTargets(targets, cycle);
+  const nameOk = name.trim().length > 0;
+  const canSave = isFixed ? Number.isFinite(weight) : (nameOk && targetsOk);
+
+  const handleSave = async () => {
+    setErr(null);
+    setSaving(true);
+    try {
+      if (isFixed) {
+        await onSave({ fields: { weight }, targets: null });
+      } else {
+        await onSave({
+          fields: { name, description: desc, kpi_dimension: dim, weight, measurement: meas },
+          targets,
+        });
+      }
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 10, padding: 12, background: C.bgSecondary, border: `0.5px solid ${C.borderLight}`, borderRadius: 8 }}>
+      <div style={{ fontWeight: 500, fontSize: 13, color: C.text, marginBottom: 10 }}>
+        Edit KPI{isFixed ? ' Weight (Cascaded)' : ''}
+      </div>
+
+      {!isFixed && (
+        <div style={S.grid2}>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label style={S.label}>KPI Name</label>
+            <input style={S.input} value={name} onChange={e => setName(e.target.value)} />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label style={S.label}>Description</label>
+            <textarea style={{ ...S.input, minHeight: 54, resize: 'vertical' }}
+              value={desc} onChange={e => setDesc(e.target.value)} />
+          </div>
+          <div>
+            <label style={S.label}>KPI Dimension</label>
+            <select style={S.input} value={dim} onChange={e => setDim(e.target.value)}>
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Weight %</label>
+            <input style={S.input} type="number" min={0} max={100}
+              value={weight} onChange={e => setWeight(Number(e.target.value))} />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label style={S.label}>Measurement</label>
+            <input style={S.input} value={meas} onChange={e => setMeas(e.target.value)} />
+          </div>
+        </div>
+      )}
+
+      {isFixed && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+          <label style={{ ...S.label, marginBottom: 0 }}>Weight %</label>
+          <input type="number"
+            min={rule?.min_weight || 0} max={rule?.max_weight || 100}
+            style={{ ...S.input, width: 90 }}
+            value={weight}
+            onChange={e => setWeight(Number(e.target.value))} />
+          {rule && (
+            <span style={{ fontSize: 11, color: C.textTertiary }}>
+              ({rule.min_weight}–{rule.max_weight}%)
+            </span>
+          )}
+        </div>
+      )}
+
+      {!isFixed && cycle && (
+        <div style={{ marginTop: 4, padding: 12, background: C.bg, borderRadius: 8, border: `0.5px solid ${C.borderLight}` }}>
+          <div style={{ fontWeight: 500, fontSize: 13, color: C.text, marginBottom: 4 }}>
+            Rating Targets <span style={{ color: C.textDanger }}>*</span>
+          </div>
+          <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 8 }}>
+            Define what achievement looks like for each rating level.
+          </div>
+          {ratingType === 'OKR' ? (
+            <div>
+              <label style={S.label}>Describe how 0-100% achievement will be measured</label>
+              <input style={S.input}
+                value={targets[0]?.target || ''}
+                onChange={e => setTargets(prev => prev.length
+                  ? prev.map((r, i) => i === 0 ? { ...r, target: e.target.value } : r)
+                  : [{ value: 'OKR', label: 'OKR', target: e.target.value }])} />
+            </div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: C.textSecond, fontWeight: 600, width: 180 }}>Rating</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: C.textSecond, fontWeight: 600 }}>Target Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                {targets.map((r, i) => (
+                  <tr key={String(r.value)}>
+                    <td style={{ padding: '6px 8px', fontSize: 13, color: C.text }}>
+                      <strong>{r.value}</strong>{r.label ? ` — ${r.label}` : ''}
+                    </td>
+                    <td style={{ padding: '6px 8px' }}>
+                      <input style={S.input} value={r.target}
+                        onChange={e => setTargets(prev => prev.map((row, idx) =>
+                          idx === i ? { ...row, target: e.target.value } : row))} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {err && (
+        <div style={{ marginTop: 8, fontSize: 12, color: C.textDanger }}>{err}</div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+        <button onClick={handleSave}
+          disabled={!canSave || saving}
+          style={{ ...S.btnPrimary, opacity: (!canSave || saving) ? 0.5 : 1 }}>
+          {saving ? 'Saving…' : 'Save Changes'}
+        </button>
+        <button onClick={onCancel} style={S.btnSm} disabled={saving}>Cancel</button>
+      </div>
+      {!isFixed && !targetsOk && (
+        <div style={{ marginTop: 6, fontSize: 12, color: C.textDanger }}>
+          Fill in all rating target descriptions before saving.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function KpiCard({
-  kpi, weightRules, cycle, onDelete, onAdjustWeight, onSaveTargets,
+  kpi, weightRules, cycle, onDelete, onAdjustWeight, onSaveTargets, onSaveEdit,
 }: {
   kpi:            any;
   weightRules:    any[];
@@ -239,6 +395,7 @@ function KpiCard({
   onDelete:       () => void;
   onAdjustWeight: (w: number) => void;
   onSaveTargets:  (targets: any[]) => void;
+  onSaveEdit:     (payload: { fields: any; targets: any[] | null }) => Promise<void>;
 }) {
   const targetsComplete = hasCompleteTargets(kpi.rating_targets, cycle);
   const needsTargets = !targetsComplete && (kpi.status === 'DRAFT' || kpi.status === 'REJECTED' || kpi.status === 'APPROVED');
@@ -246,13 +403,23 @@ function KpiCard({
   const [editWeight, setEditWeight] = useState(false);
   const [newWeight,  setNewWeight]  = useState(kpi.weight);
   const [showTargets, setShowTargets] = useState(needsTargets && !isFixed);
+  const [editing,    setEditing]    = useState(false);
+  const [flash,      setFlash]      = useState(false);
   const rule    = weightRules.find((r: any) => r.kpi_dimension === kpi.kpi_dimension);
   const canDelete = kpi.status === 'DRAFT' && !isFixed;
   const showTargetsSection = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED' || kpi.status === 'APPROVED') && !!cycle;
   const canEditTargets = showTargetsSection && !isFixed;
+  const canEditKpi = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED') && !!cycle;
+
+  const handleSave = async (payload: { fields: any; targets: any[] | null }) => {
+    await onSaveEdit(payload);
+    setEditing(false);
+    setFlash(true);
+    setTimeout(() => setFlash(false), 2000);
+  };
 
   return (
-    <div style={{ ...S.card, marginBottom: 8 }}>
+    <div style={{ ...S.card, marginBottom: 8, ...(flash ? { boxShadow: '0 0 0 2px #86efac', transition: 'box-shadow 200ms ease' } : {}) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -272,13 +439,44 @@ function KpiCard({
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0, marginLeft: 12 }}>
-          <StatusPill status={kpi.status} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {canEditKpi && !editing && (
+              <button
+                onClick={() => setEditing(true)}
+                title="Edit KPI"
+                aria-label="Edit KPI"
+                style={{
+                  padding: '4px 8px', border: `1px solid ${C.border}`, borderRadius: 6,
+                  background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer',
+                  fontFamily: C.font, display: 'inline-flex', alignItems: 'center', gap: 4,
+                }}>
+                <span aria-hidden="true">✎</span> Edit
+              </button>
+            )}
+            <StatusPill status={kpi.status} />
+          </div>
           <div style={{ fontSize: 18, fontWeight: 600, color: C.text }}>{kpi.weight}%</div>
         </div>
       </div>
 
+      {flash && (
+        <div style={{ marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: '#dcfce7', color: '#166534', fontSize: 12, fontWeight: 500 }}>
+          ✓ KPI updated
+        </div>
+      )}
+
+      {editing && (
+        <EditKpiForm
+          kpi={kpi}
+          cycle={cycle}
+          isFixed={isFixed}
+          rule={rule}
+          onSave={handleSave}
+          onCancel={() => setEditing(false)} />
+      )}
+
       {/* Weight adjustment for cascaded KPIs */}
-      {isFixed && kpi.status !== 'LOCKED' && (
+      {!editing && isFixed && kpi.status !== 'LOCKED' && (
         <div style={{ marginTop: 8 }}>
           {!editWeight ? (
             <button onClick={() => { setEditWeight(true); setNewWeight(kpi.weight); }}
@@ -308,7 +506,7 @@ function KpiCard({
       )}
 
       {/* Delete for optional DRAFT KPIs */}
-      {canDelete && (
+      {!editing && canDelete && (
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
           <button onClick={onDelete} style={{ ...S.btnSm, color: '#991b1b', borderColor: '#fca5a5' }}>
             Delete
@@ -329,7 +527,7 @@ function KpiCard({
         </div>
       )}
 
-      {showTargetsSection && (
+      {!editing && showTargetsSection && (
         <div style={{ marginTop: 10 }}>
           {needsTargets && (
             <div style={{ fontSize: 12, padding: '6px 10px', background: '#fef2f2', color: '#991b1b', borderRadius: 6, marginBottom: 6, fontWeight: 500 }}>
@@ -452,6 +650,18 @@ export default function KpiSettingPage() {
       kpisApi.updateRatingTargets(id, targets),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] }),
   });
+
+  const handleSaveEdit = async (kpiId: string, isFixed: boolean, payload: { fields: any; targets: any[] | null }) => {
+    if (isFixed) {
+      await kpisApi.adjustWeight(kpiId, payload.fields.weight);
+    } else {
+      await kpisApi.update(kpiId, payload.fields);
+      if (payload.targets) {
+        await kpisApi.updateRatingTargets(kpiId, payload.targets);
+      }
+    }
+    await qc.invalidateQueries({ queryKey: ['kpis', cycleId, user?.id] });
+  };
 
   const totalWeight = (kpis as any[]).reduce((sum, k) => sum + k.weight, 0);
   const hasSubmittable = (kpis as any[]).some(k => k.status === 'DRAFT' || k.status === 'REJECTED');
@@ -768,6 +978,7 @@ export default function KpiSettingPage() {
               onDelete={() => deleteMutation.mutate(kpi.id)}
               onAdjustWeight={w => adjustMutation.mutate({ id: kpi.id, weight: w })}
               onSaveTargets={targets => ratingTargetsMutation.mutate({ id: kpi.id, targets })}
+              onSaveEdit={payload => handleSaveEdit(kpi.id, kpi.kpi_type === 'FIXED', payload)}
             />
           ))}
 

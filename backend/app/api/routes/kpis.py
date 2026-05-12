@@ -1681,8 +1681,8 @@ async def update_rating_targets(
         raise HTTPException(403, "Not your KPI")
     if kpi.kpi_type == "FIXED":
         raise HTTPException(403, "Rating targets for cascaded KPIs cannot be modified by staff")
-    if kpi.status not in ("DRAFT", "APPROVED"):
-        raise HTTPException(400, "Rating targets can only be set on DRAFT or APPROVED KPIs")
+    if kpi.status not in ("DRAFT", "REJECTED", "APPROVED"):
+        raise HTTPException(400, "Rating targets can only be set on DRAFT, REJECTED or APPROVED KPIs")
     kpi.rating_targets = body.rating_targets
     await db.flush()
     await db.refresh(kpi)
