@@ -6,12 +6,12 @@ from typing import List, Optional
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete as sql_delete, update as sql_update
 from pydantic import BaseModel
 
 from app.db.session import get_db
 from app.core.security import get_current_user, require_permission
-from app.models.user import PerformanceCycle, User, IncrementBand, BellCurveTarget, RatingScale, WeightRule, Kpi
+from app.models.user import PerformanceCycle, User, IncrementBand, BellCurveTarget, RatingScale, WeightRule, Kpi, KpiTemplate, Group
 
 router = APIRouter()
 
@@ -85,6 +85,22 @@ class CycleCreate(BaseModel):
     approval_chain:     Optional[List[str]] = None
 
 
+class CycleUpdate(BaseModel):
+    name:               Optional[str]       = None
+    year:               Optional[int]       = None
+    status:             Optional[str]       = None
+    kpi_setting_start:  Optional[date]      = None
+    kpi_setting_end:    Optional[date]      = None
+    self_eval_start:    Optional[date]      = None
+    self_eval_end:      Optional[date]      = None
+    mgr_eval_start:     Optional[date]      = None
+    mgr_eval_end:       Optional[date]      = None
+    approval_chain:     Optional[List[str]] = None
+    rating_type:        Optional[str]       = None
+    rating_scale_max:   Optional[int]       = None
+    rating_levels:      Optional[list]      = None
+
+
 class IncrementBandIn(BaseModel):
     band_name:     str
     min_score:     float
@@ -114,22 +130,34 @@ async def list_cycles(
     db: AsyncSession = Depends(get_db),
     _:  User = Depends(get_current_user),
 ):
-    result = await db.execute(select(PerformanceCycle).order_by(PerformanceCycle.year.desc()))
-    cycles = result.scalars().all()
+    kpi_count_sq = (
+        select(func.count())
+        .where(Kpi.cycle_id == PerformanceCycle.id)
+        .correlate(PerformanceCycle)
+        .scalar_subquery()
+    )
+    result = await db.execute(
+        select(PerformanceCycle, kpi_count_sq.label("kpi_count"))
+        .order_by(PerformanceCycle.year.desc())
+    )
+    rows = result.all()
     return [
         {
             "id": str(c.id), "name": c.name, "year": c.year,
             "status": c.status,
             "kpi_setting_start": str(c.kpi_setting_start),
-            "kpi_setting_end": str(c.kpi_setting_end),
-            "self_eval_start": str(c.self_eval_start),
-            "self_eval_end": str(c.self_eval_end),
-            "rating_type":      c.rating_type or "NUMERIC",
-            "rating_scale_max": c.rating_scale_max or 5,
-            "rating_levels":    c.rating_levels,
-            "approval_chain":   normalise_approval_chain(c.approval_chain),
+            "kpi_setting_end":   str(c.kpi_setting_end),
+            "self_eval_start":   str(c.self_eval_start),
+            "self_eval_end":     str(c.self_eval_end),
+            "mgr_eval_start":    str(c.mgr_eval_start) if c.mgr_eval_start else None,
+            "mgr_eval_end":      str(c.mgr_eval_end)   if c.mgr_eval_end   else None,
+            "rating_type":       c.rating_type or "NUMERIC",
+            "rating_scale_max":  c.rating_scale_max or 5,
+            "rating_levels":     c.rating_levels,
+            "approval_chain":    normalise_approval_chain(c.approval_chain),
+            "kpi_count":         kpi_count or 0,
         }
-        for c in cycles
+        for c, kpi_count in rows
     ]
 
 
@@ -175,6 +203,51 @@ async def create_cycle(
         "name": cycle.name,
         "status": cycle.status,
         "approval_chain": normalise_approval_chain(cycle.approval_chain),
+    }
+
+
+@router.patch("/{cycle_id}")
+async def update_cycle(
+    cycle_id: UUID,
+    body:     CycleUpdate,
+    db:       AsyncSession = Depends(get_db),
+    _:        User         = Depends(require_permission("manage_cycles")),
+):
+    result = await db.execute(select(PerformanceCycle).where(PerformanceCycle.id == cycle_id))
+    cycle = result.scalar_one_or_none()
+    if not cycle:
+        raise HTTPException(404, "Cycle not found")
+
+    data = body.model_dump(exclude_none=True)
+
+    if "status" in data:
+        valid_statuses = {"DRAFT", "ACTIVE", "CLOSED", "ARCHIVED"}
+        if data["status"] not in valid_statuses:
+            raise HTTPException(400, f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}")
+
+    if "approval_chain" in data:
+        data["approval_chain"] = validate_approval_chain(data["approval_chain"])
+
+    for key, val in data.items():
+        setattr(cycle, key, val)
+
+    await db.flush()
+    await db.refresh(cycle)
+    return {
+        "id":                str(cycle.id),
+        "name":              cycle.name,
+        "year":              cycle.year,
+        "status":            cycle.status,
+        "kpi_setting_start": str(cycle.kpi_setting_start),
+        "kpi_setting_end":   str(cycle.kpi_setting_end),
+        "self_eval_start":   str(cycle.self_eval_start),
+        "self_eval_end":     str(cycle.self_eval_end),
+        "mgr_eval_start":    str(cycle.mgr_eval_start) if cycle.mgr_eval_start else None,
+        "mgr_eval_end":      str(cycle.mgr_eval_end)   if cycle.mgr_eval_end   else None,
+        "rating_type":       cycle.rating_type or "NUMERIC",
+        "rating_scale_max":  cycle.rating_scale_max or 5,
+        "rating_levels":     cycle.rating_levels,
+        "approval_chain":    normalise_approval_chain(cycle.approval_chain),
     }
 
 
@@ -301,6 +374,11 @@ async def delete_cycle(
     count = kpi_count.scalar()
     if count and count > 0:
         raise HTTPException(400, "Cannot delete cycle with existing KPIs. Delete all scorecards first.")
+
+    await db.execute(sql_delete(WeightRule).where(WeightRule.cycle_id == cycle_id))
+    await db.execute(sql_delete(KpiTemplate).where(KpiTemplate.cycle_id == cycle_id))
+    await db.execute(sql_update(Group).where(Group.cycle_id == cycle_id).values(cycle_id=None))
+    await db.flush()
 
     await db.delete(cycle)
     await db.flush()
