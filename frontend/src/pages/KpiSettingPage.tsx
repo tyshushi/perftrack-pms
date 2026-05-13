@@ -594,7 +594,7 @@ export default function KpiSettingPage() {
         },
         kpis: kpis as any[],
       };
-      const blob = await generateScorecardPDF(data);
+      const blob = generateScorecardPDF(data);
       const code = ((user as any).employee_id || user.full_name.replace(/\s+/g, '_')).replace(/[^a-zA-Z0-9_-]/g, '');
       saveAs(blob, `${code}_scorecard_${currentCycle.year}.pdf`);
     } finally {
