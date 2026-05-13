@@ -79,7 +79,22 @@ function addFooter(doc: jsPDF, pageNum: number, totalPages: number, generatedDat
   );
 }
 
-export function generateScorecardPDF(data: ScorecardData): Blob {
+async function getLogoAsDataUrl(): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas.toDataURL('image/jpeg', 0.9));
+    };
+    img.src = 'data:image/jpeg;base64,' + VALIRAM_LOGO_B64;
+  });
+}
+
+export async function generateScorecardPDF(data: ScorecardData): Promise<Blob> {
   const { employee, cycle, kpis } = data;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -96,7 +111,8 @@ export function generateScorecardPDF(data: ScorecardData): Blob {
   // --- HEADER ---
   const logoHeight = 15;
   const logoWidth = logoHeight * (300 / 212);
-  doc.addImage('data:image/jpeg;base64,' + VALIRAM_LOGO_B64, 'JPEG', marginL, 11, logoWidth, logoHeight);
+  const logoDataUrl = await getLogoAsDataUrl();
+  doc.addImage(logoDataUrl, 'JPEG', marginL, 11, logoWidth, logoHeight);
 
   const titleX = marginL + logoWidth + 6;
   doc.setFontSize(16);
@@ -349,7 +365,7 @@ export function generateScorecardPDF(data: ScorecardData): Blob {
 export async function generateScorecardZip(items: ScorecardData[]): Promise<Blob> {
   const zip = new JSZip();
   for (const item of items) {
-    const pdfBlob = generateScorecardPDF(item);
+    const pdfBlob = await generateScorecardPDF(item);
     const code = (item.employee.employee_code || item.employee.full_name.replace(/\s+/g, '_')).replace(/[^a-zA-Z0-9_-]/g, '');
     zip.file(`${code}_scorecard_${item.cycle.year}.pdf`, pdfBlob);
   }
