@@ -133,11 +133,34 @@ export default function Layout() {
 
         {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', padding: '20px 16px 16px', borderBottom: '0.5px solid #e5e4df' }}>
-          <img
-            src="/perftrack-pms/pr-email-signature-600x120.png"
-            alt="PerformRight by Valiram"
-            style={{ height: 32, width: 'auto', objectFit: 'contain' }}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <img
+              src="/perftrack-pms/pr-mark-32.png"
+              alt="PR"
+              style={{ width: 32, height: 32, objectFit: 'contain', flexShrink: 0 }}
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+              <span style={{
+                fontFamily: "'Cormorant Garamond', Georgia, serif",
+                fontWeight: 500,
+                fontSize: 16,
+                color: '#1a1a1a',
+                letterSpacing: '0.01em',
+              }}>
+                <span style={{ fontStyle: 'italic' }}>Perform</span>Right
+              </span>
+              <span style={{
+                fontFamily: "'Inter', sans-serif",
+                fontWeight: 300,
+                fontSize: 10,
+                color: '#9a9a9a',
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+              }}>
+                by Valiram
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* User card */}
