@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { cyclesApi, kpisApi } from '../api/client';
+import { cyclesApi, kpisApi, usersApi, departmentsApi } from '../api/client';
 import { useForm } from 'react-hook-form';
 import { useAuthStore } from '../store/auth';
+import { generateScorecardZip, ScorecardData } from '../utils/pdfExport';
+import { saveAs } from 'file-saver';
 
 const C = {
   bg:           '#ffffff',
@@ -32,6 +34,7 @@ const S: Record<string, any> = {
   btnDanger:  { padding: '6px 12px', border: 'none', borderRadius: 8, background: C.textDanger, color: '#ffffff', fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
   btnGhost:   { padding: '6px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.text, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
   btnEdit:    { padding: '6px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bgSecondary, color: C.text, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
+  btnExport:  { padding: '6px 12px', border: `1px solid #bae6fd`, borderRadius: 8, background: '#e0f2fe', color: '#0369a1', fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: C.font },
   modalOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal:        { background: C.bg, borderRadius: 10, padding: 20, width: 'min(480px, 90vw)', boxShadow: '0 10px 30px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' as const },
   modalWide:    { background: C.bg, borderRadius: 10, padding: 20, width: 'min(640px, 95vw)', boxShadow: '0 10px 30px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' as const },
@@ -95,6 +98,8 @@ export default function AdminCyclesPage() {
   const [deleteCycleStep2, setDeleteCycleStep2]   = useState<{ id: string; name: string } | null>(null);
   const [deleteCycleText,  setDeleteCycleText]    = useState('');
   const [deleteCycleError, setDeleteCycleError]   = useState<string | null>(null);
+  const [exportingCycleId, setExportingCycleId]   = useState<string | null>(null);
+  const [exportProgress,   setExportProgress]     = useState<{ current: number; total: number } | null>(null);
 
   // Edit cycle state
   const [editCycle, setEditCycle]       = useState<any | null>(null);
@@ -237,6 +242,57 @@ export default function AdminCyclesPage() {
 
   const setEF = (key: string, val: any) =>
     setEditForm(prev => ({ ...prev, [key]: val }));
+
+  const handleExportAll = async (cycle: any) => {
+    setExportingCycleId(cycle.id);
+    setExportProgress(null);
+    try {
+      const [usersData, deptsData] = await Promise.all([
+        usersApi.list().then((r: any) => r.data),
+        departmentsApi.list().then((r: any) => r.data),
+      ]);
+      const allUsers = (usersData as any[]).filter((u: any) => u.is_active !== false);
+      const depts = deptsData as any[];
+      setExportProgress({ current: 0, total: allUsers.length });
+      const items: ScorecardData[] = [];
+      for (let i = 0; i < allUsers.length; i++) {
+        const u = allUsers[i];
+        setExportProgress({ current: i + 1, total: allUsers.length });
+        let kpis: any[] = [];
+        try { kpis = await kpisApi.list(cycle.id, u.id).then((r: any) => r.data); } catch (_) {}
+        if (kpis.length === 0) continue;
+        const deptName = depts.find((d: any) => d.id === u.department_id)?.name || '';
+        items.push({
+          employee: {
+            full_name: u.full_name,
+            employee_code: u.employee_id || '',
+            position_title: u.position_title || '',
+            department_name: deptName,
+          },
+          cycle: {
+            name: cycle.name,
+            year: cycle.year,
+            rating_type: cycle.rating_type || 'NUMERIC',
+            rating_scale_max: cycle.rating_scale_max,
+            rating_levels: cycle.rating_levels || [],
+          },
+          kpis,
+        });
+      }
+      if (items.length === 0) {
+        setActionMessage('No scorecards with KPIs found for this cycle.');
+        return;
+      }
+      const blob = await generateScorecardZip(items);
+      const today = new Date().toISOString().slice(0, 10);
+      saveAs(blob, `scorecards_${cycle.year}_${today}.zip`);
+    } catch (e: any) {
+      setActionMessage(`Export failed: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setExportingCycleId(null);
+      setExportProgress(null);
+    }
+  };
 
   return (
     <div style={{ fontFamily: C.font, color: C.text }}>
@@ -500,6 +556,17 @@ export default function AdminCyclesPage() {
                           style={S.btnEdit}
                           onClick={() => openEdit(c)}>
                           Edit
+                        </button>
+                      )}
+                      {(isHrAdmin() || isSuperAdmin()) && (
+                        <button
+                          type="button"
+                          style={{ ...S.btnExport, opacity: exportingCycleId === c.id ? 0.65 : 1, cursor: exportingCycleId === c.id ? 'not-allowed' : 'pointer' }}
+                          disabled={exportingCycleId !== null}
+                          onClick={() => handleExportAll(c)}>
+                          {exportingCycleId === c.id
+                            ? (exportProgress ? `Generating… ${exportProgress.current}/${exportProgress.total}` : 'Preparing…')
+                            : 'Export All Scorecards'}
                         </button>
                       )}
                       {isHrAdmin() && (

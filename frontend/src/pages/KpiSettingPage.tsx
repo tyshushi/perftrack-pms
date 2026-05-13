@@ -1,8 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
-import { kpisApi, cyclesApi } from '../api/client';
+import { kpisApi, cyclesApi, departmentsApi } from '../api/client';
 import PhaseStatusBanner from '../components/common/PhaseStatusBanner';
+import { generateScorecardPDF, ScorecardData } from '../utils/pdfExport';
+import { saveAs } from 'file-saver';
 
 const C = {
   bg:           '#ffffff',
@@ -563,7 +565,42 @@ export default function KpiSettingPage() {
     enabled:  !!cycleId && !!user?.id,
   });
 
+  const { data: departments = [] } = useQuery({
+    queryKey: ['departments'],
+    queryFn:  () => departmentsApi.list().then(r => r.data),
+  });
+
   const [showRulesCard, setShowRulesCard] = useState(true);
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  const handleExportScorecard = async () => {
+    if (!currentCycle || !user) return;
+    setExportingPdf(true);
+    try {
+      const deptName = (departments as any[]).find((d: any) => d.id === user.department_id)?.name || '';
+      const data: ScorecardData = {
+        employee: {
+          full_name: user.full_name,
+          employee_code: (user as any).employee_id || '',
+          position_title: (user as any).position_title || '',
+          department_name: deptName,
+        },
+        cycle: {
+          name: currentCycle.name,
+          year: currentCycle.year,
+          rating_type: currentCycle.rating_type || 'NUMERIC',
+          rating_scale_max: currentCycle.rating_scale_max,
+          rating_levels: currentCycle.rating_levels || [],
+        },
+        kpis: kpis as any[],
+      };
+      const blob = generateScorecardPDF(data);
+      const code = ((user as any).employee_id || user.full_name.replace(/\s+/g, '_')).replace(/[^a-zA-Z0-9_-]/g, '');
+      saveAs(blob, `${code}_scorecard_${currentCycle.year}.pdf`);
+    } finally {
+      setExportingPdf(false);
+    }
+  };
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -698,11 +735,21 @@ export default function KpiSettingPage() {
 
   return (
     <div style={{ fontFamily: C.font, color: C.text }}>
-      <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 4, color: C.text }}>My Scorecard</h1>
-        <p style={{ fontSize: 13, color: C.textSecond }}>
-          Set your KPIs for this performance cycle
-        </p>
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 4, color: C.text }}>My Scorecard</h1>
+          <p style={{ fontSize: 13, color: C.textSecond }}>
+            Set your KPIs for this performance cycle
+          </p>
+        </div>
+        {(kpis as any[]).length > 0 && (
+          <button
+            onClick={handleExportScorecard}
+            disabled={exportingPdf}
+            style={{ padding: '7px 14px', border: `1px solid #bae6fd`, borderRadius: 8, background: '#e0f2fe', color: '#0369a1', fontSize: 12, fontWeight: 500, cursor: exportingPdf ? 'not-allowed' : 'pointer', fontFamily: C.font, opacity: exportingPdf ? 0.6 : 1, flexShrink: 0 }}>
+            {exportingPdf ? 'Exporting…' : '⬇ Export Scorecard'}
+          </button>
+        )}
       </div>
 
       {/* Cycle selector */}
