@@ -200,12 +200,12 @@ function EmployeeScorecard({
     let sum = 0;
     kpis.forEach((k: any) => {
       const r = ratings[k.id];
-      if (r != null && k.weight != null && maxRating) {
-        sum += (Number(k.weight) * Number(r)) / Number(maxRating);
+      if (r != null && k.weight != null) {
+        sum += (Number(k.weight) / 100) * Number(r);
       }
     });
     return sum;
-  }, [kpis, ratings, maxRating]);
+  }, [kpis, ratings]);
 
   const allRated = kpis.length > 0 && kpis.every(k =>
     ratings[k.id] !== null && ratings[k.id] !== undefined);
@@ -227,7 +227,7 @@ function EmployeeScorecard({
       qc.invalidateQueries({ queryKey: ['kpis'] });
       onSubmitted();
       if (res?.data?.overall_score !== undefined) {
-        alert(`Evaluation submitted. Overall score: ${res.data.overall_score} / 100`);
+        alert(`Evaluation submitted. Overall score: ${res.data.overall_score} / ${cycle?.rating_scale_max ?? 5}`);
       }
     },
     onError: (e: any) => {
@@ -261,7 +261,7 @@ function EmployeeScorecard({
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 11, color: C.textSecond }}>Weighted Score Preview</div>
           <div style={{ fontSize: 16, fontWeight: 600, color: C.text }}>
-            {totalWeighted.toFixed(2)} / 100
+            {totalWeighted.toFixed(2)} / {maxRating.toFixed(1)}
           </div>
         </div>
       </div>
@@ -274,8 +274,8 @@ function EmployeeScorecard({
 
       {kpis.map((kpi: any) => {
         const selected = ratings[kpi.id];
-        const weighted = (selected != null && maxRating)
-          ? (Number(kpi.weight) * Number(selected)) / Number(maxRating)
+        const weighted = selected != null
+          ? (Number(kpi.weight) / 100) * Number(selected)
           : 0;
         const isLocked = kpi.status === 'MGR_EVALUATED';
 
@@ -391,7 +391,7 @@ function EmployeeScorecard({
             {selected != null && (
               <div style={{ fontSize: 12, color: C.textInfo, background: C.bgInfo,
                 border: `0.5px solid #bae6fd`, padding: '8px 10px', borderRadius: 6 }}>
-                This KPI contributes {kpi.weight}% × {selected}/{maxRating} =
+                This KPI contributes {kpi.weight}% × {selected} =
                 <strong style={{ marginLeft: 4 }}>{weighted.toFixed(2)} weighted points</strong>
               </div>
             )}
@@ -420,8 +420,8 @@ function EmployeeScorecard({
             <tbody>
               {kpis.map((kpi: any) => {
                 const r = ratings[kpi.id];
-                const w = (r != null && maxRating)
-                  ? (Number(kpi.weight) * Number(r)) / Number(maxRating)
+                const w = r != null
+                  ? (Number(kpi.weight) / 100) * Number(r)
                   : null;
                 return (
                   <tr key={kpi.id} style={{ borderTop: `0.5px solid ${C.borderLight}` }}>
@@ -459,7 +459,7 @@ function EmployeeScorecard({
           <div>
             <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 2 }}>Overall Score</div>
             <div style={{ fontSize: 22, fontWeight: 600, color: C.text }}>
-              {totalWeighted.toFixed(2)} <span style={{ fontSize: 14, color: C.textSecond, fontWeight: 400 }}>/ 100</span>
+              {totalWeighted.toFixed(2)} <span style={{ fontSize: 14, color: C.textSecond, fontWeight: 400 }}>/ {maxRating.toFixed(1)}</span>
             </div>
           </div>
           <button

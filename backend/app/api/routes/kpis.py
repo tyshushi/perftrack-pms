@@ -1740,8 +1740,8 @@ async def manager_evaluate_all(
 
     total_weighted = 0.0
     for kpi in all_kpis:
-        if kpi.mgr_score is not None and kpi.weight is not None and max_rating:
-            total_weighted += float(kpi.weight) * float(kpi.mgr_score) / float(max_rating)
+        if kpi.mgr_score is not None and kpi.weight is not None:
+            total_weighted += (float(kpi.weight) / 100) * float(kpi.mgr_score)
 
     await db.flush()
     msg = "Manager evaluation submitted"
