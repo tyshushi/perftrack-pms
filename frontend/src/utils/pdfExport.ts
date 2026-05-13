@@ -2,7 +2,20 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import JSZip from 'jszip';
 
-const VALIRAM_LOGO_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCADUASwDASIAAhEBAxEB/8QAHAABAAIDAQEBAAAAAAAAAAAAAAYHBAUIAwIB/8QASRAAAQQBAgMEBQcHCAsAAAAAAAECAwQFBhEHEiExQVGBExQiYXEIFiMyUpGhFRczQlaClCU3YnJ1ksHRJDZUZ3aWsbKzwtL/xAAZAQEAAwEBAAAAAAAAAAAAAAAAAQMEAgX/xAArEQEAAgEDAgQGAgMAAAAAAAAAAQIDERIhMUEEE1HwMmFxgaHRQsGRseH/2gAMAwEAAhEDEQA/AOywAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADU53Uun8FLHFmMzRoSStVzGTzNYrkTpuiL3G2Me5RpXNvW6dexsmyelia7ZPNCLa6cJjTXlofzgaK/ajFfxLR8/8ARX7UYr+JaRLipwtw9/D2Mnp/Hx08lA1ZfRV05GWETqrOVOiOVN9lTv7SEafxumc5j0u43hvPNBzKzmfqNsa7p29HORfwMl82WttsxH5aK48do1jX8Lk+f+iv2oxX8S0fnB0Sioi6qxCb+NpqFVP0riUaq/mxkTZP2pi/+yU/J+x+Ct6EbM3G1HW2WpY7L5I2vfujt2puqb7cqtFM2S1ts6fn/iLY6RXXn8LRjeySNskbmvY5EVrmruioveh+hERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERFVFRUVFXdFRep+hERERERERERFUGg9L6lxvPPqW9FksRXqsmqNiYsbJXo5VRXSr9ZNuo2TuNpLWqU5oZKtiaGSNd2SRvVrk9yoZFdaVrFo5T5AAAAAAAAAAAAAAAAAAAAAAAAAAAAACOfX+A+evsb+gj/wC0oByuqPT+A+evsb+gj/7SgHK6o/BPzI+ZTVFoviJXHVXL6HFT2X7Fcp1OBVdGsaLt1Xv3Uu2mpMVXvx6iyucxTK8MVVKaqyR0aStVFbHJ/CivY7qmzdl3Ps8KasxyqL0n0e/8YJ9Vq7fqLVns5fLxELJv1EBRRq0dLbdrz4OhIjuqo5urVRPFOi7GoU7MJfzWqILrMkq3YoIFnfIqvWRWc3dV3Xm/Zto1HFc2LGrV2r4O1Tn6L7fCf8tRj+FV9Yv0Xj69JK6rbs1YoHpI5kkZGoqMbttvtvsW1avFKxSsRERH8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/Z";
+async function loadLogoAsDataUrl(): Promise<string | null> {
+  try {
+    const response = await fetch('/perftrack-pms/valiram-logo.jpg');
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
 
 export interface EmployeeInfo {
   full_name: string;
@@ -79,7 +92,7 @@ function addFooter(doc: jsPDF, pageNum: number, totalPages: number, generatedDat
   );
 }
 
-export function generateScorecardPDF(data: ScorecardData): Blob {
+export async function generateScorecardPDF(data: ScorecardData): Promise<Blob> {
   const { employee, cycle, kpis } = data;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -96,7 +109,10 @@ export function generateScorecardPDF(data: ScorecardData): Blob {
   // --- HEADER ---
   const logoHeight = 15;
   const logoWidth = logoHeight * (300 / 212);
-  doc.addImage('data:image/jpeg;base64,' + VALIRAM_LOGO_B64, 'JPEG', marginL, 11, logoWidth, logoHeight);
+  const logoDataUrl = await loadLogoAsDataUrl();
+  if (logoDataUrl) {
+    doc.addImage(logoDataUrl, 'JPEG', marginL, 11, logoWidth, logoHeight);
+  }
 
   const titleX = marginL + logoWidth + 6;
   doc.setFontSize(16);
@@ -349,7 +365,7 @@ export function generateScorecardPDF(data: ScorecardData): Blob {
 export async function generateScorecardZip(items: ScorecardData[]): Promise<Blob> {
   const zip = new JSZip();
   for (const item of items) {
-    const pdfBlob = generateScorecardPDF(item);
+    const pdfBlob = await generateScorecardPDF(item);
     const code = (item.employee.employee_code || item.employee.full_name.replace(/\s+/g, '_')).replace(/[^a-zA-Z0-9_-]/g, '');
     zip.file(`${code}_scorecard_${item.cycle.year}.pdf`, pdfBlob);
   }
