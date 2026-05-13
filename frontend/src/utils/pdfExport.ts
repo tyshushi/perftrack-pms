@@ -27,8 +27,8 @@ export interface KpiData {
   status: string;
   is_late?: boolean;
   actual_achievement?: string;
-  self_score?: any;
-  self_comment?: string;
+  self_rating?: any;
+  self_remarks?: string;
   mgr_score?: any;
   mgr_comment?: string;
   rating_targets?: Array<{ value: any; label: string; target: string }>;
@@ -97,9 +97,9 @@ export function generateScorecardPDF(data: ScorecardData): Blob {
   const logoH = 20;
   const logoW = Math.round(logoH * (84 / 60));
   try {
-    doc.addImage(VALIRAM_LOGO_B64, 'PNG', marginL, 11, logoW, logoH);
+    doc.addImage('data:image/png;base64,' + VALIRAM_LOGO_B64, 'PNG', marginL, 11, logoW, logoH);
   } catch (_) {
-    // skip logo if invalid
+    // skip logo if base64 is invalid
   }
 
   const titleX = marginL + logoW + 6;
@@ -190,8 +190,8 @@ export function generateScorecardPDF(data: ScorecardData): Blob {
   let hasAnyMgrScore = false;
 
   const kpiRows = kpis.map((kpi, idx) => {
-    const selfLabel = kpi.self_score != null
-      ? (() => { const l = getRatingLabel(kpi.self_score, cycle); return l ? `${kpi.self_score} — ${l}` : String(kpi.self_score); })()
+    const selfLabel = kpi.self_rating != null
+      ? (() => { const l = getRatingLabel(kpi.self_rating, cycle); return l ? `${kpi.self_rating} — ${l}` : String(kpi.self_rating); })()
       : '—';
     const mgrLabel = kpi.mgr_score != null
       ? (() => { const l = getRatingLabel(kpi.mgr_score, cycle); return l ? `${kpi.mgr_score} — ${l}` : String(kpi.mgr_score); })()
@@ -248,7 +248,7 @@ export function generateScorecardPDF(data: ScorecardData): Blob {
   currentY = (doc as any).lastAutoTable.finalY + 8;
 
   // --- SELF EVALUATION ---
-  const selfEvalKpis = kpis.filter(k => k.actual_achievement || k.self_score != null || k.self_comment);
+  const selfEvalKpis = kpis.filter(k => k.actual_achievement || k.self_rating != null || k.self_remarks);
   if (selfEvalKpis.length > 0) {
     if (currentY > pageHeight - 50) { doc.addPage(); currentY = 18; }
 
@@ -269,11 +269,11 @@ export function generateScorecardPDF(data: ScorecardData): Blob {
 
       const rows: string[][] = [];
       if (kpi.actual_achievement) rows.push(['Actual Achievement', kpi.actual_achievement]);
-      if (kpi.self_score != null) {
-        const l = getRatingLabel(kpi.self_score, cycle);
-        rows.push(['Self Rating', l ? `${kpi.self_score} — ${l}` : String(kpi.self_score)]);
+      if (kpi.self_rating != null) {
+        const l = (cycle.rating_levels || []).find((r: any) => r.value === kpi.self_rating)?.label || getRatingLabel(kpi.self_rating, cycle);
+        rows.push(['Self Rating', l ? `${kpi.self_rating} — ${l}` : String(kpi.self_rating)]);
       }
-      if (kpi.self_comment) rows.push(['Self Remarks', kpi.self_comment]);
+      if (kpi.self_remarks) rows.push(['Self Remarks', kpi.self_remarks]);
 
       if (rows.length > 0) {
         autoTable(doc, {

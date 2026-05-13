@@ -136,8 +136,14 @@ async def list_cycles(
         .correlate(PerformanceCycle)
         .scalar_subquery()
     )
+    employee_count_sq = (
+        select(func.count(Kpi.user_id.distinct()))
+        .where(Kpi.cycle_id == PerformanceCycle.id)
+        .correlate(PerformanceCycle)
+        .scalar_subquery()
+    )
     result = await db.execute(
-        select(PerformanceCycle, kpi_count_sq.label("kpi_count"))
+        select(PerformanceCycle, kpi_count_sq.label("kpi_count"), employee_count_sq.label("employee_count"))
         .order_by(PerformanceCycle.year.desc())
     )
     rows = result.all()
@@ -156,8 +162,9 @@ async def list_cycles(
             "rating_levels":     c.rating_levels,
             "approval_chain":    normalise_approval_chain(c.approval_chain),
             "kpi_count":         kpi_count or 0,
+            "employee_count":    employee_count or 0,
         }
-        for c, kpi_count in rows
+        for c, kpi_count, employee_count in rows
     ]
 
 

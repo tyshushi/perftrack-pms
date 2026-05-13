@@ -520,7 +520,7 @@ export default function AdminCyclesPage() {
                       background: (c.kpi_count ?? 0) > 0 ? '#dcfce7' : C.bgTertiary,
                       color:      (c.kpi_count ?? 0) > 0 ? '#166534' : C.textTertiary,
                     }}>
-                      {c.kpi_count ?? 0} KPIs
+                      {(c.employee_count ?? 0) > 0 ? `${c.employee_count} employees · ` : ''}{c.kpi_count ?? 0} KPIs
                     </span>
                   </td>
                   <td style={{ ...S.td, borderBottom: i < arr.length - 1 ? `1px solid ${C.borderLight}` : 'none' }}>
