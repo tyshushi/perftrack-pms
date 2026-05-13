@@ -43,6 +43,7 @@ export const cyclesApi = {
   advanceStatus:     (id: string, status: string) => api.patch(`/cycles/${id}/status?status=${status}`),
   getPhaseStatus:    (cycleId: string)        => api.get(`/cycles/${cycleId}/phase-status`),
   delete:            (cycleId: string)        => api.delete(`/cycles/${cycleId}`),
+  getReport:         (cycleId: string)        => api.get(`/cycles/${cycleId}/report`),
 };
 
 export const kpisApi = {

@@ -4,6 +4,7 @@ import { cyclesApi, kpisApi, usersApi, departmentsApi } from '../api/client';
 import { useForm } from 'react-hook-form';
 import { useAuthStore } from '../store/auth';
 import { generateScorecardZip, ScorecardData } from '../utils/pdfExport';
+import { generateCycleReport } from '../utils/excelExport';
 import { saveAs } from 'file-saver';
 
 const C = {
@@ -100,6 +101,8 @@ export default function AdminCyclesPage() {
   const [deleteCycleError, setDeleteCycleError]   = useState<string | null>(null);
   const [exportingCycleId, setExportingCycleId]   = useState<string | null>(null);
   const [exportProgress,   setExportProgress]     = useState<{ current: number; total: number } | null>(null);
+  const [exportingReportId, setExportingReportId] = useState<string | null>(null);
+  const [reportError,       setReportError]       = useState<string | null>(null);
 
   // Edit cycle state
   const [editCycle, setEditCycle]       = useState<any | null>(null);
@@ -291,6 +294,19 @@ export default function AdminCyclesPage() {
     } finally {
       setExportingCycleId(null);
       setExportProgress(null);
+    }
+  };
+
+  const handleExportReport = async (cycle: any) => {
+    setExportingReportId(cycle.id);
+    setReportError(null);
+    try {
+      const { data } = await cyclesApi.getReport(cycle.id);
+      generateCycleReport(data, cycle.name, cycle.year);
+    } catch (e: any) {
+      setReportError(e?.response?.data?.detail || e?.message || 'Export failed');
+    } finally {
+      setExportingReportId(null);
     }
   };
 
@@ -569,6 +585,15 @@ export default function AdminCyclesPage() {
                             : 'Export All Scorecards'}
                         </button>
                       )}
+                      {(isHrAdmin() || isSuperAdmin()) && (
+                        <button
+                          type="button"
+                          style={{ ...S.btnExport, opacity: exportingReportId === c.id ? 0.65 : 1, cursor: exportingReportId === c.id ? 'not-allowed' : 'pointer' }}
+                          disabled={exportingReportId !== null}
+                          onClick={() => handleExportReport(c)}>
+                          {exportingReportId === c.id ? 'Generating report…' : 'Export Report'}
+                        </button>
+                      )}
                       {isHrAdmin() && (
                         <button
                           type="button"
@@ -814,6 +839,18 @@ export default function AdminCyclesPage() {
                 }}>
                 Continue
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reportError && (
+        <div style={S.modalOverlay} onClick={() => setReportError(null)}>
+          <div style={S.modal} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 600, marginBottom: 10, color: C.textDanger }}>Report Export Failed</div>
+            <div style={{ fontSize: 13, color: C.text, marginBottom: 16 }}>{reportError}</div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" style={S.btnPrimary} onClick={() => setReportError(null)}>OK</button>
             </div>
           </div>
         </div>
