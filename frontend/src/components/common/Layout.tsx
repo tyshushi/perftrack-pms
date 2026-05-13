@@ -68,17 +68,17 @@ export default function Layout() {
   }
 
   const l0Header: React.CSSProperties = {
-    fontSize: 11, fontWeight: 600, color: '#9a9a9a',
-    textTransform: 'uppercase', letterSpacing: '0.06em',
+    fontSize: 10, fontWeight: 500, color: '#9a9a9a',
+    textTransform: 'uppercase', letterSpacing: '0.1em',
     padding: '10px 16px', userSelect: 'none',
   };
 
   function l0LinkStyle(isActive: boolean): React.CSSProperties {
     return {
       display: 'block',
-      fontSize: 11, fontWeight: 600,
+      fontSize: 10, fontWeight: isActive ? 500 : 500,
       color: isActive ? C.text : '#9a9a9a',
-      textTransform: 'uppercase', letterSpacing: '0.06em',
+      textTransform: 'uppercase', letterSpacing: '0.1em',
       padding: '10px 16px', textDecoration: 'none',
       background: isActive ? '#f5f5f3' : 'transparent',
       borderRight: isActive ? '2px solid #1a1a1a' : '2px solid transparent',
@@ -90,7 +90,7 @@ export default function Layout() {
       display: 'block',
       fontSize: 13,
       color: isActive ? C.text : '#444',
-      fontWeight: isActive ? 600 : 400,
+      fontWeight: isActive ? 500 : 300,
       padding: '8px 16px 8px 24px',
       textDecoration: 'none',
       background: isActive ? '#f5f5f3' : 'transparent',
@@ -101,9 +101,9 @@ export default function Layout() {
   function l2LinkStyle(isActive: boolean): React.CSSProperties {
     return {
       display: 'block',
-      fontSize: 12,
+      fontSize: 13,
       color: isActive ? C.text : '#666',
-      fontWeight: isActive ? 600 : 400,
+      fontWeight: isActive ? 500 : 300,
       padding: '7px 16px 7px 36px',
       textDecoration: 'none',
       background: isActive ? '#f5f5f3' : 'transparent',
@@ -113,7 +113,7 @@ export default function Layout() {
 
   const groupRow: React.CSSProperties = {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    fontSize: 13, color: '#444',
+    fontSize: 13, fontWeight: 300, color: '#444',
     padding: '8px 16px 8px 24px',
     cursor: 'pointer', userSelect: 'none',
   };
@@ -127,18 +127,17 @@ export default function Layout() {
   };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', fontFamily: C.font, fontSize: 14, background: '#f5f5f3', color: C.text }}>
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", fontSize: 14, background: '#f5f5f3', color: C.text }}>
       {/* Sidebar */}
       <aside style={{ width: 220, background: '#fff', borderRight: '0.5px solid #e5e4df', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
 
         {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 16px 16px', borderBottom: '0.5px solid #e5e4df' }}>
-          <img src="/perftrack-pms/pr-mark-32.png" alt="PerformRight"
-            style={{ width: 32, height: 32, borderRadius: 6, flexShrink: 0 }} />
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>PerformRight</div>
-            <div style={{ fontSize: 10, color: '#888' }}>by Valiram</div>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '20px 16px 16px', borderBottom: '0.5px solid #e5e4df' }}>
+          <img
+            src="/perftrack-pms/pr-email-signature-600x120.png"
+            alt="PerformRight by Valiram"
+            style={{ height: 32, width: 'auto', objectFit: 'contain' }}
+          />
         </div>
 
         {/* User card */}
@@ -147,8 +146,8 @@ export default function Layout() {
             {user?.full_name.split(' ').map(w => w[0]).join('').slice(0, 2)}
           </div>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.3 }}>{user?.full_name}</div>
-            <div style={{ fontSize: 10, color: '#888' }}>{ROLE_LABELS[role] || role}</div>
+            <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.3 }}>{user?.full_name}</div>
+            <div style={{ fontSize: 11, fontWeight: 300, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#888' }}>{ROLE_LABELS[role] || role}</div>
           </div>
         </div>
 
@@ -285,7 +284,7 @@ export default function Layout() {
           )}
         </nav>
 
-        <button onClick={logout} style={{ margin: '12px', padding: '8px', border: '0.5px solid #e5e4df', borderRadius: 8, background: 'transparent', cursor: 'pointer', fontSize: 12, color: '#666', fontFamily: C.font }}>
+        <button onClick={logout} style={{ margin: '12px', padding: '8px', border: '0.5px solid #e5e4df', borderRadius: 8, background: 'transparent', cursor: 'pointer', fontWeight: 300, fontSize: 12, color: '#666', fontFamily: "inherit" }}>
           Sign out
         </button>
       </aside>
