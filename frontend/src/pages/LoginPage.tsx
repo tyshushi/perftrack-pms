@@ -34,32 +34,32 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f5f3', fontFamily:'system-ui,sans-serif' }}>
-      <div style={{ background:'#fff', border:'0.5px solid #e5e4df', borderRadius:16, padding:36, width:360 }}>
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#FAF9F7', fontFamily:"'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+      <div style={{ background:'#fff', boxShadow:'0 2px 24px rgba(0,0,0,0.07)', borderRadius:16, padding:36, width:360 }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <img src="/perftrack-pms/pr-mark-80.png" alt="PerformRight"
             style={{ width: 80, height: 80, borderRadius: 12, marginBottom: 16 }} />
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>
-            PerformRight
+          <div style={{ fontFamily:"'Cormorant Garamond', Georgia, serif", fontSize: 28, fontWeight: 500, color: '#1a1a1a', marginBottom: 4 }}>
+            <span style={{fontStyle:'italic'}}>Perform</span><span>Right</span>
           </div>
-          <div style={{ fontSize: 13, color: '#6b6b6b' }}>by Valiram</div>
+          <div style={{ fontFamily:"'Inter', sans-serif", fontWeight: 300, fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#6b6b6b' }}>by Valiram</div>
         </div>
 
         <h1 style={{ fontSize:18, fontWeight:500, marginBottom:4 }}>Sign in</h1>
         <p style={{ fontSize:13, color:'#888', marginBottom:20 }}>Enter your work email and password</p>
 
-        {error && <div style={{ background:'#fee2e2', color:'#991b1b', padding:'8px 12px', borderRadius:8, fontSize:13, marginBottom:14 }}>{error}</div>}
+        {error && <div style={{ background:'#fee2e2', color:'#991b1b', padding:'8px 12px', borderRadius:8, fontFamily:"'Inter', sans-serif", fontWeight:300, fontSize:12, marginBottom:14 }}>{error}</div>}
 
         <form onSubmit={handleSubmit(onSubmit)}>
           <div style={{ marginBottom:12 }}>
-            <label style={{ fontSize:12, fontWeight:500, color:'#666', display:'block', marginBottom:5 }}>Email</label>
+            <label style={{ fontFamily:"'Inter', sans-serif", fontWeight:300, fontSize:11, letterSpacing:'0.06em', textTransform:'uppercase', color:'#9a9a9a', display:'block', marginBottom:5 }}>Email</label>
             <input style={S.input} type="email" {...register('email', { required:true })} placeholder="you@company.com" autoFocus />
           </div>
           <div style={{ marginBottom:20 }}>
-            <label style={{ fontSize:12, fontWeight:500, color:'#666', display:'block', marginBottom:5 }}>Password</label>
+            <label style={{ fontFamily:"'Inter', sans-serif", fontWeight:300, fontSize:11, letterSpacing:'0.06em', textTransform:'uppercase', color:'#9a9a9a', display:'block', marginBottom:5 }}>Password</label>
             <input style={S.input} type="password" {...register('password', { required:true })} placeholder="••••••••" />
           </div>
-          <button type="submit" disabled={isLoading} style={{ width:'100%', padding:'10px', border:'none', borderRadius:8, background:'#1a1a18', color:'#fff', fontSize:14, cursor:'pointer', fontFamily:'inherit', opacity: isLoading ? 0.7 : 1 }}>
+          <button type="submit" disabled={isLoading} style={{ width:'100%', padding:'10px', border:'none', borderRadius:8, background:'#1a1a18', color:'#fff', fontFamily:"'Inter', sans-serif", fontWeight:600, fontSize:13, letterSpacing:'0.04em', textTransform:'uppercase', cursor:'pointer', opacity: isLoading ? 0.7 : 1 }}>
             {isLoading ? 'Signing in...' : 'Sign in →'}
           </button>
         </form>
@@ -76,5 +76,5 @@ export default function LoginPage() {
 }
 
 const S: Record<string, React.CSSProperties> = {
-  input: { width:'100%', padding:'9px 12px', border:'0.5px solid #d0d0cc', borderRadius:8, fontSize:14, background:'#fff', color:'#1a1a18', fontFamily:'inherit', outline:'none' },
+  input: { width:'100%', padding:'9px 12px', border:'0.5px solid #d0d0cc', borderRadius:8, fontFamily:"'Inter', sans-serif", fontWeight:300, fontSize:14, background:'#fff', color:'#1a1a18', outline:'none' },
 };
