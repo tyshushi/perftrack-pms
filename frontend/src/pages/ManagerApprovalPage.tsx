@@ -1,8 +1,10 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
-import { kpisApi, cyclesApi, usersApi } from '../api/client';
+import { kpisApi, cyclesApi, usersApi, departmentsApi } from '../api/client';
 import PhaseStatusBanner from '../components/common/PhaseStatusBanner';
+import { generateScorecardZip, ScorecardData } from '../utils/pdfExport';
+import { saveAs } from 'file-saver';
 
 const C = {
   bg:           '#ffffff',
@@ -336,6 +338,8 @@ export default function ManagerApprovalPage() {
   const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>({});
   const [indirectSectionExpanded, setIndirectSectionExpanded] = useState(false);
   const [showPendingOnly, setShowPendingOnly] = useState(false);
+  const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set());
+  const [exportingSelected, setExportingSelected] = useState(false);
 
   const { data: cycles = [] } = useQuery({
     queryKey: ['cycles'],
@@ -354,6 +358,11 @@ export default function ManagerApprovalPage() {
   const { data: reports = [] } = useQuery({
     queryKey: ['direct-reports'],
     queryFn:  () => usersApi.directReports().then(r => r.data),
+  });
+
+  const { data: departments = [] } = useQuery({
+    queryKey: ['departments'],
+    queryFn:  () => departmentsApi.list().then(r => r.data),
   });
 
   const myReports = (reports as any[]);
@@ -443,15 +452,82 @@ export default function ManagerApprovalPage() {
   const toggle = (id: string, status: ReportStatus) =>
     setExpandOverrides(prev => ({ ...prev, [id]: !isOpen(id, status) }));
 
+  const toggleSelect = (id: string) =>
+    setSelectedEmployees(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const selectAllDirect = () =>
+    setSelectedEmployees(prev => { const n = new Set(prev); directReports.forEach((r: any) => n.add(r.id)); return n; });
+
+  const selectAll = () =>
+    setSelectedEmployees(new Set((myReports as any[]).map((r: any) => r.id)));
+
+  const clearSelection = () => setSelectedEmployees(new Set());
+
+  const handleExportSelected = async () => {
+    if (selectedEmployees.size === 0 || !currentCycle) return;
+    setExportingSelected(true);
+    try {
+      const deptList = departments as any[];
+      const items: ScorecardData[] = [];
+      for (const empId of selectedEmployees) {
+        const report = (myReports as any[]).find((r: any) => r.id === empId);
+        if (!report) continue;
+        const kpis = kpisByEmployeeId[empId] || [];
+        if (kpis.length === 0) continue;
+        const deptName = deptList.find((d: any) => d.id === report.department_id)?.name || '';
+        items.push({
+          employee: {
+            full_name: report.full_name,
+            employee_code: report.employee_id || '',
+            position_title: report.position_title || '',
+            department_name: deptName,
+          },
+          cycle: {
+            name: currentCycle.name,
+            year: currentCycle.year,
+            rating_type: currentCycle.rating_type || 'NUMERIC',
+            rating_scale_max: currentCycle.rating_scale_max,
+            rating_levels: currentCycle.rating_levels || [],
+          },
+          kpis,
+        });
+      }
+      if (items.length === 0) return;
+      const blob = await generateScorecardZip(items);
+      const today = new Date().toISOString().slice(0, 10);
+      saveAs(blob, `scorecards_${currentCycle.year}_${today}.zip`);
+    } finally {
+      setExportingSelected(false);
+      setSelectedEmployees(new Set());
+    }
+  };
+
   return (
     <div style={{ fontFamily: C.font, color: C.text }}>
-      <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 4, color: C.text }}>
-          Approve Scorecards
-        </h1>
-        <p style={{ fontSize: 13, color: C.textSecond }}>
-          Review and approve scorecards awaiting your action as DM, RM, or HOD
-        </p>
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 4, color: C.text }}>
+            Approve Scorecards
+          </h1>
+          <p style={{ fontSize: 13, color: C.textSecond }}>
+            Review and approve scorecards awaiting your action as DM, RM, or HOD
+          </p>
+        </div>
+        {selectedEmployees.size > 0 && (
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+            <button
+              onClick={handleExportSelected}
+              disabled={exportingSelected}
+              style={{ padding: '7px 14px', border: `1px solid #bae6fd`, borderRadius: 8, background: '#e0f2fe', color: '#0369a1', fontSize: 12, fontWeight: 500, cursor: exportingSelected ? 'not-allowed' : 'pointer', fontFamily: C.font, opacity: exportingSelected ? 0.6 : 1 }}>
+              {exportingSelected ? 'Exporting…' : `⬇ Export Selected (${selectedEmployees.size})`}
+            </button>
+            <button
+              onClick={clearSelection}
+              style={{ padding: '7px 10px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font }}>
+              Clear
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Cycle selector */}
@@ -472,7 +548,7 @@ export default function ManagerApprovalPage() {
         </div>
         <select
           value={cycleId}
-          onChange={e => { setCycleId(e.target.value); setExpandOverrides({}); setIndirectSectionExpanded(false); setShowPendingOnly(false); }}
+          onChange={e => { setCycleId(e.target.value); setExpandOverrides({}); setIndirectSectionExpanded(false); setShowPendingOnly(false); setSelectedEmployees(new Set()); }}
           style={{ width: '100%', padding: '12px 14px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 15, fontWeight: 600, background: C.bg, color: cycleId ? C.text : C.textTertiary, fontFamily: C.font, outline: 'none', cursor: 'pointer' }}>
           <option value="">Select a performance cycle to begin…</option>
           {sortedCycles.map((c: any) => (
@@ -543,8 +619,12 @@ export default function ManagerApprovalPage() {
           {/* Direct Reports Section */}
           {filteredDirectReportData.length > 0 && (
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontWeight: 600, fontSize: 13, color: C.text, borderBottom: `1px solid ${C.borderLight}`, paddingBottom: 8, marginBottom: 8 }}>
-                Direct Reports ({directReports.length})
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${C.borderLight}`, paddingBottom: 8, marginBottom: 8 }}>
+                <span style={{ fontWeight: 600, fontSize: 13, color: C.text }}>Direct Reports ({directReports.length})</span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={selectAllDirect} style={{ padding: '3px 9px', border: `1px solid ${C.border}`, borderRadius: 6, background: C.bg, color: C.textSecond, fontSize: 11, cursor: 'pointer', fontFamily: C.font }}>Select All Direct Reports</button>
+                  <button onClick={selectAll} style={{ padding: '3px 9px', border: `1px solid ${C.border}`, borderRadius: 6, background: C.bg, color: C.textSecond, fontSize: 11, cursor: 'pointer', fontFamily: C.font }}>Select All</button>
+                </div>
               </div>
               <div style={{ marginBottom: 12, fontSize: 12, color: C.textSecond }}>
                 <strong style={{ color: C.text }}>{directSummary.awaiting}</strong> awaiting approval
@@ -555,12 +635,20 @@ export default function ManagerApprovalPage() {
                 const kpis = kpisByEmployeeId[report.id] ?? [];
                 const expanded = isOpen(report.id, status);
                 const badge    = REPORT_STATUS_STYLE[status];
+                const isSelected = selectedEmployees.has(report.id);
                 return (
-                  <div key={report.id} style={{ background: C.bg, border: `1px solid ${expanded ? C.border : C.borderLight}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
+                  <div key={report.id} style={{ background: C.bg, border: `1px solid ${isSelected ? '#93c5fd' : expanded ? C.border : C.borderLight}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
                     <button
                       onClick={() => toggle(report.id, status)}
-                      style={{ width: '100%', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: C.font, textAlign: 'left' }}>
+                      style={{ width: '100%', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: isSelected ? '#eff6ff' : 'transparent', border: 'none', cursor: 'pointer', fontFamily: C.font, textAlign: 'left' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onClick={e => e.stopPropagation()}
+                          onChange={() => toggleSelect(report.id)}
+                          style={{ width: 15, height: 15, cursor: 'pointer', flexShrink: 0, accentColor: '#0369a1' }}
+                        />
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: 500, fontSize: 14, color: C.text }}>{report.full_name}</div>
                           {report.position_title && (
@@ -614,12 +702,20 @@ export default function ManagerApprovalPage() {
                     const kpis = kpisByEmployeeId[report.id] ?? [];
                     const expanded = isOpen(report.id, status);
                     const badge    = REPORT_STATUS_STYLE[status];
+                    const isSelected = selectedEmployees.has(report.id);
                     return (
-                      <div key={report.id} style={{ background: C.bg, border: `1px solid ${expanded ? C.border : C.borderLight}`, borderLeft: '3px solid #e5e7eb', borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
+                      <div key={report.id} style={{ background: C.bg, border: `1px solid ${isSelected ? '#93c5fd' : expanded ? C.border : C.borderLight}`, borderLeft: `3px solid ${isSelected ? '#3b82f6' : '#e5e7eb'}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
                         <button
                           onClick={() => toggle(report.id, status)}
-                          style={{ width: '100%', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: C.font, textAlign: 'left' }}>
+                          style={{ width: '100%', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: isSelected ? '#eff6ff' : 'transparent', border: 'none', cursor: 'pointer', fontFamily: C.font, textAlign: 'left' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onClick={e => e.stopPropagation()}
+                              onChange={() => toggleSelect(report.id)}
+                              style={{ width: 15, height: 15, cursor: 'pointer', flexShrink: 0, accentColor: '#0369a1' }}
+                            />
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontWeight: 500, fontSize: 14, color: C.text }}>{report.full_name}</div>
                               {report.position_title && (
