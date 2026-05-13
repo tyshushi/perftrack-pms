@@ -10,8 +10,8 @@ from sqlalchemy import select, func, delete as sql_delete, update as sql_update
 from pydantic import BaseModel
 
 from app.db.session import get_db
-from app.core.security import get_current_user, require_permission
-from app.models.user import PerformanceCycle, User, IncrementBand, BellCurveTarget, RatingScale, WeightRule, Kpi, KpiTemplate, Group
+from app.core.security import get_current_user, require_permission, require_hr_admin
+from app.models.user import PerformanceCycle, User, Department, IncrementBand, BellCurveTarget, RatingScale, WeightRule, Kpi, KpiTemplate, Group
 
 router = APIRouter()
 
@@ -362,6 +362,125 @@ async def get_phase_status(
         "self_eval":   phase_info(c.self_eval_start,   c.self_eval_end),
         "mgr_eval":    phase_info(c.mgr_eval_start,    c.mgr_eval_end),
     }
+
+
+@router.get("/{cycle_id}/report")
+async def get_cycle_report(
+    cycle_id: UUID,
+    db:       AsyncSession = Depends(get_db),
+    _:        User         = Depends(require_hr_admin),
+):
+    result = await db.execute(select(PerformanceCycle).where(PerformanceCycle.id == cycle_id))
+    cycle = result.scalar_one_or_none()
+    if not cycle:
+        raise HTTPException(404, "Cycle not found")
+
+    # Load all active users
+    users_result = await db.execute(select(User).where(User.is_active == True))
+    all_users = users_result.scalars().all()
+    user_map = {u.id: u for u in all_users}
+
+    # Load all departments
+    depts_result = await db.execute(select(Department))
+    dept_map = {d.id: d.name for d in depts_result.scalars().all()}
+
+    # Load all KPIs for this cycle
+    kpis_result = await db.execute(select(Kpi).where(Kpi.cycle_id == cycle_id))
+    all_kpis = kpis_result.scalars().all()
+
+    # Group KPIs by user_id
+    from collections import defaultdict
+    kpis_by_user: dict = defaultdict(list)
+    for kpi in all_kpis:
+        kpis_by_user[kpi.user_id].append(kpi)
+
+    STATUS_ORDER = [
+        "DRAFT", "PENDING_DM", "SELF_EVALUATED", "PENDING_RM",
+        "PENDING_HOD", "MGR_EVALUATED", "LOCKED", "REJECTED",
+    ]
+
+    def derive_scorecard_status(kpis: list) -> str:
+        if not kpis:
+            return "NO_SCORECARD"
+        statuses = [k.status for k in kpis]
+        if "REJECTED" in statuses:
+            return "REJECTED"
+        # Return the minimum (earliest-stage) status
+        def order(s):
+            try:
+                return STATUS_ORDER.index(s)
+            except ValueError:
+                return -1
+        return min(statuses, key=order)
+
+    DIMENSION_KEYS = {
+        "Financials":          "fin_weight",
+        "Customer":            "cust_weight",
+        "Internal Process":    "ip_weight",
+        "Learning & Growth":   "lg_weight",
+        "Leadership & Culture":"lc_weight",
+    }
+
+    rows = []
+    for user in all_users:
+        kpis = kpis_by_user.get(user.id, [])
+
+        scorecard_status = derive_scorecard_status(kpis)
+        is_late = any(k.is_late for k in kpis)
+        kpi_count = len(kpis)
+
+        self_rating = None
+        if any(k.self_rating is not None for k in kpis):
+            self_rating = sum(
+                (float(k.weight) / 100.0) * float(k.self_rating)
+                for k in kpis if k.self_rating is not None
+            )
+
+        mgr_rating = None
+        if any(k.mgr_score is not None for k in kpis):
+            mgr_rating = sum(
+                (float(k.weight) / 100.0) * float(k.mgr_score)
+                for k in kpis if k.mgr_score is not None
+            )
+
+        dim_weights: dict = {v: 0 for v in DIMENSION_KEYS.values()}
+        for k in kpis:
+            key = DIMENSION_KEYS.get(k.kpi_dimension)
+            if key:
+                dim_weights[key] = dim_weights[key] + k.weight
+
+        rows.append({
+            "employee_id":        user.employee_id,
+            "full_name":          user.full_name,
+            "email":              user.email,
+            "position_title":     user.position_title,
+            "job_grade":          user.job_grade,
+            "category":           user.category,
+            "employee_type":      user.employee_type,
+            "department_id":      str(user.department_id) if user.department_id else None,
+            "department_name":    dept_map.get(user.department_id, ""),
+            "division":           user.division,
+            "section":            user.section,
+            "country":            user.country,
+            "work_location":      user.work_location,
+            "hire_date":          str(user.hire_date) if user.hire_date else None,
+            "gender":             user.gender,
+            "direct_manager":     user_map[user.direct_manager_id].full_name if user.direct_manager_id and user.direct_manager_id in user_map else None,
+            "reviewing_manager":  user_map[user.reviewing_manager_id].full_name if user.reviewing_manager_id and user.reviewing_manager_id in user_map else None,
+            "hod":                user_map[user.hod_id].full_name if user.hod_id and user.hod_id in user_map else None,
+            "scorecard_status":   scorecard_status,
+            "is_late":            is_late,
+            "kpi_count":          kpi_count,
+            "self_rating":        round(self_rating, 4) if self_rating is not None else None,
+            "mgr_rating":         round(mgr_rating, 4) if mgr_rating is not None else None,
+            "fin_weight":         dim_weights["fin_weight"],
+            "cust_weight":        dim_weights["cust_weight"],
+            "ip_weight":          dim_weights["ip_weight"],
+            "lg_weight":          dim_weights["lg_weight"],
+            "lc_weight":          dim_weights["lc_weight"],
+        })
+
+    return rows
 
 
 @router.delete("/{cycle_id}")
