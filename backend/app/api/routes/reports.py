@@ -7,7 +7,7 @@ from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, or_
 from pydantic import BaseModel
 
 from app.db.session import get_db
@@ -109,7 +109,21 @@ async def _apply_scope(db: AsyncSession, scope: ReportScope) -> list:
     if scope.direct_manager_ids:
         q = q.where(User.direct_manager_id.in_(scope.direct_manager_ids))
     if scope.hod_ids:
-        q = q.where(User.hod_id.in_(scope.hod_ids))
+        # Level-2 managers: users whose own DM is one of the selected HODs
+        l2_mgr_sq = (
+            select(User.id)
+            .where(
+                User.direct_manager_id.in_(scope.hod_ids),
+                User.is_active == True,
+            )
+        )
+        q = q.where(
+            or_(
+                User.hod_id.in_(scope.hod_ids),
+                User.direct_manager_id.in_(scope.hod_ids),
+                User.direct_manager_id.in_(l2_mgr_sq),
+            )
+        )
 
     result = await db.execute(q)
     users = list(result.scalars().all())
@@ -140,15 +154,71 @@ async def get_filter_options(
     db: AsyncSession = Depends(get_db),
     _:  User         = Depends(require_hr_admin),
 ):
-    result = await db.execute(
+    # Distinct field values
+    field_res = await db.execute(
         select(User.division, User.job_grade, User.category)
         .where(User.is_active == True)
     )
-    rows = result.all()
-    divisions  = sorted({r.division  for r in rows if r.division})
-    job_grades = sorted({r.job_grade for r in rows if r.job_grade})
-    categories = sorted({r.category  for r in rows if r.category})
-    return {"divisions": divisions, "job_grades": job_grades, "categories": categories}
+    field_rows = field_res.all()
+    divisions  = sorted({r.division  for r in field_rows if r.division})
+    job_grades = sorted({r.job_grade for r in field_rows if r.job_grade})
+    categories = sorted({r.category  for r in field_rows if r.category})
+
+    # Direct-report counts per manager
+    dm_count_res = await db.execute(
+        select(User.direct_manager_id, func.count().label("cnt"))
+        .where(User.direct_manager_id.is_not(None), User.is_active == True)
+        .group_by(User.direct_manager_id)
+    )
+    dm_counts = {row.direct_manager_id: row.cnt for row in dm_count_res.all()}
+
+    # Manager user details (only users who ARE a direct_manager_id for someone)
+    mgr_res = await db.execute(
+        select(User.id, User.full_name, User.employee_id)
+        .where(User.id.in_(list(dm_counts.keys())), User.is_active == True)
+        .order_by(User.full_name)
+    )
+    manager_options = [
+        {
+            "id":                  str(r.id),
+            "full_name":           r.full_name,
+            "employee_id":         r.employee_id,
+            "direct_report_count": dm_counts.get(r.id, 0),
+        }
+        for r in mgr_res.all()
+    ]
+
+    # HOD counts (employees who explicitly have hod_id set)
+    hod_count_res = await db.execute(
+        select(User.hod_id, func.count().label("cnt"))
+        .where(User.hod_id.is_not(None), User.is_active == True)
+        .group_by(User.hod_id)
+    )
+    hod_counts = {row.hod_id: row.cnt for row in hod_count_res.all()}
+
+    # HOD user details (only users who ARE a hod_id for someone)
+    hod_res = await db.execute(
+        select(User.id, User.full_name, User.employee_id)
+        .where(User.id.in_(list(hod_counts.keys())), User.is_active == True)
+        .order_by(User.full_name)
+    )
+    hod_options = [
+        {
+            "id":           str(r.id),
+            "full_name":    r.full_name,
+            "employee_id":  r.employee_id,
+            "report_count": hod_counts.get(r.id, 0),
+        }
+        for r in hod_res.all()
+    ]
+
+    return {
+        "divisions":       divisions,
+        "job_grades":      job_grades,
+        "categories":      categories,
+        "manager_options": manager_options,
+        "hod_options":     hod_options,
+    }
 
 
 @router.post("/preview")

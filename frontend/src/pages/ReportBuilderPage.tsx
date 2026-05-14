@@ -533,13 +533,21 @@ export default function ReportBuilderPage() {
 
   // ─ Options ─
   const fo = filterOpts as any;
-  const cycleOpts: MSOption[]  = (cycles as any[]).map((c: any) => ({ value: c.id, label: `${c.name} (${c.year})` }));
-  const deptOpts: MSOption[]   = (departments as any[]).map((d: any) => ({ value: d.id, label: d.name }));
-  const divOpts: MSOption[]    = (fo?.divisions ?? []).map((d: string) => ({ value: d, label: d }));
-  const gradeOpts: MSOption[]  = (fo?.job_grades ?? []).map((g: string) => ({ value: g, label: g }));
-  const catOpts: MSOption[]    = (fo?.categories ?? []).map((c: string) => ({ value: c, label: c }));
-  const groupOpts: MSOption[]  = (groups as any[]).map((g: any) => ({ value: g.id, label: g.name }));
-  const userOpts: MSOption[]   = (allUsers as any[]).map((u: any) => ({ value: u.id, label: `${u.full_name} (${u.employee_id})` }));
+  const cycleOpts: MSOption[]   = (cycles as any[]).map((c: any) => ({ value: c.id, label: `${c.name} (${c.year})` }));
+  const deptOpts: MSOption[]    = (departments as any[]).map((d: any) => ({ value: d.id, label: d.name }));
+  const divOpts: MSOption[]     = (fo?.divisions ?? []).map((d: string) => ({ value: d, label: d }));
+  const gradeOpts: MSOption[]   = (fo?.job_grades ?? []).map((g: string) => ({ value: g, label: g }));
+  const catOpts: MSOption[]     = (fo?.categories ?? []).map((c: string) => ({ value: c, label: c }));
+  const groupOpts: MSOption[]   = (groups as any[]).map((g: any) => ({ value: g.id, label: g.name }));
+  const managerOpts: MSOption[] = (fo?.manager_options ?? []).map((u: any) => ({
+    value: u.id,
+    label: `${u.full_name} (${u.employee_id}) — ${u.direct_report_count} direct report${u.direct_report_count !== 1 ? 's' : ''}`,
+  }));
+  const hodOpts: MSOption[]     = (fo?.hod_options ?? []).map((u: any) => ({
+    value: u.id,
+    label: `${u.full_name} (${u.employee_id}) — ${u.report_count} report${u.report_count !== 1 ? 's' : ''}`,
+  }));
+  const userOpts: MSOption[]    = (allUsers as any[]).map((u: any) => ({ value: u.id, label: `${u.full_name} (${u.employee_id})` }));
 
   const canGenerate = cycleIds.length > 0 && selectedCols.size > 0 && !buildMut.isPending;
   const canPreview  = cycleIds.length > 0 && !previewing;
@@ -631,12 +639,18 @@ export default function ReportBuilderPage() {
 
               <div style={S.grid2}>
                 <div>
-                  <span style={S.label}>Direct Manager</span>
-                  <MultiSelect options={userOpts} selected={dmIds} onChange={v => { setDmIds(v); setPreviewCount(null); }} placeholder="Any manager" searchable />
+                  <span style={S.label}>Reports to Direct Manager</span>
+                  <MultiSelect options={managerOpts} selected={dmIds} onChange={v => { setDmIds(v); setPreviewCount(null); }} placeholder="Any manager" searchable />
+                  <div style={{ fontSize: 11, color: C.textTert, marginTop: 4 }}>
+                    Filter employees who report to the selected manager(s)
+                  </div>
                 </div>
                 <div>
-                  <span style={S.label}>HOD</span>
-                  <MultiSelect options={userOpts} selected={hodIds} onChange={v => { setHodIds(v); setPreviewCount(null); }} placeholder="Any HOD" searchable />
+                  <span style={S.label}>Under HOD</span>
+                  <MultiSelect options={hodOpts} selected={hodIds} onChange={v => { setHodIds(v); setPreviewCount(null); }} placeholder="Any HOD" searchable />
+                  <div style={{ fontSize: 11, color: C.textTert, marginTop: 4 }}>
+                    Filter employees under the selected HOD (direct and indirect reports, 2 levels)
+                  </div>
                 </div>
               </div>
 
