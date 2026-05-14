@@ -12,6 +12,7 @@ from app.core.security import get_current_user, require_hr_admin, require_permis
 from app.models.user import Kpi, User, WeightRule, PerformanceCycle
 from app.services.kpi_workflow import KpiWorkflowService
 from app.api.routes.cycles import normalise_approval_chain
+import app.services.email_service as _email_svc
 
 router = APIRouter()
 
@@ -1451,6 +1452,24 @@ async def submit_scorecard(
         ))
 
     await db.flush()
+
+    try:
+        _cyc_res = await db.execute(select(PerformanceCycle).where(PerformanceCycle.id == body.cycle_id))
+        _cyc = _cyc_res.scalar_one_or_none()
+        if current_user.direct_manager_id and _cyc:
+            _mgr_res = await db.execute(select(User).where(User.id == current_user.direct_manager_id))
+            _mgr = _mgr_res.scalar_one_or_none()
+            if _mgr and _mgr.email:
+                await _email_svc.notify_scorecard_pending_approval(
+                    db=db,
+                    manager={'id': _mgr.id, 'full_name': _mgr.full_name, 'email': _mgr.email},
+                    employee={'id': current_user.id, 'full_name': current_user.full_name, 'employee_id': current_user.employee_id or ''},
+                    cycle={'id': _cyc.id, 'name': _cyc.name},
+                )
+    except Exception as _e:
+        import logging
+        logging.getLogger(__name__).warning("submit_scorecard email error: %s", _e)
+
     msg = "Scorecard submitted for approval"
     if tag_late:
         msg += " (tagged as Late Submission)"
@@ -1581,6 +1600,37 @@ async def review_scorecard(
         msg = f"Scorecard rejected for {employee.full_name}"
 
     await db.flush()
+
+    try:
+        _cyc_res = await db.execute(select(PerformanceCycle).where(PerformanceCycle.id == body.cycle_id))
+        _cyc = _cyc_res.scalar_one_or_none()
+        if _cyc and employee.email:
+            _emp_d = {'id': employee.id, 'full_name': employee.full_name, 'email': employee.email, 'employee_id': employee.employee_id or ''}
+            _approver_d = {'id': current_user.id, 'full_name': current_user.full_name, 'email': current_user.email or ''}
+            _cyc_d = {'id': _cyc.id, 'name': _cyc.name}
+            if body.action == "approve":
+                _nxt = next_pending_status(chain, current_status)
+                if _nxt is None:
+                    await _email_svc.notify_scorecard_approved(db=db, employee=_emp_d, cycle=_cyc_d, approver=_approver_d)
+                else:
+                    _nxt_level = LEVEL_FOR_PENDING_STATUS[_nxt]
+                    _nxt_uid = {'DM': employee.direct_manager_id, 'RM': employee.reviewing_manager_id, 'HOD': employee.hod_id}.get(_nxt_level)
+                    if _nxt_uid:
+                        _nxt_res = await db.execute(select(User).where(User.id == _nxt_uid))
+                        _nxt_mgr = _nxt_res.scalar_one_or_none()
+                        if _nxt_mgr and _nxt_mgr.email:
+                            await _email_svc.notify_scorecard_pending_approval(
+                                db=db,
+                                manager={'id': _nxt_mgr.id, 'full_name': _nxt_mgr.full_name, 'email': _nxt_mgr.email},
+                                employee=_emp_d,
+                                cycle=_cyc_d,
+                            )
+            else:
+                await _email_svc.notify_scorecard_rejected(db=db, employee=_emp_d, cycle=_cyc_d, approver=_approver_d, comment=body.comment)
+    except Exception as _e:
+        import logging
+        logging.getLogger(__name__).warning("review_scorecard email error: %s", _e)
+
     return {"updated": len(kpis), "message": msg}
 
 
@@ -1635,6 +1685,24 @@ async def self_evaluate_all(
         count += 1
 
     await db.flush()
+
+    try:
+        _cyc_res = await db.execute(select(PerformanceCycle).where(PerformanceCycle.id == body.cycle_id))
+        _cyc = _cyc_res.scalar_one_or_none()
+        if current_user.direct_manager_id and _cyc:
+            _mgr_res = await db.execute(select(User).where(User.id == current_user.direct_manager_id))
+            _mgr = _mgr_res.scalar_one_or_none()
+            if _mgr and _mgr.email:
+                await _email_svc.notify_self_eval_submitted(
+                    db=db,
+                    manager={'id': _mgr.id, 'full_name': _mgr.full_name, 'email': _mgr.email},
+                    employee={'id': current_user.id, 'full_name': current_user.full_name, 'employee_id': current_user.employee_id or ''},
+                    cycle={'id': _cyc.id, 'name': _cyc.name},
+                )
+    except Exception as _e:
+        import logging
+        logging.getLogger(__name__).warning("self_evaluate_all email error: %s", _e)
+
     msg = "Self evaluation submitted"
     if tag_late:
         msg += " (tagged as Late Submission)"
@@ -1744,6 +1812,19 @@ async def manager_evaluate_all(
             total_weighted += (float(kpi.weight) / 100) * float(kpi.mgr_score)
 
     await db.flush()
+
+    try:
+        if employee.email:
+            await _email_svc.notify_mgr_eval_complete(
+                db=db,
+                employee={'id': employee.id, 'full_name': employee.full_name, 'email': employee.email},
+                cycle={'id': cycle.id, 'name': cycle.name},
+                manager={'id': current_user.id, 'full_name': current_user.full_name, 'email': current_user.email or ''},
+            )
+    except Exception as _e:
+        import logging
+        logging.getLogger(__name__).warning("evaluate_all email error: %s", _e)
+
     msg = "Manager evaluation submitted"
     if tag_late:
         msg += " (tagged as Late Submission)"

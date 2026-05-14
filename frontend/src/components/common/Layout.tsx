@@ -291,6 +291,11 @@ export default function Layout() {
                       System Settings
                     </NavLink>
                   )}
+                  {isSuperAdmin && (
+                    <NavLink to="/admin/email-logs" style={({ isActive }) => l1LinkStyle(isActive)} end>
+                      Email Logs
+                    </NavLink>
+                  )}
 
                   {/* KPI Setup sub-group */}
                   {(isHrAdmin || hasPermission('manage_templates')) && (

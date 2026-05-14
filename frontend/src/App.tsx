@@ -19,6 +19,7 @@ import KpiTemplatesPage from './pages/KpiTemplatesPage';
 import RoleManagementPage from './pages/RoleManagementPage';
 import SystemSettingsPage from './pages/SystemSettingsPage';
 import ReportBuilderPage from './pages/ReportBuilderPage';
+import EmailLogsPage from './pages/EmailLogsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -89,6 +90,7 @@ export default function App() {
             <Route path="admin/reports"             element={<RequirePermission permission={["view_employees"]}><ReportBuilderPage /></RequirePermission>} />
             <Route path="admin/roles"              element={<RequirePermission permission={["manage_custom_roles"]}><RoleManagementPage /></RequirePermission>} />
             <Route path="admin/settings"           element={<RequireSuperAdmin><SystemSettingsPage /></RequireSuperAdmin>} />
+            <Route path="admin/email-logs"         element={<RequireSuperAdmin><EmailLogsPage /></RequireSuperAdmin>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

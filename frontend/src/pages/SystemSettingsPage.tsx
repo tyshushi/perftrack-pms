@@ -19,6 +19,8 @@ const C = {
   font:         '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
 };
 
+const EMAIL_TEST_RECIPIENT = import.meta.env.VITE_EMAIL_TEST_MODE_RECIPIENT || '';
+
 function formatTimestamp(iso: string | null | undefined): string {
   if (!iso) return '—';
   try {
@@ -66,6 +68,8 @@ function ToggleSwitch({ on, onChange, disabled }: { on: boolean; onChange: (v: b
   );
 }
 
+type SettingMeta = { value: string; updated_by: string | null; updated_by_name: string | null; updated_at: string | null };
+
 export default function SystemSettingsPage() {
   const isSuperAdmin = useAuthStore(s => s.isSuperAdmin());
   const qc = useQueryClient();
@@ -75,16 +79,21 @@ export default function SystemSettingsPage() {
     queryFn:  () => settingsApi.list().then(r => r.data),
   });
 
-  const cascadeMeta = (settings as any)?.manager_cascade_enabled;
-  const [cascadeOn, setCascadeOn] = useState<boolean>(true);
-  const [savedOk,  setSavedOk]  = useState(false);
-  const [err,      setErr]      = useState<string | null>(null);
+  const s = settings as Record<string, SettingMeta>;
 
-  useEffect(() => {
-    if (cascadeMeta?.value !== undefined) {
-      setCascadeOn(cascadeMeta.value === 'true');
-    }
-  }, [cascadeMeta?.value]);
+  const cascadeMeta  = s?.manager_cascade_enabled;
+  const emailMeta    = s?.email_notifications_enabled;
+  const testModeMeta = s?.email_test_mode;
+
+  const [cascadeOn,  setCascadeOn]  = useState(true);
+  const [emailOn,    setEmailOn]    = useState(true);
+  const [testModeOn, setTestModeOn] = useState(true);
+  const [savedOk,    setSavedOk]    = useState(false);
+  const [err,        setErr]        = useState<string | null>(null);
+
+  useEffect(() => { if (cascadeMeta?.value  !== undefined) setCascadeOn(cascadeMeta.value   === 'true'); }, [cascadeMeta?.value]);
+  useEffect(() => { if (emailMeta?.value    !== undefined) setEmailOn(emailMeta.value        === 'true'); }, [emailMeta?.value]);
+  useEffect(() => { if (testModeMeta?.value !== undefined) setTestModeOn(testModeMeta.value  === 'true'); }, [testModeMeta?.value]);
 
   const updateMutation = useMutation({
     mutationFn: ({ key, value }: { key: string; value: string }) =>
@@ -113,14 +122,26 @@ export default function SystemSettingsPage() {
     );
   }
 
-  const initial = cascadeMeta?.value === 'true';
-  const dirty   = cascadeOn !== initial;
+  const initialCascade  = cascadeMeta?.value  === 'true';
+  const initialEmail    = emailMeta?.value     === 'true';
+  const initialTestMode = testModeMeta?.value  === 'true';
 
-  const handleSave = () => {
-    updateMutation.mutate({
-      key:   'manager_cascade_enabled',
-      value: cascadeOn ? 'true' : 'false',
-    });
+  const dirty = cascadeOn !== initialCascade || emailOn !== initialEmail || testModeOn !== initialTestMode;
+
+  const handleSave = async () => {
+    const ops: Array<{ key: string; value: string }> = [];
+    if (cascadeOn  !== initialCascade)  ops.push({ key: 'manager_cascade_enabled',      value: cascadeOn  ? 'true' : 'false' });
+    if (emailOn    !== initialEmail)    ops.push({ key: 'email_notifications_enabled',   value: emailOn    ? 'true' : 'false' });
+    if (testModeOn !== initialTestMode) ops.push({ key: 'email_test_mode',               value: testModeOn ? 'true' : 'false' });
+    for (const op of ops) {
+      await updateMutation.mutateAsync(op);
+    }
+  };
+
+  const handleCancel = () => {
+    setCascadeOn(initialCascade);
+    setEmailOn(initialEmail);
+    setTestModeOn(initialTestMode);
   };
 
   return (
@@ -135,41 +156,65 @@ export default function SystemSettingsPage() {
       {isLoading ? (
         <div style={{ ...S.card, color: C.textSecond, fontSize: 13 }}>Loading settings…</div>
       ) : (
-        <div style={S.card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 10 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 500, color: C.text, marginBottom: 4 }}>
-                Allow Managers to Cascade KPIs
-              </div>
-              <div style={{ fontSize: 12, color: C.textSecond }}>
-                When disabled, only HR Admins and Super Admins can cascade KPIs to staff.
-                Managers and HODs will see a permission error if they attempt to cascade.
-              </div>
+        <>
+          {/* KPI Cascade */}
+          <div style={S.card}>
+            <SettingRow
+              label="Allow Managers to Cascade KPIs"
+              description="When disabled, only HR Admins and Super Admins can cascade KPIs to staff. Managers and HODs will see a permission error if they attempt to cascade."
+              note="When disabled, the Quick Cascade option will be hidden from managers' navigation."
+              on={cascadeOn}
+              onChange={setCascadeOn}
+              meta={cascadeMeta}
+            />
+          </div>
+
+          {/* Email Notifications */}
+          <div style={S.card}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.textTertiary, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
+              Email Notifications
             </div>
-            <ToggleSwitch on={cascadeOn} onChange={setCascadeOn} />
-          </div>
 
-          <div style={{ marginTop: 8, fontSize: 12, color: C.textSecond, fontStyle: 'italic' }}>
-            When disabled, the Quick Cascade option will be hidden from managers' navigation.
-          </div>
+            <SettingRow
+              label="Email notifications"
+              description="Send transactional emails when scorecards are submitted, approved, rejected, or evaluated."
+              on={emailOn}
+              onChange={setEmailOn}
+              meta={emailMeta}
+            />
 
-          <div style={{ marginTop: 12, padding: '8px 12px', background: C.bgSecondary, borderRadius: 6, fontSize: 12, color: C.textSecond }}>
-            Last updated by{' '}
-            <strong style={{ color: C.text }}>{cascadeMeta?.updated_by_name || '—'}</strong>
-            {' '}on{' '}
-            <strong style={{ color: C.text }}>{formatTimestamp(cascadeMeta?.updated_at)}</strong>
+            <div style={{ height: 1, background: C.borderLight, margin: '16px 0' }} />
+
+            <SettingRow
+              label="Test mode (redirect all emails to test recipient)"
+              description="When on, all emails are sent to the test recipient instead of intended recipients, with the original recipient shown in the subject line."
+              on={testModeOn}
+              onChange={setTestModeOn}
+              meta={testModeMeta}
+            />
+
+            {EMAIL_TEST_RECIPIENT && (
+              <div style={{ marginTop: 10, padding: '8px 12px', background: C.bgInfo, borderRadius: 6, fontSize: 12, color: C.textInfo }}>
+                Test recipient: <strong>{EMAIL_TEST_RECIPIENT}</strong>
+              </div>
+            )}
+            {!EMAIL_TEST_RECIPIENT && (
+              <div style={{ marginTop: 10, padding: '8px 12px', background: C.bgWarning, borderRadius: 6, fontSize: 12, color: '#854d0e' }}>
+                No test recipient configured. Set <code>EMAIL_TEST_MODE_RECIPIENT</code> env var on the server.
+              </div>
+            )}
           </div>
 
           {err && (
-            <div style={{ marginTop: 10, fontSize: 12, color: C.textDanger }}>{err}</div>
+            <div style={{ marginBottom: 10, fontSize: 12, color: C.textDanger }}>{err}</div>
           )}
           {savedOk && (
-            <div style={{ marginTop: 10, fontSize: 12, color: '#166534', fontWeight: 500 }}>
-              ✓ Setting saved
+            <div style={{ marginBottom: 10, fontSize: 12, color: '#166534', fontWeight: 500 }}>
+              ✓ Settings saved
             </div>
           )}
 
-          <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
             <button
               onClick={handleSave}
               disabled={!dirty || updateMutation.isPending}
@@ -182,16 +227,50 @@ export default function SystemSettingsPage() {
             </button>
             {dirty && (
               <button
-                onClick={() => setCascadeOn(initial)}
+                onClick={handleCancel}
                 disabled={updateMutation.isPending}
                 style={S.btnSm}>
                 Cancel
               </button>
             )}
           </div>
-        </div>
+        </>
       )}
     </div>
+  );
+}
+
+function SettingRow({
+  label, description, note, on, onChange, meta,
+}: {
+  label: string;
+  description: string;
+  note?: string;
+  on: boolean;
+  onChange: (v: boolean) => void;
+  meta?: SettingMeta;
+}) {
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 10 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: C.text, marginBottom: 4 }}>{label}</div>
+          <div style={{ fontSize: 12, color: C.textSecond }}>{description}</div>
+        </div>
+        <ToggleSwitch on={on} onChange={onChange} />
+      </div>
+      {note && (
+        <div style={{ marginTop: 8, fontSize: 12, color: C.textSecond, fontStyle: 'italic' }}>{note}</div>
+      )}
+      {meta && (
+        <div style={{ marginTop: 12, padding: '8px 12px', background: C.bgSecondary, borderRadius: 6, fontSize: 12, color: C.textSecond }}>
+          Last updated by{' '}
+          <strong style={{ color: C.text }}>{meta.updated_by_name || '—'}</strong>
+          {' '}on{' '}
+          <strong style={{ color: C.text }}>{formatTimestamp(meta.updated_at)}</strong>
+        </div>
+      )}
+    </>
   );
 }
 
