@@ -385,10 +385,11 @@ function KpiCard({
   const [showTargets, setShowTargets] = useState(needsTargets && !isFixed);
   const [editing,    setEditing]    = useState(false);
   const [flash,      setFlash]      = useState(false);
-  const canDelete = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED') && !isFixed;
+  // REJECTED FIXED KPIs were rejected by the manager who cascaded them — staff can edit/delete
+  const canDelete = (kpi.status === 'DRAFT' && !isFixed) || kpi.status === 'REJECTED';
   const showTargetsSection = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED' || kpi.status === 'APPROVED') && !!cycle;
   const canEditTargets = showTargetsSection && !isFixed;
-  const canEditKpi = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED') && !!cycle && !isFixed;
+  const canEditKpi = (kpi.status === 'DRAFT' && !isFixed || kpi.status === 'REJECTED') && !!cycle;
 
   const handleSave = async (payload: { fields: any; targets: any[] | null }) => {
     await onSaveEdit(payload);
@@ -576,6 +577,9 @@ export default function KpiSettingPage() {
   });
 
   const [showRulesCard, setShowRulesCard] = useState(true);
+  const [weightBarExpanded, setWeightBarExpanded] = useState(() => {
+    try { return localStorage.getItem('kpi_weight_bar_expanded') !== 'false'; } catch { return true; }
+  });
   const [exportingPdf, setExportingPdf] = useState(false);
 
   const handleExportScorecard = async () => {
@@ -860,105 +864,6 @@ export default function KpiSettingPage() {
             </div>
           )}
 
-          {/* Weight summary */}
-          <div style={{ ...S.card, marginBottom: 12 }}>
-            <div style={{ fontWeight: 500, marginBottom: 10, color: C.text }}>Weight Summary</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginBottom: 10 }}>
-              {bykpi_dimension.map(({ cat, total, min, max, hasRule }) => {
-                // Color states:
-                //   green = within [min, max]
-                //   yellow = >0 but below min (room to add)
-                //   red = above max (must reduce)
-                //   grey = total 0 with no minimum requirement
-                let state: 'green' | 'yellow' | 'red' | 'grey';
-                if (total > max) state = 'red';
-                else if (total >= min && total <= max && (total > 0 || min > 0)) state = 'green';
-                else if (total > 0 && total < min) state = 'yellow';
-                else state = 'grey';
-
-                const palette = {
-                  green:  { bg: '#dcfce7', border: '#bbf7d0', text: '#166534', bar: '#16a34a' },
-                  yellow: { bg: '#fef9c3', border: '#fde68a', text: '#854d0e', bar: '#ca8a04' },
-                  red:    { bg: '#fee2e2', border: '#fca5a5', text: '#991b1b', bar: '#dc2626' },
-                  grey:   { bg: C.bgSecondary, border: C.borderLight, text: C.textSecond, bar: C.textTertiary },
-                }[state];
-
-                const pct = Math.min(100, (total / Math.max(max, 1)) * 100);
-                const remaining = Math.max(0, max - total);
-                const needed    = Math.max(0, min - total);
-
-                return (
-                  <div key={cat} style={{ padding: '10px 12px', borderRadius: 8, background: palette.bg, border: `0.5px solid ${palette.border}` }}>
-                    <div style={{ fontSize: 11, color: C.textSecond, marginBottom: 4 }}>{cat}</div>
-                    <div style={{ fontSize: 20, fontWeight: 500, color: palette.text }}>{total}%</div>
-
-                    {/* Progress bar */}
-                    <div style={{ height: 6, background: '#ffffff', borderRadius: 3, marginTop: 6, overflow: 'hidden', border: `0.5px solid ${C.borderLight}` }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: palette.bar, transition: 'width 200ms ease' }} />
-                    </div>
-
-                    {hasRule && (
-                      <div style={{ fontSize: 10, color: palette.text, marginTop: 6 }}>
-                        Range: {min}%–{max}%
-                      </div>
-                    )}
-                    {hasRule && state !== 'red' && (
-                      <div style={{ fontSize: 10, color: C.textTertiary, marginTop: 2 }}>
-                        Remaining: {remaining}%
-                      </div>
-                    )}
-                    {state === 'yellow' && (
-                      <div style={{ fontSize: 11, color: palette.text, marginTop: 4, fontWeight: 500 }}>
-                        ⚠ Need {needed}% more to meet minimum
-                      </div>
-                    )}
-                    {state === 'red' && (
-                      <div style={{ fontSize: 11, color: palette.text, marginTop: 4, fontWeight: 500 }}>
-                        ⚠ {total - max}% over maximum — remove or reduce KPIs
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Impossibility warnings: dimension below min and not enough
-                unallocated weight left to ever reach the minimum. */}
-            {impossibilityWarnings.length > 0 && (
-              <div style={{ padding: '8px 12px', borderRadius: 8, background: '#fee2e2', border: `0.5px solid #fca5a5`, color: '#991b1b', fontSize: 12, marginBottom: 10 }}>
-                {impossibilityWarnings.map(w => (
-                  <div key={w.cat} style={{ marginBottom: 2 }}>
-                    ⚠ Cannot reach minimum for {w.cat}: need {w.needed}% more but only {remainingTotalWeight}% of total weight remaining
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTop: `0.5px solid ${C.borderLight}` }}>
-              <span style={{ fontSize: 13, color: C.textSecond }}>Total</span>
-              <span style={{ fontSize: 16, fontWeight: 600, color: totalWeight === 100 ? '#166534' : '#991b1b' }}>
-                {totalWeight}%
-                {totalWeight !== 100 && (
-                  <span style={{ fontSize: 11, marginLeft: 6 }}>(must equal 100%)</span>
-                )}
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTop: `0.5px solid ${C.borderLight}`, marginTop: 8 }}>
-              <span style={{ fontSize: 13, color: C.textSecond }}>KPI Count</span>
-              <span style={{ fontSize: 14, fontWeight: 600, color: activeKpiCount < (countLimits as any).min ? '#991b1b' : '#166534' }}>
-                {activeKpiCount} / {(countLimits as any).max}
-                <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 6, color: C.textSecond }}>
-                  (min {(countLimits as any).min} to submit)
-                </span>
-              </span>
-            </div>
-            {activeKpiCount < (countLimits as any).min && (
-              <div style={{ marginTop: 6, padding: '6px 10px', background: '#fee2e2', color: '#991b1b', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>
-                Add at least {(countLimits as any).min - activeKpiCount} more KPI{(countLimits as any).min - activeKpiCount !== 1 ? 's' : ''} to submit
-              </div>
-            )}
-          </div>
-
           {/* Rating framework reference */}
           {currentCycle && (
             <div style={{ ...S.card, background: C.bgInfo, borderColor: '#bae6fd' }}>
@@ -1176,6 +1081,131 @@ export default function KpiSettingPage() {
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Sticky weight and KPI count bar */}
+      {cycleId && (
+        <div style={{
+          position: 'sticky',
+          bottom: 0,
+          zIndex: 100,
+          background: 'rgba(255, 255, 255, 0.95)',
+          backdropFilter: 'blur(8px)',
+          borderTop: '1px solid ' + C.borderLight,
+          boxShadow: '0 -4px 16px rgba(0, 0, 0, 0.04)',
+          padding: '16px 24px',
+          marginTop: 24,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: weightBarExpanded ? 12 : 0 }}>
+            <span style={{ fontWeight: 600, fontSize: 13, color: C.text }}>Weight and KPI Count</span>
+            <button
+              onClick={() => {
+                const next = !weightBarExpanded;
+                setWeightBarExpanded(next);
+                try { localStorage.setItem('kpi_weight_bar_expanded', String(next)); } catch {}
+              }}
+              style={{ ...S.btnSm, fontSize: 11, padding: '3px 8px' }}
+              aria-label={weightBarExpanded ? 'Collapse weight summary' : 'Expand weight summary'}>
+              {weightBarExpanded ? '▲' : '▼'}
+            </button>
+          </div>
+
+          {weightBarExpanded ? (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginBottom: 10 }}>
+                {bykpi_dimension.map(({ cat, total, min, max, hasRule }) => {
+                  let state: 'green' | 'yellow' | 'red' | 'grey';
+                  if (total > max) state = 'red';
+                  else if (total >= min && total <= max && (total > 0 || min > 0)) state = 'green';
+                  else if (total > 0 && total < min) state = 'yellow';
+                  else state = 'grey';
+
+                  const pal = {
+                    green:  { bg: '#dcfce7', border: '#bbf7d0', text: '#166534', bar: '#16a34a' },
+                    yellow: { bg: '#fef9c3', border: '#fde68a', text: '#854d0e', bar: '#ca8a04' },
+                    red:    { bg: '#fee2e2', border: '#fca5a5', text: '#991b1b', bar: '#dc2626' },
+                    grey:   { bg: C.bgSecondary, border: C.borderLight, text: C.textSecond, bar: C.textTertiary },
+                  }[state];
+
+                  const pct = Math.min(100, (total / Math.max(max, 1)) * 100);
+                  const remaining = Math.max(0, max - total);
+                  const needed    = Math.max(0, min - total);
+
+                  return (
+                    <div key={cat} style={{ padding: '10px 12px', borderRadius: 8, background: pal.bg, border: `0.5px solid ${pal.border}` }}>
+                      <div style={{ fontSize: 11, color: C.textSecond, marginBottom: 4 }}>{cat}</div>
+                      <div style={{ fontSize: 20, fontWeight: 500, color: pal.text }}>{total}%</div>
+                      <div style={{ height: 6, background: '#ffffff', borderRadius: 3, marginTop: 6, overflow: 'hidden', border: `0.5px solid ${C.borderLight}` }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: pal.bar, transition: 'width 200ms ease' }} />
+                      </div>
+                      {hasRule && (
+                        <div style={{ fontSize: 10, color: pal.text, marginTop: 6 }}>Range: {min}%–{max}%</div>
+                      )}
+                      {hasRule && state !== 'red' && (
+                        <div style={{ fontSize: 10, color: C.textTertiary, marginTop: 2 }}>Remaining: {remaining}%</div>
+                      )}
+                      {state === 'yellow' && (
+                        <div style={{ fontSize: 11, color: pal.text, marginTop: 4, fontWeight: 500 }}>
+                          ⚠ Need {needed}% more to meet minimum
+                        </div>
+                      )}
+                      {state === 'red' && (
+                        <div style={{ fontSize: 11, color: pal.text, marginTop: 4, fontWeight: 500 }}>
+                          ⚠ {total - max}% over maximum — remove or reduce KPIs
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {impossibilityWarnings.length > 0 && (
+                <div style={{ padding: '8px 12px', borderRadius: 8, background: '#fee2e2', border: `0.5px solid #fca5a5`, color: '#991b1b', fontSize: 12, marginBottom: 10 }}>
+                  {impossibilityWarnings.map(w => (
+                    <div key={w.cat} style={{ marginBottom: 2 }}>
+                      ⚠ Cannot reach minimum for {w.cat}: need {w.needed}% more but only {remainingTotalWeight}% of total weight remaining
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTop: `0.5px solid ${C.borderLight}` }}>
+                <span style={{ fontSize: 13, color: C.textSecond }}>Total</span>
+                <span style={{ fontSize: 16, fontWeight: 600, color: totalWeight === 100 ? '#166534' : '#991b1b' }}>
+                  {totalWeight}%
+                  {totalWeight !== 100 && <span style={{ fontSize: 11, marginLeft: 6 }}>(must equal 100%)</span>}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTop: `0.5px solid ${C.borderLight}`, marginTop: 8 }}>
+                <span style={{ fontSize: 13, color: C.textSecond }}>KPI Count</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: activeKpiCount < (countLimits as any).min ? '#991b1b' : '#166534' }}>
+                  {activeKpiCount} / {(countLimits as any).max}
+                  <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 6, color: C.textSecond }}>
+                    (min {(countLimits as any).min} to submit)
+                  </span>
+                </span>
+              </div>
+              {activeKpiCount < (countLimits as any).min && (
+                <div style={{ marginTop: 6, padding: '6px 10px', background: '#fee2e2', color: '#991b1b', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>
+                  Add at least {(countLimits as any).min - activeKpiCount} more KPI{(countLimits as any).min - activeKpiCount !== 1 ? 's' : ''} to submit
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', alignItems: 'center', fontSize: 12, color: C.textSecond }}>
+              <span style={{ fontWeight: 600, color: totalWeight === 100 ? '#166534' : '#991b1b' }}>
+                Total Weight: {totalWeight}% / 100%
+              </span>
+              <span>·</span>
+              <span>KPIs: {activeKpiCount} / {(countLimits as any).max}</span>
+              {bykpi_dimension.map(d => (
+                <span key={d.cat}>
+                  {' · '}{d.cat}: {d.total}%{d.hasRule ? ` (${d.min}–${d.max}%)` : ''}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
