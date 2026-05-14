@@ -19,6 +19,7 @@ from app.api.routes.groups import router as groups_router
 from app.api.routes.roles import router as roles_router
 from app.api.routes.settings import router as settings_router
 from app.api.routes.reports import router as reports_router
+from app.api.routes.email_logs import router as email_logs_router
 
 MIGRATIONS = """
     DO $$ BEGIN ALTER TABLE users ADD COLUMN employment_unit VARCHAR(100);
@@ -444,6 +445,37 @@ EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE performance_cycles ADD COLUMN status VARCHAR(20) DEFAULT 'DRAFT';
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 
+DO $$ BEGIN
+  CREATE TABLE IF NOT EXISTS email_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    idempotency_key VARCHAR(200) UNIQUE,
+    to_email VARCHAR(255) NOT NULL,
+    cc_emails TEXT,
+    subject TEXT NOT NULL,
+    template_name VARCHAR(100) NOT NULL,
+    template_data JSONB,
+    status VARCHAR(20) DEFAULT 'PENDING',
+    attempt_count INT DEFAULT 0,
+    last_attempt_at TIMESTAMPTZ,
+    sent_at TIMESTAMPTZ,
+    error_message TEXT,
+    provider_message_id VARCHAR(255),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+EXCEPTION WHEN duplicate_table THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status);
+  CREATE INDEX IF NOT EXISTS idx_email_logs_idempotency ON email_logs(idempotency_key);
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  INSERT INTO system_settings (key, value) VALUES
+    ('email_notifications_enabled', 'true'),
+    ('email_test_mode', 'true')
+  ON CONFLICT (key) DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+
 """
 
 
@@ -573,6 +605,7 @@ app.include_router(groups_router,        prefix="/api/v1/groups",        tags=["
 app.include_router(roles_router,         prefix="/api/v1/roles",         tags=["Roles"])
 app.include_router(settings_router,      prefix="/api/v1/settings",      tags=["Settings"])
 app.include_router(reports_router,       prefix="/api/v1/reports",        tags=["Reports"])
+app.include_router(email_logs_router,    prefix="/api/v1/email-logs",     tags=["Email Logs"])
 
 
 @app.get("/health")

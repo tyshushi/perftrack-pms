@@ -137,6 +137,10 @@ export const settingsApi = {
   update: (key: string, value: string)  => api.patch(`/settings/${key}`, { value }),
 };
 
+export const emailLogsApi = {
+  list: (status?: string) => api.get('/email-logs/', { params: status ? { status } : {} }),
+};
+
 export const groupsApi = {
   list:          (cycleId?: string) =>
     api.get('/groups/', { params: cycleId ? { cycle_id: cycleId } : {} }),
