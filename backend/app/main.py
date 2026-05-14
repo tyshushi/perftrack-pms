@@ -18,6 +18,7 @@ from app.api.routes.admin import router as admin_router
 from app.api.routes.groups import router as groups_router
 from app.api.routes.roles import router as roles_router
 from app.api.routes.settings import router as settings_router
+from app.api.routes.reports import router as reports_router
 
 MIGRATIONS = """
     DO $$ BEGIN ALTER TABLE users ADD COLUMN employment_unit VARCHAR(100);
@@ -571,6 +572,7 @@ app.include_router(admin_router,         prefix="/api/v1/admin",         tags=["
 app.include_router(groups_router,        prefix="/api/v1/groups",        tags=["Groups"])
 app.include_router(roles_router,         prefix="/api/v1/roles",         tags=["Roles"])
 app.include_router(settings_router,      prefix="/api/v1/settings",      tags=["Settings"])
+app.include_router(reports_router,       prefix="/api/v1/reports",        tags=["Reports"])
 
 
 @app.get("/health")
