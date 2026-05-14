@@ -29,7 +29,6 @@ const S = {
     border: `1px solid ${C.border}`,
     borderRadius: 10,
     marginBottom: 18,
-    overflow: 'hidden',
   } as React.CSSProperties,
 
   cardHeader: {
@@ -40,6 +39,7 @@ const S = {
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
+    borderRadius: '10px 10px 0 0',
   } as React.CSSProperties,
 
   cardTitle: {
@@ -196,13 +196,15 @@ function MultiSelect({
           top: 'calc(100% + 4px)',
           left: 0,
           right: 0,
-          zIndex: 200,
-          background: C.bg,
+          width: '100%',
+          zIndex: 1000,
+          background: '#ffffff',
           border: `1px solid ${C.border}`,
-          borderRadius: 6,
-          boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
-          maxHeight,
-          overflow: 'auto',
+          borderRadius: 8,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+          maxHeight: maxHeight ?? 240,
+          overflowY: 'auto',
+          boxSizing: 'border-box',
         }}>
           {searchable && (
             <input
@@ -393,11 +395,11 @@ const KPI_DETAIL_COLS: ColDef[] = [
   { key: 'kpi_weight',      label: 'Weight' },
   { key: 'kpi_measurement', label: 'Measurement' },
   { key: 'kpi_type',        label: 'KPI Type' },
-  { key: 'rating_target_1', label: 'Rating Target 1' },
-  { key: 'rating_target_2', label: 'Rating Target 2' },
-  { key: 'rating_target_3', label: 'Rating Target 3' },
-  { key: 'rating_target_4', label: 'Rating Target 4' },
-  { key: 'rating_target_5', label: 'Rating Target 5' },
+  { key: 'rating_target_1', label: 'Rating 1 (Target)' },
+  { key: 'rating_target_2', label: 'Rating 2 (Target)' },
+  { key: 'rating_target_3', label: 'Rating 3 (Target)' },
+  { key: 'rating_target_4', label: 'Rating 4 (Target)' },
+  { key: 'rating_target_5', label: 'Rating 5 (Target)' },
 ];
 
 const KPI_SCORE_COLS: ColDef[] = [
