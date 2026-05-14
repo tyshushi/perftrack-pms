@@ -19,8 +19,6 @@ const C = {
   font:         '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
 };
 
-const EMAIL_TEST_RECIPIENT = import.meta.env.VITE_EMAIL_TEST_MODE_RECIPIENT || '';
-
 function formatTimestamp(iso: string | null | undefined): string {
   if (!iso) return '—';
   try {
@@ -77,6 +75,12 @@ export default function SystemSettingsPage() {
   const { data: settings = {}, isLoading } = useQuery({
     queryKey: ['system-settings'],
     queryFn:  () => settingsApi.list().then(r => r.data),
+  });
+
+  const { data: emailConfig } = useQuery<{ test_recipient: string; email_from: string; has_api_key: boolean }>({
+    queryKey: ['email-config'],
+    queryFn:  () => settingsApi.emailConfig().then(r => r.data),
+    enabled:  isSuperAdmin,
   });
 
   const s = settings as Record<string, SettingMeta>;
@@ -193,14 +197,23 @@ export default function SystemSettingsPage() {
               meta={testModeMeta}
             />
 
-            {EMAIL_TEST_RECIPIENT && (
-              <div style={{ marginTop: 10, padding: '8px 12px', background: C.bgInfo, borderRadius: 6, fontSize: 12, color: C.textInfo }}>
-                Test recipient: <strong>{EMAIL_TEST_RECIPIENT}</strong>
-              </div>
-            )}
-            {!EMAIL_TEST_RECIPIENT && (
-              <div style={{ marginTop: 10, padding: '8px 12px', background: C.bgWarning, borderRadius: 6, fontSize: 12, color: '#854d0e' }}>
-                No test recipient configured. Set <code>EMAIL_TEST_MODE_RECIPIENT</code> env var on the server.
+            {emailConfig && (
+              <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                <EmailConfigPill
+                  label="Test Recipient"
+                  value={emailConfig.test_recipient || 'Not configured'}
+                  ok={!!emailConfig.test_recipient}
+                />
+                <EmailConfigPill
+                  label="Sender"
+                  value={emailConfig.email_from || 'Not configured'}
+                  ok={!!emailConfig.email_from}
+                />
+                <EmailConfigPill
+                  label="API Key"
+                  value={emailConfig.has_api_key ? '✓ Configured' : '✗ Not configured'}
+                  ok={emailConfig.has_api_key}
+                />
               </div>
             )}
           </div>
@@ -271,6 +284,15 @@ function SettingRow({
         </div>
       )}
     </>
+  );
+}
+
+function EmailConfigPill({ label, value, ok }: { label: string; value: string; ok: boolean }) {
+  return (
+    <div style={{ padding: '8px 12px', background: ok ? C.bgSecondary : C.bgWarning, borderRadius: 6, border: `1px solid ${ok ? C.borderLight : '#fde68a'}` }}>
+      <div style={{ fontSize: 10, fontWeight: 600, color: C.textTertiary, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 12, color: ok ? C.text : '#854d0e', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
+    </div>
   );
 }
 

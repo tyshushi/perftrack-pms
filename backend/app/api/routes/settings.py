@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -37,6 +38,17 @@ async def list_settings(
             "updated_at":      r["updated_at"].isoformat() if r["updated_at"] else None,
         }
         for r in rows
+    }
+
+
+@router.get("/email-config")
+async def get_email_config(
+    current_user: User = Depends(require_hr_admin),
+):
+    return {
+        "test_recipient": os.environ.get("EMAIL_TEST_MODE_RECIPIENT", ""),
+        "email_from":     os.environ.get("EMAIL_FROM", ""),
+        "has_api_key":    bool(os.environ.get("RESEND_API_KEY", "")),
     }
 
 

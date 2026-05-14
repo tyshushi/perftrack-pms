@@ -133,8 +133,9 @@ export const rolesApi = {
 };
 
 export const settingsApi = {
-  list:   ()                            => api.get('/settings/'),
-  update: (key: string, value: string)  => api.patch(`/settings/${key}`, { value }),
+  list:        ()                            => api.get('/settings/'),
+  update:      (key: string, value: string)  => api.patch(`/settings/${key}`, { value }),
+  emailConfig: ()                            => api.get('/settings/email-config'),
 };
 
 export const emailLogsApi = {
