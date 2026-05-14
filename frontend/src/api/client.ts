@@ -69,6 +69,7 @@ export const kpisApi = {
     api.get('/kpis/applicable-rule', { params: { employee_id: employeeId, cycle_id: cycleId } }),
   getTemplates:    (cycleId: string)                => api.get(`/kpis/templates/${cycleId}`),
   createTemplate:  (data: any)                      => api.post('/kpis/templates', data),
+  updateTemplate:  (id: string, data: any)          => api.patch(`/kpis/templates/${id}`, data),
   deleteTemplate:  (id: string)                     => api.delete(`/kpis/templates/${id}`),
   cascadeTemplate:  (id: string)                     => api.post(`/kpis/templates/${id}/cascade`),
   submitScorecard:  (cycleId: string)                => api.post('/kpis/submit-scorecard', { cycle_id: cycleId }),
