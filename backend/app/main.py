@@ -484,6 +484,12 @@ DO $$ BEGIN
 EXCEPTION WHEN others THEN NULL; END $$;
 
 DO $$ BEGIN
+  INSERT INTO system_settings (key, value) VALUES
+    ('global_min_weight_per_kpi', '5')
+  ON CONFLICT (key) DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
   ALTER TABLE performance_cycles ADD COLUMN reminder_frequency VARCHAR(20) DEFAULT 'NONE';
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 

@@ -88,22 +88,16 @@ export default function SystemSettingsPage() {
   const cascadeMeta  = s?.manager_cascade_enabled;
   const emailMeta    = s?.email_notifications_enabled;
   const testModeMeta = s?.email_test_mode;
-  const maxKpisMeta  = s?.max_kpis_per_scorecard;
-  const minKpisMeta  = s?.min_kpis_per_scorecard;
 
   const [cascadeOn,    setCascadeOn]    = useState(true);
   const [emailOn,      setEmailOn]      = useState(true);
   const [testModeOn,   setTestModeOn]   = useState(true);
-  const [maxKpisInput, setMaxKpisInput] = useState('10');
-  const [minKpisInput, setMinKpisInput] = useState('3');
   const [savedOk,      setSavedOk]      = useState(false);
   const [err,          setErr]          = useState<string | null>(null);
 
   useEffect(() => { if (cascadeMeta?.value  !== undefined) setCascadeOn(cascadeMeta.value   === 'true'); }, [cascadeMeta?.value]);
   useEffect(() => { if (emailMeta?.value    !== undefined) setEmailOn(emailMeta.value        === 'true'); }, [emailMeta?.value]);
   useEffect(() => { if (testModeMeta?.value !== undefined) setTestModeOn(testModeMeta.value  === 'true'); }, [testModeMeta?.value]);
-  useEffect(() => { if (maxKpisMeta?.value  !== undefined) setMaxKpisInput(maxKpisMeta.value); }, [maxKpisMeta?.value]);
-  useEffect(() => { if (minKpisMeta?.value  !== undefined) setMinKpisInput(minKpisMeta.value); }, [minKpisMeta?.value]);
 
   const updateMutation = useMutation({
     mutationFn: ({ key, value }: { key: string; value: string }) =>
@@ -135,30 +129,15 @@ export default function SystemSettingsPage() {
   const initialCascade  = cascadeMeta?.value  === 'true';
   const initialEmail    = emailMeta?.value     === 'true';
   const initialTestMode = testModeMeta?.value  === 'true';
-  const initialMaxKpis  = maxKpisMeta?.value   ?? '10';
-  const initialMinKpis  = minKpisMeta?.value   ?? '3';
 
-  const dirty = cascadeOn !== initialCascade || emailOn !== initialEmail || testModeOn !== initialTestMode
-    || maxKpisInput !== initialMaxKpis || minKpisInput !== initialMinKpis;
+  const dirty = cascadeOn !== initialCascade || emailOn !== initialEmail || testModeOn !== initialTestMode;
 
   const handleSave = async () => {
-    const maxN = parseInt(maxKpisInput, 10);
-    const minN = parseInt(minKpisInput, 10);
-    if (!Number.isInteger(maxN) || !Number.isInteger(minN) || maxN < 1 || minN < 1) {
-      setErr('KPI count limits must be positive integers');
-      return;
-    }
-    if (minN >= maxN) {
-      setErr('Minimum KPIs must be less than Maximum KPIs');
-      return;
-    }
     setErr(null);
     const ops: Array<{ key: string; value: string }> = [];
-    if (cascadeOn    !== initialCascade)   ops.push({ key: 'manager_cascade_enabled',    value: cascadeOn    ? 'true' : 'false' });
-    if (emailOn      !== initialEmail)     ops.push({ key: 'email_notifications_enabled', value: emailOn     ? 'true' : 'false' });
-    if (testModeOn   !== initialTestMode)  ops.push({ key: 'email_test_mode',             value: testModeOn  ? 'true' : 'false' });
-    if (maxKpisInput !== initialMaxKpis)   ops.push({ key: 'max_kpis_per_scorecard',      value: maxKpisInput });
-    if (minKpisInput !== initialMinKpis)   ops.push({ key: 'min_kpis_per_scorecard',      value: minKpisInput });
+    if (cascadeOn  !== initialCascade)  ops.push({ key: 'manager_cascade_enabled',    value: cascadeOn   ? 'true' : 'false' });
+    if (emailOn    !== initialEmail)    ops.push({ key: 'email_notifications_enabled', value: emailOn    ? 'true' : 'false' });
+    if (testModeOn !== initialTestMode) ops.push({ key: 'email_test_mode',             value: testModeOn ? 'true' : 'false' });
     for (const op of ops) {
       await updateMutation.mutateAsync(op);
     }
@@ -168,8 +147,6 @@ export default function SystemSettingsPage() {
     setCascadeOn(initialCascade);
     setEmailOn(initialEmail);
     setTestModeOn(initialTestMode);
-    setMaxKpisInput(initialMaxKpis);
-    setMinKpisInput(initialMinKpis);
   };
 
   return (
@@ -238,43 +215,6 @@ export default function SystemSettingsPage() {
                   value={emailConfig.has_api_key ? '✓ Configured' : '✗ Not configured'}
                   ok={emailConfig.has_api_key}
                 />
-              </div>
-            )}
-          </div>
-
-          {/* KPI Count Limits */}
-          <div style={S.card}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: C.textTertiary, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
-              KPI Count Limits
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 8 }}>
-              <div>
-                <label style={S.label}>Minimum KPIs per Scorecard</label>
-                <input
-                  type="number"
-                  min={1}
-                  style={{ ...S.input, width: 100 }}
-                  value={minKpisInput}
-                  onChange={e => setMinKpisInput(e.target.value)}
-                />
-              </div>
-              <div>
-                <label style={S.label}>Maximum KPIs per Scorecard</label>
-                <input
-                  type="number"
-                  min={1}
-                  style={{ ...S.input, width: 100 }}
-                  value={maxKpisInput}
-                  onChange={e => setMaxKpisInput(e.target.value)}
-                />
-              </div>
-            </div>
-            <div style={{ fontSize: 12, color: C.textSecond }}>
-              Applies globally to all employees and cycles
-            </div>
-            {parseInt(minKpisInput) >= parseInt(maxKpisInput) && (
-              <div style={{ marginTop: 6, fontSize: 12, color: C.textDanger }}>
-                Minimum must be less than Maximum
               </div>
             )}
           </div>
