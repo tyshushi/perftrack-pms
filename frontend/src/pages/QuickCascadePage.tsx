@@ -65,6 +65,7 @@ const DIMENSIONS = [
 ];
 
 const APPLIES_TO_OPTS_HR = [
+  { value: 'specific',   label: 'Specific Employee(s)' },
   { value: 'everyone',   label: 'Everyone' },
   { value: 'group',      label: 'Custom Group' },
   { value: 'hierarchy',  label: 'Hierarchy' },
@@ -148,7 +149,6 @@ export default function QuickCascadePage() {
   const [userCategory, setUserCategory] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [jobGrade,     setJobGrade]     = useState('');
-  const [showIndividual, setShowIndividual] = useState(false);
   const [search,       setSearch]       = useState('');
   const [selected,     setSelected]     = useState<string[]>([]);
   const [result,       setResult]       = useState<any>(null);
@@ -183,22 +183,24 @@ export default function QuickCascadePage() {
     setAppliesTo(val);
     setGroupId(''); setHierarchy(''); setUserCategory('');
     setDepartmentId(''); setJobGrade('');
+    setSelected([]); setSearch('');
   }
 
   const cascadeMutation = useMutation({
     mutationFn: () => {
       if (isHrAdmin) {
+        const isSpecific = appliesTo === 'specific';
         return kpisApi.cascade({
           cycle_id:      cycleId,
           name, description,
           kpi_dimension: kpiDimension,
           weight, target: '', measurement,
-          employee_ids:  selected,
-          group_id:      appliesTo === 'group'      ? groupId      || null : null,
-          hierarchy:     appliesTo === 'hierarchy'  ? hierarchy    || null : null,
-          user_category: appliesTo === 'category'   ? userCategory || null : null,
-          department_id: appliesTo === 'department' ? departmentId || null : null,
-          job_grade:     appliesTo === 'grade'      ? jobGrade     || null : null,
+          employee_ids:  isSpecific ? selected : [],
+          group_id:      !isSpecific && appliesTo === 'group'      ? groupId      || null : null,
+          hierarchy:     !isSpecific && appliesTo === 'hierarchy'  ? hierarchy    || null : null,
+          user_category: !isSpecific && appliesTo === 'category'   ? userCategory || null : null,
+          department_id: !isSpecific && appliesTo === 'department' ? departmentId || null : null,
+          job_grade:     !isSpecific && appliesTo === 'grade'      ? jobGrade     || null : null,
           rating_targets: inlineTargets,
         });
       }
@@ -230,7 +232,9 @@ export default function QuickCascadePage() {
   const targetsComplete = hasCompleteTargets(inlineTargets, currentCycle);
   const canCascade = !!name && !!cycleId && !cascadeMutation.isPending &&
     targetsComplete &&
-    (isHrAdmin || selected.length > 0);
+    (isHrAdmin
+      ? (appliesTo !== 'specific' || selected.length > 0)
+      : selected.length > 0);
 
   return (
     <div style={{ fontFamily: C.font, color: C.text }}>
@@ -435,13 +439,109 @@ export default function QuickCascadePage() {
             </div>
           )}
 
-          {/* ── HR ADMIN: target-based applies-to + individual picker ── */}
+          {/* ── HR ADMIN: applies-to selector ── */}
           {isHrAdmin && (
-            <>
-              <div style={{ border: `1px solid ${C.borderLight}`, borderRadius: 10, padding: 14, marginBottom: 12 }}>
-                <div style={{ fontWeight: 500, fontSize: 13, color: C.text, marginBottom: 10 }}>
-                  Applies To
+            <div style={{ border: `1px solid ${C.borderLight}`, borderRadius: 10, padding: 14, marginBottom: 12 }}>
+              <div style={{ fontWeight: 500, fontSize: 13, color: C.text, marginBottom: 10 }}>
+                Applies To
+              </div>
+
+              {appliesTo === 'specific' ? (
+                /* ── Specific Employee(s) mode ── */
+                <div>
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={S.label}>Target</label>
+                    <select style={S.input} value={appliesTo}
+                      onChange={e => changeAppliesTo(e.target.value)}>
+                      {APPLIES_TO_OPTS_HR.map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Selected employees as removable chips */}
+                  {selected.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8, padding: 8, background: C.bgSecondary, borderRadius: 8 }}>
+                      {selected.map(id => {
+                        const emp = (allUsers as any[]).find((u: any) => u.id === id);
+                        if (!emp) return null;
+                        return (
+                          <div key={id} style={{
+                            display: 'flex', alignItems: 'center', gap: 5,
+                            padding: '4px 10px', background: C.bg,
+                            border: `1px solid ${C.border}`, borderRadius: 20,
+                            fontSize: 12, color: C.text,
+                          }}>
+                            <div style={{
+                              width: 18, height: 18, borderRadius: '50%',
+                              background: '#e8f1fb', color: '#185fa5',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: 9, fontWeight: 700, flexShrink: 0,
+                            }}>
+                              {avatarInitials(emp.full_name)}
+                            </div>
+                            <span>{emp.full_name}</span>
+                            <button
+                              onClick={() => toggleUser(id)}
+                              style={{ border: 'none', background: 'none', cursor: 'pointer', color: C.textSecond, padding: '0 2px', fontSize: 15, lineHeight: 1, marginLeft: 1 }}>
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <input
+                    style={{ ...S.input, marginBottom: 8 }}
+                    placeholder="Search by name, code, or position…"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                  />
+                  <div style={{ border: `0.5px solid ${C.border}`, borderRadius: 8, maxHeight: 240, overflowY: 'auto' }}>
+                    {filteredReports.length === 0 && (
+                      <div style={{ padding: 20, textAlign: 'center', color: C.textTertiary, fontSize: 13 }}>
+                        No employees found.
+                      </div>
+                    )}
+                    {filteredReports.map((u: any, i: number) => {
+                      const checked = selected.includes(u.id);
+                      return (
+                        <div key={u.id} onClick={() => toggleUser(u.id)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 10,
+                            padding: '9px 12px', cursor: 'pointer',
+                            borderBottom: i < filteredReports.length - 1 ? `0.5px solid ${C.borderLight}` : 'none',
+                            background: checked ? '#f0fdf4' : 'transparent',
+                          }}>
+                          <input type="checkbox" readOnly checked={checked} style={{ flexShrink: 0 }} />
+                          <div style={{
+                            width: 28, height: 28, borderRadius: '50%',
+                            background: '#e8f1fb', color: '#185fa5',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 10, fontWeight: 600, flexShrink: 0,
+                          }}>
+                            {avatarInitials(u.full_name)}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 500, color: C.text }}>{u.full_name}</div>
+                            <div style={{ fontSize: 11, color: C.textSecond }}>
+                              {u.employee_id}{u.position_title ? ` · ${u.position_title}` : ''}
+                            </div>
+                          </div>
+                          {checked && <span style={{ fontSize: 11, color: '#166534', fontWeight: 600 }}>✓</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {selected.length === 0 && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: C.textDanger }}>
+                      Select at least one employee to cascade.
+                    </div>
+                  )}
                 </div>
+              ) : (
+                /* ── Group / Everyone / other filter modes ── */
                 <div style={S.grid2}>
                   <div>
                     <label style={S.label}>Target</label>
@@ -501,55 +601,8 @@ export default function QuickCascadePage() {
                     </div>
                   )}
                 </div>
-              </div>
-
-              {/* Also include specific employees (expandable) */}
-              <div style={{ marginBottom: 12 }}>
-                <button onClick={() => setShowIndividual(p => !p)}
-                  style={{ ...S.btnSm, width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>
-                    Also include specific employees
-                    {selected.length > 0 && (
-                      <span style={{ marginLeft: 6, fontWeight: 600, color: C.text }}>{selected.length} selected</span>
-                    )}
-                  </span>
-                  <span style={{ fontSize: 10 }}>{showIndividual ? '▲' : '▼'}</span>
-                </button>
-                {showIndividual && (
-                  <div style={{ marginTop: 8, border: `1px solid ${C.borderLight}`, borderRadius: 10, padding: 12 }}>
-                    <input style={{ ...S.input, marginBottom: 8 }}
-                      placeholder="Search by name, code, or department..."
-                      value={search} onChange={e => setSearch(e.target.value)} />
-                    <div style={{ border: `0.5px solid ${C.border}`, borderRadius: 8, maxHeight: 220, overflowY: 'auto' }}>
-                      {filteredReports.length === 0 && (
-                        <div style={{ padding: 16, textAlign: 'center', color: C.textTertiary, fontSize: 13 }}>No employees found</div>
-                      )}
-                      {filteredReports.map((u: any, i: number) => (
-                        <div key={u.id} onClick={() => toggleUser(u.id)}
-                          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer', borderBottom: i < filteredReports.length - 1 ? `0.5px solid ${C.borderLight}` : 'none', background: selected.includes(u.id) ? '#f0fdf4' : 'transparent' }}>
-                          <input type="checkbox" readOnly checked={selected.includes(u.id)} style={{ flexShrink: 0 }} />
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 13, fontWeight: 500, color: C.text }}>{u.full_name}</div>
-                            <div style={{ fontSize: 11, color: C.textSecond }}>
-                              {u.employee_id}{u.position_title ? ` · ${u.position_title}` : ''}
-                            </div>
-                          </div>
-                          {selected.includes(u.id) && (
-                            <span style={{ fontSize: 11, color: '#166534', fontWeight: 500 }}>✓</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                      <button style={S.btnSm} onClick={() => setSelected(filteredReports.map((u: any) => u.id))}>
-                        Select all
-                      </button>
-                      <button style={S.btnSm} onClick={() => setSelected([])}>Clear</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
+              )}
+            </div>
           )}
 
           {result && (
@@ -573,7 +626,9 @@ export default function QuickCascadePage() {
             {cascadeMutation.isPending
               ? 'Cascading…'
               : isHrAdmin
-                ? 'Cascade KPI'
+                ? appliesTo === 'specific'
+                  ? `Cascade to ${selected.length} Employee${selected.length !== 1 ? 's' : ''}`
+                  : 'Cascade KPI'
                 : `Cascade to selected (${selected.length})`}
           </button>
           {saveError && (

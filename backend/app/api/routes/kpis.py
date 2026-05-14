@@ -717,7 +717,16 @@ async def cascade_kpi(
         u_res = await db.execute(select(User.id).where(User.is_active == True))
         resolved.update(row[0] for row in u_res.all())
 
-    all_ids = resolved | set(body.employee_ids)
+    # When a target filter resolved a set of employees, use only that set.
+    # employee_ids are the sole target only when no other filter is active.
+    has_filter = bool(
+        body.group_id or body.hierarchy or body.user_category
+        or body.department_id or body.job_grade
+    )
+    if body.employee_ids and not has_filter:
+        all_ids = set(body.employee_ids)
+    else:
+        all_ids = resolved
 
     # Managers may only cascade to their own reporting chain;
     # HR can opt-in to the same restriction via restrict_to_reports
