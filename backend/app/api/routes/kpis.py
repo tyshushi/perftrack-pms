@@ -1967,14 +1967,11 @@ async def update_kpi(
     if was_rejected:
         from app.models.user import KpiAuditLog
         kpi.status = "DRAFT"
-        kpi.hr_unlocked = False
         db.add(KpiAuditLog(
             kpi_id=kpi.id, actor_id=current_user.id,
             from_status="REJECTED", to_status="DRAFT",
             comment="KPI edited by staff after rejection",
         ))
-    elif kpi.hr_unlocked:
-        kpi.hr_unlocked = False
     await db.flush()
     await db.refresh(kpi)
     return kpi_to_dict(kpi)
