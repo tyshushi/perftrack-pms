@@ -290,12 +290,31 @@ async def build_report(
 
     def _kpi_detail(kpi: Kpi) -> dict:
         rt = kpi.rating_targets or []
-        def _tgt(i):
-            if isinstance(rt, list) and len(rt) > i:
-                t = rt[i]
-                if isinstance(t, dict):
-                    return t.get('description') or t.get('label') or ''
-                return str(t)
+        def _tgt(n: int) -> str:
+            # Primary: find entry where value == n
+            if isinstance(rt, list):
+                for t in rt:
+                    if isinstance(t, dict):
+                        try:
+                            if int(t.get('value', -1)) == n:
+                                label  = str(t.get('label',  '') or '')
+                                target = str(t.get('target', '') or t.get('description', '') or '')
+                                if label and target:
+                                    return f"{label}: {target}"
+                                return label or target
+                        except (ValueError, TypeError):
+                            pass
+                # Fallback: positional access (0-indexed)
+                idx = n - 1
+                if len(rt) > idx:
+                    t = rt[idx]
+                    if isinstance(t, dict):
+                        label  = str(t.get('label',  '') or '')
+                        target = str(t.get('target', '') or t.get('description', '') or '')
+                        if label and target:
+                            return f"{label}: {target}"
+                        return label or target
+                    return str(t)
             return ''
         return {
             'kpi_name':        kpi.name,
@@ -303,11 +322,11 @@ async def build_report(
             'kpi_weight':      kpi.weight,
             'kpi_measurement': kpi.measurement or '',
             'kpi_type':        kpi.kpi_type or '',
-            'rating_target_1': _tgt(0),
-            'rating_target_2': _tgt(1),
-            'rating_target_3': _tgt(2),
-            'rating_target_4': _tgt(3),
-            'rating_target_5': _tgt(4),
+            'rating_target_1': _tgt(1),
+            'rating_target_2': _tgt(2),
+            'rating_target_3': _tgt(3),
+            'rating_target_4': _tgt(4),
+            'rating_target_5': _tgt(5),
         }
 
     def _kpi_score(kpi: Kpi) -> dict:
