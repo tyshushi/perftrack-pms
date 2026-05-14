@@ -264,6 +264,11 @@ export default function Layout() {
                       User Management
                     </NavLink>
                   )}
+                  {(isHrAdmin || hasPermission('view_employees')) && (
+                    <NavLink to="/admin/reports" style={({ isActive }) => l1LinkStyle(isActive)} end>
+                      Report Builder
+                    </NavLink>
+                  )}
                   {(isHrAdmin
                     || hasPermission('manage_groups')
                     || hasPermission('view_groups')) && (

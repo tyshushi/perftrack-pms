@@ -18,6 +18,7 @@ import WeightRulesPage from './pages/WeightRulesPage';
 import KpiTemplatesPage from './pages/KpiTemplatesPage';
 import RoleManagementPage from './pages/RoleManagementPage';
 import SystemSettingsPage from './pages/SystemSettingsPage';
+import ReportBuilderPage from './pages/ReportBuilderPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -85,6 +86,7 @@ export default function App() {
             <Route path="admin/groups"             element={<RequirePermission permission={["view_groups", "manage_groups"]}><GroupsPage /></RequirePermission>} />
             <Route path="admin/weight-rules"       element={<RequirePermission permission={["manage_weight_rules"]}><WeightRulesPage /></RequirePermission>} />
             <Route path="admin/kpi-setup/templates" element={<RequirePermission permission={["manage_templates", "cascade_kpis"]}><KpiTemplatesPage /></RequirePermission>} />
+            <Route path="admin/reports"             element={<RequirePermission permission={["view_employees"]}><ReportBuilderPage /></RequirePermission>} />
             <Route path="admin/roles"              element={<RequirePermission permission={["manage_custom_roles"]}><RoleManagementPage /></RequirePermission>} />
             <Route path="admin/settings"           element={<RequireSuperAdmin><SystemSettingsPage /></RequireSuperAdmin>} />
           </Route>

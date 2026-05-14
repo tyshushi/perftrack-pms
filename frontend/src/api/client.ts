@@ -149,3 +149,9 @@ export const groupsApi = {
   removeMember:  (groupId: string, userId: string) =>
     api.delete(`/groups/${groupId}/members/${userId}`),
 };
+
+export const reportsApi = {
+  filterOptions: ()           => api.get('/reports/filter-options'),
+  preview:       (data: any)  => api.post('/reports/preview', data),
+  build:         (data: any)  => api.post('/reports/build', data),
+};
