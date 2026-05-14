@@ -537,8 +537,17 @@ export default function QuickCascadePage() {
           )}
 
           {result && (
-            <div style={{ marginBottom: 12, padding: '8px 12px', background: '#dcfce7', borderRadius: 8, fontSize: 12, color: '#166534' }}>
-              ✓ {result.message}
+            <div style={{ marginBottom: 12 }}>
+              {result.created > 0 && (
+                <div style={{ padding: '8px 12px', background: '#dcfce7', borderRadius: 8, fontSize: 12, color: '#166534', marginBottom: result.skipped_at_max > 0 ? 6 : 0 }}>
+                  ✓ Cascaded to {result.created} employee{result.created !== 1 ? 's' : ''}.
+                </div>
+              )}
+              {result.skipped_at_max > 0 && (
+                <div style={{ padding: '8px 12px', background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: '#854d0e' }}>
+                  ⚠ {result.skipped_at_max} employee{result.skipped_at_max !== 1 ? 's' : ''} {result.skipped_at_max !== 1 ? 'were' : 'was'} skipped because they already have the maximum number of KPIs allowed.
+                </div>
+              )}
             </div>
           )}
 
