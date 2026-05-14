@@ -503,6 +503,10 @@ DO $$ BEGIN
   ALTER TABLE performance_cycles ADD COLUMN last_reminder_check_at TIMESTAMPTZ;
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 
+DO $$ BEGIN
+  ALTER TABLE kpis ADD COLUMN hr_unlocked BOOLEAN NOT NULL DEFAULT FALSE;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
 """
 
 

@@ -391,15 +391,18 @@ function KpiCard({
   const targetsComplete = hasCompleteTargets(kpi.rating_targets, cycle);
   const needsTargets = !targetsComplete && (kpi.status === 'DRAFT' || kpi.status === 'REJECTED' || kpi.status === 'APPROVED');
   const isFixed = kpi.kpi_type === 'FIXED';
+  const isHRCascade = isFixed && (kpi.cascaded_by_role === 'HR_ADMIN' || kpi.cascaded_by_role === 'SUPER_ADMIN');
+  const isEditable =
+    (kpi.status === 'DRAFT' && !isFixed) ||
+    (kpi.status === 'DRAFT' && kpi.hr_unlocked) ||
+    (kpi.status === 'REJECTED' && !isHRCascade);
   const [showTargets, setShowTargets] = useState(needsTargets && !isFixed);
   const [editing,    setEditing]    = useState(false);
   const [flash,      setFlash]      = useState(false);
-  // DRAFT means editable (whether created by staff or reset by HR Admin)
-  // REJECTED means editable (staff addresses manager feedback)
-  const canDelete = kpi.status === 'DRAFT' || kpi.status === 'REJECTED';
+  const canDelete = isEditable;
   const showTargetsSection = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED' || kpi.status === 'APPROVED') && !!cycle;
-  const canEditTargets = showTargetsSection && (!isFixed || kpi.status === 'DRAFT' || kpi.status === 'REJECTED');
-  const canEditKpi = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED') && !!cycle;
+  const canEditTargets = showTargetsSection && (!isFixed || kpi.hr_unlocked || (!isHRCascade && kpi.status === 'REJECTED'));
+  const canEditKpi = isEditable && !!cycle;
 
   const handleSave = async (payload: { fields: any; targets: any[] | null }) => {
     await onSaveEdit(payload);
