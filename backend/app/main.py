@@ -477,6 +477,13 @@ DO $$ BEGIN
 EXCEPTION WHEN others THEN NULL; END $$;
 
 DO $$ BEGIN
+  INSERT INTO system_settings (key, value) VALUES
+    ('max_kpis_per_scorecard', '10'),
+    ('min_kpis_per_scorecard', '3')
+  ON CONFLICT (key) DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
   ALTER TABLE performance_cycles ADD COLUMN reminder_frequency VARCHAR(20) DEFAULT 'NONE';
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 

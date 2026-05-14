@@ -553,6 +553,11 @@ export default function KpiSettingPage() {
     enabled:  !!cycleId && !!user?.id,
   });
 
+  const { data: countLimits = { min: 3, max: 10 } } = useQuery({
+    queryKey: ['kpi-count-limits'],
+    queryFn:  () => kpisApi.getCountLimits().then(r => r.data),
+  });
+
   const { data: weightRules = [] } = useQuery({
     queryKey: ['weight-rules', cycleId],
     queryFn:  () => kpisApi.getWeightRules(cycleId).then(r => r.data),
@@ -652,6 +657,8 @@ export default function KpiSettingPage() {
   };
 
   const totalWeight = (kpis as any[]).reduce((sum, k) => sum + k.weight, 0);
+  const activeKpiCount = (kpis as any[]).filter(k => k.status !== 'REJECTED').length;
+  const atMaxKpis = activeKpiCount >= (countLimits as any).max;
   const hasSubmittable = (kpis as any[]).some(k => k.status === 'DRAFT' || k.status === 'REJECTED');
   const allSelfEvaluated = (kpis as any[]).length > 0 &&
     (kpis as any[]).every(k => k.status === 'SELF_EVALUATED');
@@ -721,7 +728,9 @@ export default function KpiSettingPage() {
     }
   }
 
-  const submitDisabledReason = totalWeight !== 100
+  const submitDisabledReason = activeKpiCount < (countLimits as any).min
+    ? `Minimum ${(countLimits as any).min} KPIs required. You have ${activeKpiCount} — add ${(countLimits as any).min - activeKpiCount} more.`
+    : totalWeight !== 100
     ? `Total weight is ${totalWeight}% — must equal 100%`
     : !hasSubmittable
     ? 'No KPIs in Draft or Rejected status to submit'
@@ -934,6 +943,20 @@ export default function KpiSettingPage() {
                 )}
               </span>
             </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTop: `0.5px solid ${C.borderLight}`, marginTop: 8 }}>
+              <span style={{ fontSize: 13, color: C.textSecond }}>KPI Count</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: activeKpiCount < (countLimits as any).min ? '#991b1b' : '#166534' }}>
+                {activeKpiCount} / {(countLimits as any).max}
+                <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 6, color: C.textSecond }}>
+                  (min {(countLimits as any).min} to submit)
+                </span>
+              </span>
+            </div>
+            {activeKpiCount < (countLimits as any).min && (
+              <div style={{ marginTop: 6, padding: '6px 10px', background: '#fee2e2', color: '#991b1b', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>
+                Add at least {(countLimits as any).min - activeKpiCount} more KPI{(countLimits as any).min - activeKpiCount !== 1 ? 's' : ''} to submit
+              </div>
+            )}
           </div>
 
           {/* Rating framework reference */}
@@ -1099,8 +1122,8 @@ export default function KpiSettingPage() {
 
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button onClick={() => createMutation.mutate()}
-                  disabled={!name || !hasCompleteTargets(inlineTargets, currentCycle) || belowGlobalMin || exceedsDimMax || createMutation.isPending}
-                  style={{ ...S.btnPrimary, opacity: (!name || !hasCompleteTargets(inlineTargets, currentCycle) || belowGlobalMin || exceedsDimMax) ? 0.5 : 1 }}>
+                  disabled={!name || !hasCompleteTargets(inlineTargets, currentCycle) || belowGlobalMin || exceedsDimMax || atMaxKpis || createMutation.isPending}
+                  style={{ ...S.btnPrimary, opacity: (!name || !hasCompleteTargets(inlineTargets, currentCycle) || belowGlobalMin || exceedsDimMax || atMaxKpis) ? 0.5 : 1 }}>
                   {createMutation.isPending ? 'Adding...' : 'Add KPI'}
                 </button>
                 <button onClick={() => setAdding(false)} style={S.btnSm}>Cancel</button>
@@ -1114,9 +1137,12 @@ export default function KpiSettingPage() {
           )}
 
           {!adding && (
-            <button onClick={() => setAdding(true)}
-              style={{ ...S.btnSm, width: '100%', padding: '10px', borderStyle: 'dashed', marginTop: 8 }}>
-              + Add Optional KPI
+            <button
+              onClick={() => !atMaxKpis && setAdding(true)}
+              disabled={atMaxKpis}
+              title={atMaxKpis ? `Maximum ${(countLimits as any).max} KPIs per scorecard reached` : undefined}
+              style={{ ...S.btnSm, width: '100%', padding: '10px', borderStyle: 'dashed', marginTop: 8, opacity: atMaxKpis ? 0.5 : 1, cursor: atMaxKpis ? 'not-allowed' : 'pointer' }}>
+              {atMaxKpis ? `Max ${(countLimits as any).max} KPIs reached` : '+ Add Optional KPI'}
             </button>
           )}
 

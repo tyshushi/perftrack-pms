@@ -61,6 +61,19 @@ async def _get_global_min_weight(db: AsyncSession, cycle_id: UUID) -> int:
     return int(rule.fin_min or 0)
 
 
+async def get_kpi_count_limits(db) -> dict:
+    from sqlalchemy import text
+    result = await db.execute(text("""
+        SELECT key, value FROM system_settings
+        WHERE key IN ('max_kpis_per_scorecard', 'min_kpis_per_scorecard')
+    """))
+    settings = {row[0]: int(row[1]) for row in result.all()}
+    return {
+        'max': settings.get('max_kpis_per_scorecard', 10),
+        'min': settings.get('min_kpis_per_scorecard', 3),
+    }
+
+
 # ── Schemas ────────────────────────────────────────────────────────────────
 
 class KpiCreate(BaseModel):
@@ -526,6 +539,17 @@ async def create_kpi(
             f"Cannot create a KPI with {body.weight}% weight.",
         )
 
+    limits = await get_kpi_count_limits(db)
+    existing_count_res = await db.execute(
+        select(func.count(Kpi.id)).where(
+            Kpi.cycle_id == body.cycle_id,
+            Kpi.user_id  == current_user.id,
+            Kpi.status   != "REJECTED",
+        )
+    )
+    if (existing_count_res.scalar() or 0) >= limits['max']:
+        raise HTTPException(400, f"Maximum {limits['max']} KPIs per scorecard. Cannot add more.")
+
     # Dimension max enforcement using the employee's applicable rule
     rule = await get_applicable_rule(current_user.id, body.cycle_id, db)
     if rule:
@@ -696,8 +720,10 @@ async def cascade_kpi(
         chain_ids = {row[0] for row in chain_res.all()}
         all_ids   = all_ids & chain_ids
 
+    limits = await get_kpi_count_limits(db)
     created = []
     skipped = []
+    skipped_at_max = []
 
     for emp_id in all_ids:
         existing = await db.execute(
@@ -710,6 +736,17 @@ async def cascade_kpi(
         )
         if existing.scalar_one_or_none():
             skipped.append(str(emp_id))
+            continue
+
+        emp_count_res = await db.execute(
+            select(func.count(Kpi.id)).where(
+                Kpi.cycle_id == body.cycle_id,
+                Kpi.user_id  == emp_id,
+                Kpi.status   != "REJECTED",
+            )
+        )
+        if (emp_count_res.scalar() or 0) >= limits['max']:
+            skipped_at_max.append(str(emp_id))
             continue
 
         kpi = Kpi(
@@ -734,9 +771,11 @@ async def cascade_kpi(
     return {
         "created": len(created),
         "skipped": len(skipped),
+        "skipped_at_max": len(skipped_at_max),
         "message": (
             f"Cascaded to {len(created)} employee(s)."
             + (f" {len(skipped)} already existed." if skipped else "")
+            + (f" {len(skipped_at_max)} employee(s) skipped (already at max of {limits['max']} KPIs)." if skipped_at_max else "")
         ),
     }
 
@@ -985,6 +1024,14 @@ async def applicable_rule(
         return {"global_min_weight": global_min} if global_min else None
     rule["global_min_weight"] = global_min
     return rule
+
+
+@router.get("/count-limits")
+async def count_limits_endpoint(
+    db:           AsyncSession = Depends(get_db),
+    current_user: User         = Depends(get_current_user),
+):
+    return await get_kpi_count_limits(db)
 
 
 def _employees_matched_by_rule_payload(
@@ -1386,6 +1433,21 @@ async def submit_scorecard(
         phase_check = await check_phase_and_tag_late(body.cycle_id, 'kpi_setting', db)
         if not phase_check['allowed']:
             raise HTTPException(400, phase_check['message'])
+
+    limits = await get_kpi_count_limits(db)
+    kpi_count_res = await db.execute(
+        select(func.count(Kpi.id)).where(
+            Kpi.cycle_id == body.cycle_id,
+            Kpi.user_id  == current_user.id,
+            Kpi.status   != "REJECTED",
+        )
+    )
+    kpi_count = kpi_count_res.scalar() or 0
+    if kpi_count < limits['min']:
+        raise HTTPException(
+            400,
+            f"Cannot submit: minimum {limits['min']} KPIs required. You currently have {kpi_count}.",
+        )
 
     chain = await get_cycle_chain(db, body.cycle_id)
 

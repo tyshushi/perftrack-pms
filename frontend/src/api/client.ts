@@ -86,6 +86,7 @@ export const kpisApi = {
   evaluateAll:      (data: any) => api.post('/kpis/evaluate-all', data),
   updateRatingTargets: (kpiId: string, ratingTargets: any[]) =>
     api.patch(`/kpis/${kpiId}/rating-targets`, { rating_targets: ratingTargets }),
+  getCountLimits: () => api.get('/kpis/count-limits'),
 };
 
 export const usersApi = {
