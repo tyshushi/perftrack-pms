@@ -67,7 +67,6 @@ export default function WeightRulesPage() {
   const [checking,  setChecking]    = useState(false);
   const [copying,   setCopying]     = useState(false);
   const [rules,     setRules]       = useState<any[]>([]);
-  const [globalMin, setGlobalMin]   = useState(0);
   const [initialized, setInitialized] = useState('');
   const [saveError,   setSaveError]   = useState('');
   const [expandedCoverage, setExpandedCoverage] = useState<Record<number, boolean>>({});
@@ -216,36 +215,12 @@ export default function WeightRulesPage() {
   }, [rulesByEmployee, usersById]);
 
   if ((fetchedRules as any[]).length > 0 && initialized !== cycleId) {
-    const globalMinRule = (fetchedRules as any[]).find((r: any) => r.label === 'GLOBAL_MIN');
-    if (globalMinRule) {
-      setGlobalMin(globalMinRule.dimensions?.['Financials']?.min ?? 0);
-    } else {
-      setGlobalMin(0);
-    }
     setRules((fetchedRules as any[]).filter((r: any) => r.label !== 'GLOBAL_MIN'));
     setInitialized(cycleId);
   }
 
-  const GLOBAL_MIN_RULE = {
-    label:         'GLOBAL_MIN',
-    target_type:   'everyone',
-    group_id:      null,
-    hierarchy:     null,
-    user_category: null,
-    department_id: null,
-    job_grade:     null,
-    priority:      999,
-    dimensions: {
-      'Financials':           { min: globalMin, max: 100 },
-      'Customer':             { min: globalMin, max: 100 },
-      'Internal Process':     { min: globalMin, max: 100 },
-      'Learning & Growth':    { min: globalMin, max: 100 },
-      'Leadership & Culture': { min: globalMin, max: 100 },
-    },
-  };
-
   const saveMutation = useMutation({
-    mutationFn: () => kpisApi.setWeightRules(cycleId, [...rules, GLOBAL_MIN_RULE]),
+    mutationFn: () => kpisApi.setWeightRules(cycleId, rules),
     onSuccess:  () => {
       qc.invalidateQueries({ queryKey: ['weight-rules', cycleId] });
       setSaved(true);
@@ -391,25 +366,6 @@ export default function WeightRulesPage() {
 
       {cycleId && (
         <div>
-          {/* Global Minimum */}
-          <div style={{ background: C.bgInfo, border: `1px solid #bae6fd`, borderRadius: 10, padding: 16, marginBottom: 12 }}>
-            <div style={{ fontWeight: 600, fontSize: 13, color: C.text, marginBottom: 4 }}>
-              Global Minimum Weight per KPI
-            </div>
-            <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 12 }}>
-              This overrides all other rules. No individual KPI can be set below this weight.
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <label style={{ ...S.label, marginBottom: 0, whiteSpace: 'nowrap' }}>
-                Minimum weight for any single KPI (%)
-              </label>
-              <input type="number" min={0} max={100}
-                style={{ ...S.input, width: 90 }}
-                value={globalMin}
-                onChange={e => { setSaveError(''); setGlobalMin(Number(e.target.value)); }} />
-            </div>
-          </div>
-
           {/* Copy from previous cycle */}
           <div style={{ background: C.bg, border: `1px solid ${C.borderLight}`, borderRadius: 10, padding: 16, marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ fontWeight: 600, fontSize: 13, color: C.text, flexShrink: 0 }}>

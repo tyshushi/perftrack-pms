@@ -46,9 +46,20 @@ async def get_cycle_chain(db: AsyncSession, cycle_id: UUID) -> list:
 
 
 async def _get_global_min_weight(db: AsyncSession, cycle_id: UUID) -> int:
-    """Fetch the global minimum weight per KPI from the GLOBAL_MIN sentinel rule.
-    Stored in fin_min on a WeightRule whose label == 'GLOBAL_MIN'. Returns 0 if absent.
+    """Fetch the global minimum weight per KPI.
+    Reads from system_settings first; falls back to the GLOBAL_MIN sentinel rule for backward compat.
     """
+    from sqlalchemy import text as _text
+    result = await db.execute(_text(
+        "SELECT value FROM system_settings WHERE key = 'global_min_weight_per_kpi'"
+    ))
+    row = result.scalar_one_or_none()
+    if row is not None:
+        try:
+            return int(row)
+        except (ValueError, TypeError):
+            pass
+    # Backward compat: fall back to weight_rules GLOBAL_MIN row
     res = await db.execute(
         select(WeightRule).where(
             WeightRule.cycle_id == cycle_id,
@@ -65,12 +76,13 @@ async def get_kpi_count_limits(db) -> dict:
     from sqlalchemy import text
     result = await db.execute(text("""
         SELECT key, value FROM system_settings
-        WHERE key IN ('max_kpis_per_scorecard', 'min_kpis_per_scorecard')
+        WHERE key IN ('max_kpis_per_scorecard', 'min_kpis_per_scorecard', 'global_min_weight_per_kpi')
     """))
-    settings = {row[0]: int(row[1]) for row in result.all()}
+    settings = {row[0]: row[1] for row in result.all()}
     return {
-        'max': settings.get('max_kpis_per_scorecard', 10),
-        'min': settings.get('min_kpis_per_scorecard', 3),
+        'max':               int(settings.get('max_kpis_per_scorecard',    '10')),
+        'min':               int(settings.get('min_kpis_per_scorecard',    '3')),
+        'global_min_weight': int(settings.get('global_min_weight_per_kpi', '5')),
     }
 
 

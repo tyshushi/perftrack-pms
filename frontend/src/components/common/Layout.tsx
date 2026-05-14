@@ -22,11 +22,8 @@ const C = {
 
 function getAutoExpanded(path: string): Set<string> {
   const ids = new Set<string>(['scorecards', 'my-scorecard']);
-  if (path.startsWith('/tray/'))      ids.add('managers-tray');
-  if (path.startsWith('/admin/')) {
-    ids.add('admin-functions');
-    if (path.startsWith('/admin/kpi-setup/')) ids.add('kpi-setup');
-  }
+  if (path.startsWith('/tray/'))  ids.add('managers-tray');
+  if (path.startsWith('/admin/')) ids.add('admin-functions');
   return ids;
 }
 
@@ -259,33 +256,81 @@ export default function Layout() {
                       Performance Cycle
                     </NavLink>
                   )}
-                  {(isHrAdmin || hasPermission('view_employees')) && (
-                    <NavLink to="/admin/users" style={({ isActive }) => l1LinkStyle(isActive)} end>
-                      User Management
-                    </NavLink>
+
+                  {/* USERS & ROLES sub-header */}
+                  {(isHrAdmin
+                    || hasPermission('view_employees')
+                    || hasPermission('manage_groups')
+                    || hasPermission('view_groups')
+                    || isSuperAdmin) && (
+                    <div style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontWeight: 500,
+                      fontSize: 10,
+                      letterSpacing: '0.1em',
+                      textTransform: 'uppercase' as const,
+                      color: C.textSecond,
+                      paddingLeft: 16,
+                      marginTop: 12,
+                      marginBottom: 4,
+                      userSelect: 'none' as const,
+                    }}>
+                      Users & Roles
+                    </div>
                   )}
                   {(isHrAdmin || hasPermission('view_employees')) && (
-                    <NavLink to="/admin/reports" style={({ isActive }) => l1LinkStyle(isActive)} end>
-                      Report Builder
+                    <NavLink to="/admin/users" style={({ isActive }) => ({ ...l1LinkStyle(isActive), paddingLeft: 32 })} end>
+                      User Management
                     </NavLink>
                   )}
                   {(isHrAdmin
                     || hasPermission('manage_groups')
                     || hasPermission('view_groups')) && (
-                    <NavLink to="/admin/groups" style={({ isActive }) => l1LinkStyle(isActive)} end>
+                    <NavLink to="/admin/groups" style={({ isActive }) => ({ ...l1LinkStyle(isActive), paddingLeft: 32 })} end>
                       Groups Management
                     </NavLink>
                   )}
-                  {(isHrAdmin || hasPermission('manage_weight_rules')) && (
-                    <NavLink to="/admin/weight-rules" style={({ isActive }) => l1LinkStyle(isActive)} end>
-                      Weight Rules
-                    </NavLink>
-                  )}
                   {isSuperAdmin && (
-                    <NavLink to="/admin/roles" style={({ isActive }) => l1LinkStyle(isActive)} end>
+                    <NavLink to="/admin/roles" style={({ isActive }) => ({ ...l1LinkStyle(isActive), paddingLeft: 32 })} end>
                       Role Management
                     </NavLink>
                   )}
+
+                  {/* KPI SETUP sub-header */}
+                  {(isHrAdmin
+                    || hasPermission('manage_weight_rules')
+                    || hasPermission('manage_templates')) && (
+                    <div style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontWeight: 500,
+                      fontSize: 10,
+                      letterSpacing: '0.1em',
+                      textTransform: 'uppercase' as const,
+                      color: C.textSecond,
+                      paddingLeft: 16,
+                      marginTop: 12,
+                      marginBottom: 4,
+                      userSelect: 'none' as const,
+                    }}>
+                      KPI Setup
+                    </div>
+                  )}
+                  {(isHrAdmin || hasPermission('manage_weight_rules')) && (
+                    <NavLink to="/admin/kpi-setup/global" style={({ isActive }) => ({ ...l1LinkStyle(isActive), paddingLeft: 32 })} end>
+                      Global Settings
+                    </NavLink>
+                  )}
+                  {(isHrAdmin || hasPermission('manage_weight_rules')) && (
+                    <NavLink to="/admin/kpi-setup/weight-rules" style={({ isActive }) => ({ ...l1LinkStyle(isActive), paddingLeft: 32 })} end>
+                      Weight Rules
+                    </NavLink>
+                  )}
+                  {(isHrAdmin || hasPermission('manage_templates')) && (
+                    <NavLink to="/admin/kpi-setup/templates" style={({ isActive }) => ({ ...l1LinkStyle(isActive), paddingLeft: 32 })} end>
+                      Templates & Cascade
+                    </NavLink>
+                  )}
+
                   {isSuperAdmin && (
                     <NavLink to="/admin/settings" style={({ isActive }) => l1LinkStyle(isActive)} end>
                       System Settings
@@ -296,20 +341,10 @@ export default function Layout() {
                       Email Logs
                     </NavLink>
                   )}
-
-                  {/* KPI Setup sub-group */}
-                  {(isHrAdmin || hasPermission('manage_templates')) && (
-                    <>
-                      <div style={groupRow} onClick={() => toggle('kpi-setup')}>
-                        <span>KPI Setup</span>
-                        <span style={arrowStyle}>{expanded.has('kpi-setup') ? '▼' : '▶'}</span>
-                      </div>
-                      {expanded.has('kpi-setup') && (
-                        <NavLink to="/admin/kpi-setup/templates" style={({ isActive }) => l2LinkStyle(isActive)} end>
-                          Templates & Cascade
-                        </NavLink>
-                      )}
-                    </>
+                  {(isHrAdmin || hasPermission('view_employees')) && (
+                    <NavLink to="/admin/reports" style={({ isActive }) => l1LinkStyle(isActive)} end>
+                      Report Builder
+                    </NavLink>
                   )}
                 </>
               )}

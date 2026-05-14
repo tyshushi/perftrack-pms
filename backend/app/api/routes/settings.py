@@ -52,13 +52,30 @@ async def get_email_config(
     }
 
 
+KPI_SETTINGS_KEYS = {'max_kpis_per_scorecard', 'min_kpis_per_scorecard', 'global_min_weight_per_kpi'}
+
+
 @router.patch("/{key}")
 async def update_setting(
     key:          str,
     body:         SettingUpdate,
     db:           AsyncSession = Depends(get_db),
-    current_user: User         = Depends(require_super_admin),
+    current_user: User         = Depends(get_current_user),
 ):
+    if key in KPI_SETTINGS_KEYS:
+        if current_user.role not in ("HR_ADMIN", "SUPER_ADMIN"):
+            perm_result = await db.execute(text("""
+                SELECT 1 FROM user_roles ur
+                JOIN role_permissions rp ON rp.role_id = ur.role_id
+                WHERE ur.user_id = :uid AND rp.permission = 'manage_weight_rules'
+                LIMIT 1
+            """), {"uid": str(current_user.id)})
+            if not perm_result.scalar_one_or_none():
+                raise HTTPException(403, "Insufficient permissions to update KPI settings")
+    else:
+        if current_user.role != "SUPER_ADMIN":
+            raise HTTPException(403, "Only Super Admin can update this setting")
+
     existing = await db.execute(
         text("SELECT key FROM system_settings WHERE key = :k"),
         {"k": key},
