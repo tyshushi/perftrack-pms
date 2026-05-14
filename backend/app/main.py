@@ -485,6 +485,10 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 
 DO $$ BEGIN
+  ALTER TABLE performance_cycles ADD COLUMN reminder_day_of_month INTEGER;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN
   ALTER TABLE performance_cycles ADD COLUMN last_reminder_sent_at TIMESTAMPTZ;
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 
