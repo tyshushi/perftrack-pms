@@ -1330,15 +1330,25 @@ async def admin_move_stage(
     # SELF_EVAL is a synthetic stage — it opens self-evaluation, which is
     # triggered by KPIs being LOCKED.
     effective_status = "LOCKED" if target == "SELF_EVAL" else target
+    is_hr_or_super = current_user.role in ("HR_ADMIN", "SUPER_ADMIN")
 
     for kpi in kpis:
         old = kpi.status
         if target == "DRAFT":
-            kpi.status             = "DRAFT"
-            kpi.mgr_comment        = None
-            kpi.self_rating        = None
-            kpi.actual_achievement = None
-            kpi.self_remarks       = None
+            # HR/Super Admin resets ALL KPIs (including FIXED) to allow full staff re-edit.
+            # Others with reset_scorecards permission only reset OPTIONAL and their own
+            # cascaded FIXED KPIs.
+            own_cascade = (
+                kpi.kpi_type == "FIXED"
+                and kpi.cascaded_by is not None
+                and str(kpi.cascaded_by) == str(current_user.id)
+            )
+            if is_hr_or_super or kpi.kpi_type == "OPTIONAL" or own_cascade:
+                kpi.status             = "DRAFT"
+                kpi.mgr_comment        = None
+                kpi.self_rating        = None
+                kpi.actual_achievement = None
+                kpi.self_remarks       = None
         elif target == "REJECTED":
             kpi.status      = "REJECTED"
             kpi.mgr_comment = body.comment
@@ -1349,7 +1359,7 @@ async def admin_move_stage(
             kpi_id=kpi.id,
             actor_id=current_user.id,
             from_status=old,
-            to_status=target,
+            to_status=kpi.status,
             comment=body.comment or None,
         ))
 
@@ -1647,12 +1657,19 @@ async def review_scorecard(
             raise HTTPException(400, "A comment is required when rejecting a scorecard")
         for kpi in kpis:
             old = kpi.status
-            kpi.status      = "REJECTED"
-            kpi.mgr_comment = body.comment
-            db.add(KpiAuditLog(
-                kpi_id=kpi.id, actor_id=current_user.id,
-                from_status=old, to_status="REJECTED", comment=body.comment,
-            ))
+            kpi.mgr_comment = body.comment  # always set so staff can see the reason
+            own_cascade = (
+                kpi.kpi_type == "FIXED"
+                and kpi.cascaded_by is not None
+                and str(kpi.cascaded_by) == str(current_user.id)
+            )
+            if kpi.kpi_type == "OPTIONAL" or own_cascade:
+                kpi.status = "REJECTED"
+                db.add(KpiAuditLog(
+                    kpi_id=kpi.id, actor_id=current_user.id,
+                    from_status=old, to_status="REJECTED", comment=body.comment,
+                ))
+            # FIXED KPIs cascaded by another party remain at current status (LOCKED/not editable)
         db.add(Notification(
             user_id=employee.id,
             title="Scorecard Rejected",
@@ -1915,7 +1932,7 @@ async def update_kpi(
         raise HTTPException(403, "Not authorised")
     if kpi.status not in ["DRAFT", "REJECTED"]:
         raise HTTPException(400, "Only DRAFT or REJECTED KPIs can be edited")
-    if kpi.kpi_type == "FIXED":
+    if kpi.kpi_type == "FIXED" and kpi.status != "REJECTED":
         raise HTTPException(400,
             "Use /weight endpoint to adjust cascaded KPI weight")
     was_rejected = kpi.status == "REJECTED"
@@ -1951,7 +1968,7 @@ async def delete_kpi(
         raise HTTPException(403)
     if kpi.status not in ("DRAFT", "REJECTED"):
         raise HTTPException(400, "Cannot delete a submitted KPI")
-    if kpi.kpi_type == "FIXED":
+    if kpi.kpi_type == "FIXED" and kpi.status != "REJECTED":
         raise HTTPException(400, "Cannot delete a cascaded KPI")
     from app.models.user import KpiAuditLog
     audit_result = await db.execute(
