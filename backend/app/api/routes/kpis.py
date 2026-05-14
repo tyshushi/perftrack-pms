@@ -833,6 +833,9 @@ def template_to_dict(t) -> dict:
         "weight":        t.weight,
         "target":        t.target,
         "measurement":   t.measurement,
+        "group_id":      str(t.group_id)      if t.group_id      else None,
+        "hierarchy":     t.hierarchy,
+        "user_category": t.user_category,
         "department_id": str(t.department_id) if t.department_id else None,
         "job_grade":     t.job_grade,
         "is_active":     t.is_active,
@@ -871,6 +874,9 @@ async def create_template(
         weight        = body.min_weight,
         target        = body.target,
         measurement   = body.measurement,
+        group_id      = body.group_id,
+        hierarchy     = body.hierarchy,
+        user_category = body.user_category,
         department_id = body.department_id,
         job_grade     = body.job_grade,
         rating_targets = body.rating_targets,
@@ -921,21 +927,35 @@ async def cascade_template(
             f"Cannot create a KPI with {t.weight}% weight.",
         )
 
-    # Match employees: group > department > job_grade > everyone
-    if t.department_id:
-        q = select(User).where(
-            User.department_id == t.department_id,
-            User.is_active     == True,
+    # Resolve target employees with exclusive filter: first matching filter wins.
+    if t.group_id:
+        gm_res = await db.execute(
+            select(GroupMember.user_id).where(GroupMember.group_id == t.group_id)
         )
+        member_ids = [row[0] for row in gm_res.all()]
+        matched = (await db.execute(
+            select(User).where(User.id.in_(member_ids), User.is_active == True)
+        )).scalars().all()
+    elif t.hierarchy:
+        matched = (await db.execute(
+            select(User).where(User.hierarchy == t.hierarchy, User.is_active == True)
+        )).scalars().all()
+    elif t.user_category:
+        matched = (await db.execute(
+            select(User).where(User.category == t.user_category, User.is_active == True)
+        )).scalars().all()
+    elif t.department_id:
+        matched = (await db.execute(
+            select(User).where(User.department_id == t.department_id, User.is_active == True)
+        )).scalars().all()
     elif t.job_grade:
-        q = select(User).where(
-            User.job_grade == t.job_grade,
-            User.is_active == True,
-        )
+        matched = (await db.execute(
+            select(User).where(User.job_grade == t.job_grade, User.is_active == True)
+        )).scalars().all()
     else:
-        q = select(User).where(User.is_active == True)
-
-    matched = (await db.execute(q)).scalars().all()
+        matched = (await db.execute(
+            select(User).where(User.is_active == True)
+        )).scalars().all()
 
     created = updated = 0
     for u in matched:

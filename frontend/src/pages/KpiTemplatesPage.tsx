@@ -82,10 +82,11 @@ const S: Record<string, any> = {
 };
 
 function appliesLabel(t: any): string {
-  if (t.job_grade)     return `Grade: ${t.job_grade}`;
-  if (t.department_id) return `Dept ID: ${String(t.department_id).slice(0, 8)}…`;
+  if (t.group_id)      return 'Custom Group';
   if (t.hierarchy)     return `Hierarchy: ${t.hierarchy}`;
   if (t.user_category) return `Category: ${t.user_category}`;
+  if (t.job_grade)     return `Grade: ${t.job_grade}`;
+  if (t.department_id) return `Dept ID: ${String(t.department_id).slice(0, 8)}…`;
   return 'Everyone';
 }
 
@@ -185,9 +186,9 @@ export default function KpiTemplatesPage() {
         target:        t.target,
         measurement:   t.measurement,
         employee_ids:  [],
-        group_id:      null,
-        hierarchy:     null,
-        user_category: null,
+        group_id:      t.group_id      || null,
+        hierarchy:     t.hierarchy     || null,
+        user_category: t.user_category || null,
         department_id: t.department_id || null,
         job_grade:     t.job_grade     || null,
         rating_targets: t.rating_targets || null,
