@@ -200,6 +200,7 @@ def kpi_to_dict(k: Kpi, cascader: Optional[User] = None) -> dict:
         "self_rating":        float(k.self_rating) if k.self_rating is not None else None,
         "self_remarks":       k.self_remarks,
         "is_late":            k.is_late or False,
+        "hr_unlocked":        k.hr_unlocked or False,
     }
 
 def rule_to_dict(r: WeightRule, creator_role: Optional[str] = None) -> dict:
@@ -1261,9 +1262,10 @@ async def admin_reset_scorecard(
     from app.models.user import KpiAuditLog
     for kpi in kpis:
         old = kpi.status
-        kpi.status      = "DRAFT"
-        kpi.mgr_comment = None
-        kpi.mgr_score   = None
+        kpi.status       = "DRAFT"
+        kpi.mgr_comment  = None
+        kpi.mgr_score    = None
+        kpi.hr_unlocked  = True
         db.add(KpiAuditLog(
             kpi_id=kpi.id, actor_id=current_user.id,
             from_status=old, to_status="DRAFT", comment="Admin reset to draft",
@@ -1363,6 +1365,8 @@ async def admin_move_stage(
                 kpi.self_rating        = None
                 kpi.actual_achievement = None
                 kpi.self_remarks       = None
+                if is_hr_or_super:
+                    kpi.hr_unlocked = True
         elif target == "REJECTED":
             kpi.status      = "REJECTED"
             kpi.mgr_comment = body.comment
@@ -1410,6 +1414,7 @@ async def admin_reset_all_scorecards(
         kpi.self_rating        = None
         kpi.actual_achievement = None
         kpi.self_remarks       = None
+        kpi.hr_unlocked        = True
 
     await db.flush()
     return {"reset": len(kpis), "message": "All scorecards reset to draft"}
@@ -1949,22 +1954,27 @@ async def update_kpi(
         raise HTTPException(403, "Not authorised")
     if kpi.status not in ["DRAFT", "REJECTED"]:
         raise HTTPException(400, "Only DRAFT or REJECTED KPIs can be edited")
-    if kpi.kpi_type == "FIXED" and kpi.status not in ("DRAFT", "REJECTED"):
-        raise HTTPException(400,
-            "Use /weight endpoint to adjust cascaded KPI weight")
+    if kpi.kpi_type == "FIXED":
+        _cascader = None
+        if kpi.cascaded_by:
+            _r = await db.execute(select(User).where(User.id == kpi.cascaded_by))
+            _cascader = _r.scalar_one_or_none()
+        if _cascader and _cascader.role in ("HR_ADMIN", "SUPER_ADMIN") and not kpi.hr_unlocked:
+            raise HTTPException(403, "HR Admin cascaded KPIs are locked to staff edits")
     was_rejected = kpi.status == "REJECTED"
     for field, val in body.model_dump(exclude_none=True).items():
         setattr(kpi, field, val)
-    # Editing a REJECTED KPI means staff is addressing the rejection, so it
-    # transitions back to DRAFT and re-enters the weight calculation.
     if was_rejected:
         from app.models.user import KpiAuditLog
         kpi.status = "DRAFT"
+        kpi.hr_unlocked = False
         db.add(KpiAuditLog(
             kpi_id=kpi.id, actor_id=current_user.id,
             from_status="REJECTED", to_status="DRAFT",
             comment="KPI edited by staff after rejection",
         ))
+    elif kpi.hr_unlocked:
+        kpi.hr_unlocked = False
     await db.flush()
     await db.refresh(kpi)
     return kpi_to_dict(kpi)
@@ -1985,8 +1995,13 @@ async def delete_kpi(
         raise HTTPException(403)
     if kpi.status not in ("DRAFT", "REJECTED"):
         raise HTTPException(400, "Cannot delete a submitted KPI")
-    if kpi.kpi_type == "FIXED" and kpi.status not in ("DRAFT", "REJECTED"):
-        raise HTTPException(400, "Cannot delete a cascaded KPI")
+    if kpi.kpi_type == "FIXED":
+        _cascader = None
+        if kpi.cascaded_by:
+            _r = await db.execute(select(User).where(User.id == kpi.cascaded_by))
+            _cascader = _r.scalar_one_or_none()
+        if _cascader and _cascader.role in ("HR_ADMIN", "SUPER_ADMIN") and not kpi.hr_unlocked:
+            raise HTTPException(403, "HR Admin cascaded KPIs cannot be deleted by staff")
     from app.models.user import KpiAuditLog
     audit_result = await db.execute(
         select(KpiAuditLog).where(KpiAuditLog.kpi_id == kpi_id)
@@ -2101,8 +2116,13 @@ async def update_rating_targets(
         raise HTTPException(404, "KPI not found")
     if str(kpi.user_id) != str(current_user.id):
         raise HTTPException(403, "Not your KPI")
-    if kpi.kpi_type == "FIXED" and kpi.status not in ("DRAFT", "REJECTED"):
-        raise HTTPException(403, "Rating targets for cascaded KPIs cannot be modified by staff")
+    if kpi.kpi_type == "FIXED":
+        _cascader = None
+        if kpi.cascaded_by:
+            _r = await db.execute(select(User).where(User.id == kpi.cascaded_by))
+            _cascader = _r.scalar_one_or_none()
+        if _cascader and _cascader.role in ("HR_ADMIN", "SUPER_ADMIN") and not kpi.hr_unlocked:
+            raise HTTPException(403, "Rating targets for HR cascaded KPIs cannot be modified by staff")
     if kpi.status not in ("DRAFT", "REJECTED", "APPROVED"):
         raise HTTPException(400, "Rating targets can only be set on DRAFT, REJECTED or APPROVED KPIs")
     kpi.rating_targets = body.rating_targets

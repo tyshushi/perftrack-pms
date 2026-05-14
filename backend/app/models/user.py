@@ -200,6 +200,7 @@ class Kpi(Base):
     self_rating        = Column(Numeric(4, 2))
     self_remarks       = Column(Text)
     is_late            = Column(Boolean, default=False)
+    hr_unlocked        = Column(Boolean, default=False, nullable=False, server_default='false')
     status          = Column(String(20), default="DRAFT", nullable=False)
     created_at      = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at      = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

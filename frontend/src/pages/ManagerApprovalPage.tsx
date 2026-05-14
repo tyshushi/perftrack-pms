@@ -76,6 +76,15 @@ function ratingLabelFor(value: any, cycle: any): string {
   return lv?.label || (typeof value === 'string' ? value : '');
 }
 
+function getCascadeLabel(kpi: any): string {
+  const role = kpi.cascaded_by_role;
+  if (role === 'HR_ADMIN' || role === 'SUPER_ADMIN') return 'Cascaded by HR';
+  if (role === 'HOD') return 'Cascaded by HOD';
+  if (role === 'MANAGER' || role === 'MGR2') return 'Cascaded by Manager';
+  if (kpi.cascaded_by_name) return `Cascaded by ${kpi.cascaded_by_name}`;
+  return 'Cascaded';
+}
+
 function KpiTargetsExpandable({ kpi, cycle }: { kpi: any; cycle: any }) {
   const [open, setOpen] = useState(false);
   const targets: any[] = Array.isArray(kpi.rating_targets) ? kpi.rating_targets : [];
@@ -224,7 +233,7 @@ function EmployeeScorecard({
                     <span style={{ fontWeight: 500, fontSize: 13, color: C.text }}>{kpi.name}</span>
                     {kpi.kpi_type === 'FIXED' && (
                       <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#e0f2fe', color: '#0369a1', fontWeight: 500 }}>
-                        Cascaded
+                        {getCascadeLabel(kpi)}
                       </span>
                     )}
                     {kpi.is_late && (
