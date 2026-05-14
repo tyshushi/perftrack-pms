@@ -370,6 +370,15 @@ function EditKpiForm({ kpi, cycle, onSave, onCancel }: {
   );
 }
 
+function getCascadeLabel(kpi: any): string {
+  const role = kpi.cascaded_by_role;
+  if (role === 'HR_ADMIN' || role === 'SUPER_ADMIN') return 'Cascaded by HR';
+  if (role === 'HOD') return 'Cascaded by HOD';
+  if (role === 'MANAGER' || role === 'MGR2') return 'Cascaded by Manager';
+  if (kpi.cascaded_by_name) return `Cascaded by ${kpi.cascaded_by_name}`;
+  return 'Cascaded';
+}
+
 function KpiCard({
   kpi, cycle, onDelete, onSaveTargets, onSaveEdit,
 }: {
@@ -385,11 +394,12 @@ function KpiCard({
   const [showTargets, setShowTargets] = useState(needsTargets && !isFixed);
   const [editing,    setEditing]    = useState(false);
   const [flash,      setFlash]      = useState(false);
-  // REJECTED FIXED KPIs were rejected by the manager who cascaded them — staff can edit/delete
-  const canDelete = (kpi.status === 'DRAFT' && !isFixed) || kpi.status === 'REJECTED';
+  // DRAFT means editable (whether created by staff or reset by HR Admin)
+  // REJECTED means editable (staff addresses manager feedback)
+  const canDelete = kpi.status === 'DRAFT' || kpi.status === 'REJECTED';
   const showTargetsSection = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED' || kpi.status === 'APPROVED') && !!cycle;
-  const canEditTargets = showTargetsSection && !isFixed;
-  const canEditKpi = (kpi.status === 'DRAFT' && !isFixed || kpi.status === 'REJECTED') && !!cycle;
+  const canEditTargets = showTargetsSection && (!isFixed || kpi.status === 'DRAFT' || kpi.status === 'REJECTED');
+  const canEditKpi = (kpi.status === 'DRAFT' || kpi.status === 'REJECTED') && !!cycle;
 
   const handleSave = async (payload: { fields: any; targets: any[] | null }) => {
     await onSaveEdit(payload);
@@ -406,7 +416,7 @@ function KpiCard({
             <span style={{ fontWeight: 500, fontSize: 14, color: C.text }}>{kpi.name}</span>
             {isFixed && (
               <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#e0f2fe', color: '#0369a1', fontWeight: 500 }}>
-                Cascaded
+                {getCascadeLabel(kpi)}
               </span>
             )}
           </div>
@@ -496,7 +506,7 @@ function KpiCard({
               ⚠ Rating targets not set — required before submission
             </div>
           )}
-          {isFixed ? (
+          {isFixed && !canEditTargets ? (
             <ReadOnlyTargetsView kpi={kpi} cycle={cycle} />
           ) : (
             <>

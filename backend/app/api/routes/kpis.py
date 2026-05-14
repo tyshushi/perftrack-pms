@@ -170,7 +170,7 @@ class RatingTargetsRequest(BaseModel):
 
 # ── Helper ─────────────────────────────────────────────────────────────────
 
-def kpi_to_dict(k: Kpi) -> dict:
+def kpi_to_dict(k: Kpi, cascader: Optional[User] = None) -> dict:
     return {
         "id":            str(k.id),
         "cycle_id":      str(k.cycle_id),
@@ -192,7 +192,9 @@ def kpi_to_dict(k: Kpi) -> dict:
         "mgr_comment":   k.mgr_comment,
         "mgr2_comment":  k.mgr2_comment,
         "hod_comment":   k.hod_comment,
-        "cascaded_by":   str(k.cascaded_by) if k.cascaded_by else None,
+        "cascaded_by":      str(k.cascaded_by) if k.cascaded_by else None,
+        "cascaded_by_name": cascader.full_name if cascader else None,
+        "cascaded_by_role": cascader.role if cascader else None,
         "rating_targets":     k.rating_targets,
         "actual_achievement": k.actual_achievement,
         "self_rating":        float(k.self_rating) if k.self_rating is not None else None,
@@ -522,7 +524,19 @@ async def list_kpis(
         q = q.where(Kpi.status == status)
 
     result = await db.execute(q.order_by(Kpi.created_at))
-    return [kpi_to_dict(k) for k in result.scalars().all()]
+    kpis = result.scalars().all()
+
+    cascader_ids = {k.cascaded_by for k in kpis if k.cascaded_by}
+    cascaders: dict = {}
+    if cascader_ids:
+        c_res = await db.execute(select(User).where(User.id.in_(cascader_ids)))
+        for u in c_res.scalars().all():
+            cascaders[str(u.id)] = u
+
+    return [
+        kpi_to_dict(k, cascader=cascaders.get(str(k.cascaded_by)) if k.cascaded_by else None)
+        for k in kpis
+    ]
 
 
 @router.post("/")
@@ -1665,11 +1679,14 @@ async def review_scorecard(
             )
             if kpi.kpi_type == "OPTIONAL" or own_cascade:
                 kpi.status = "REJECTED"
-                db.add(KpiAuditLog(
-                    kpi_id=kpi.id, actor_id=current_user.id,
-                    from_status=old, to_status="REJECTED", comment=body.comment,
-                ))
-            # FIXED KPIs cascaded by another party remain at current status (LOCKED/not editable)
+            else:
+                # FIXED KPIs cascaded by HR Admin/HOD/other → DRAFT so scorecard
+                # is back in staff's hands; kpi_type stays FIXED (keeps them non-editable)
+                kpi.status = "DRAFT"
+            db.add(KpiAuditLog(
+                kpi_id=kpi.id, actor_id=current_user.id,
+                from_status=old, to_status=kpi.status, comment=body.comment,
+            ))
         db.add(Notification(
             user_id=employee.id,
             title="Scorecard Rejected",
@@ -1932,7 +1949,7 @@ async def update_kpi(
         raise HTTPException(403, "Not authorised")
     if kpi.status not in ["DRAFT", "REJECTED"]:
         raise HTTPException(400, "Only DRAFT or REJECTED KPIs can be edited")
-    if kpi.kpi_type == "FIXED" and kpi.status != "REJECTED":
+    if kpi.kpi_type == "FIXED" and kpi.status not in ("DRAFT", "REJECTED"):
         raise HTTPException(400,
             "Use /weight endpoint to adjust cascaded KPI weight")
     was_rejected = kpi.status == "REJECTED"
@@ -1968,7 +1985,7 @@ async def delete_kpi(
         raise HTTPException(403)
     if kpi.status not in ("DRAFT", "REJECTED"):
         raise HTTPException(400, "Cannot delete a submitted KPI")
-    if kpi.kpi_type == "FIXED" and kpi.status != "REJECTED":
+    if kpi.kpi_type == "FIXED" and kpi.status not in ("DRAFT", "REJECTED"):
         raise HTTPException(400, "Cannot delete a cascaded KPI")
     from app.models.user import KpiAuditLog
     audit_result = await db.execute(
@@ -2084,7 +2101,7 @@ async def update_rating_targets(
         raise HTTPException(404, "KPI not found")
     if str(kpi.user_id) != str(current_user.id):
         raise HTTPException(403, "Not your KPI")
-    if kpi.kpi_type == "FIXED":
+    if kpi.kpi_type == "FIXED" and kpi.status not in ("DRAFT", "REJECTED"):
         raise HTTPException(403, "Rating targets for cascaded KPIs cannot be modified by staff")
     if kpi.status not in ("DRAFT", "REJECTED", "APPROVED"):
         raise HTTPException(400, "Rating targets can only be set on DRAFT, REJECTED or APPROVED KPIs")
