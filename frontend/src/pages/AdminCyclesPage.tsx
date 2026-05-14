@@ -110,6 +110,8 @@ export default function AdminCyclesPage() {
   const [editIncludeRM,  setEditIncludeRM]  = useState(false);
   const [editIncludeHOD, setEditIncludeHOD] = useState(false);
   const [editError, setEditError]       = useState<string | null>(null);
+  const [editReminderFreq, setEditReminderFreq] = useState<string>('NONE');
+  const [editReminderDays, setEditReminderDays] = useState<number[]>([]);
 
   const resetAllMut = useMutation({
     mutationFn: (cycleId: string) => kpisApi.resetAllScorecards(cycleId).then(r => r.data),
@@ -230,6 +232,8 @@ export default function AdminCyclesPage() {
     });
     setEditIncludeRM(Array.isArray(c.approval_chain) && c.approval_chain.includes('RM'));
     setEditIncludeHOD(Array.isArray(c.approval_chain) && c.approval_chain.includes('HOD'));
+    setEditReminderFreq(c.reminder_frequency || 'NONE');
+    setEditReminderDays(Array.isArray(c.reminder_days_of_week) ? c.reminder_days_of_week : []);
     setEditError(null);
   };
 
@@ -237,7 +241,23 @@ export default function AdminCyclesPage() {
     const approvalChain = ['DM'];
     if (editIncludeRM)  approvalChain.push('RM');
     if (editIncludeHOD) approvalChain.push('HOD');
-    const data: Record<string, any> = { ...editForm, approval_chain: approvalChain };
+
+    // Validate reminder days
+    if (editReminderFreq === 'TWICE_WEEKLY' && editReminderDays.length !== 2) {
+      setEditError('Twice Weekly requires exactly 2 days selected.');
+      return;
+    }
+    if (editReminderFreq === 'WEEKLY' && editReminderDays.length !== 1) {
+      setEditError('Weekly requires exactly 1 day selected.');
+      return;
+    }
+
+    const data: Record<string, any> = {
+      ...editForm,
+      approval_chain: approvalChain,
+      reminder_frequency: editReminderFreq,
+      reminder_days_of_week: (editReminderFreq === 'TWICE_WEEKLY' || editReminderFreq === 'WEEKLY') ? editReminderDays : [],
+    };
     if (data.year) data.year = Number(data.year);
     Object.keys(data).forEach(k => { if (data[k] === '') delete data[k]; });
     updateCycleMut.mutate({ id: editCycle.id, data });
@@ -711,6 +731,78 @@ export default function AdminCyclesPage() {
                 Order: DM{editIncludeRM ? ' → RM' : ''}{editIncludeHOD ? ' → HOD' : ''}
               </div>
             </div>
+
+            <div style={{ borderTop: `1px solid ${C.borderLight}`, paddingTop: 12, marginBottom: 12 }}>
+              <div style={{ fontWeight: 500, marginBottom: 8, fontSize: 13, color: C.text }}>Reminder Schedule</div>
+              <div style={S.fg}>
+                <label style={S.label}>Reminder Frequency</label>
+                <select
+                  style={S.select}
+                  value={editReminderFreq}
+                  onChange={e => {
+                    setEditReminderFreq(e.target.value);
+                    setEditReminderDays([]);
+                  }}>
+                  <option value="NONE">None</option>
+                  <option value="DAILY">Daily</option>
+                  <option value="TWICE_WEEKLY">Twice Weekly</option>
+                  <option value="WEEKLY">Weekly</option>
+                </select>
+                <div style={S.note}>Reminders are triggered on login (rate-limited to once per 5 min)</div>
+              </div>
+              {(editReminderFreq === 'TWICE_WEEKLY' || editReminderFreq === 'WEEKLY') && (() => {
+                const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                const maxDays = editReminderFreq === 'TWICE_WEEKLY' ? 2 : 1;
+                return (
+                  <div style={S.subCard}>
+                    <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 8 }}>
+                      {editReminderFreq === 'TWICE_WEEKLY'
+                        ? 'Select exactly 2 days'
+                        : 'Select exactly 1 day'}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+                      {DAY_LABELS.map((label, idx) => {
+                        const selected = editReminderDays.includes(idx);
+                        const disabled = !selected && editReminderDays.length >= maxDays;
+                        return (
+                          <label
+                            key={idx}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 4,
+                              fontSize: 12, color: disabled ? C.textTertiary : C.text,
+                              cursor: disabled ? 'not-allowed' : 'pointer',
+                              padding: '4px 8px',
+                              borderRadius: 6,
+                              background: selected ? C.text : C.bgSecondary,
+                              border: `1px solid ${selected ? C.text : C.border}`,
+                            }}>
+                            <input
+                              type={editReminderFreq === 'WEEKLY' ? 'radio' : 'checkbox'}
+                              checked={selected}
+                              disabled={disabled}
+                              onChange={() => {
+                                if (editReminderFreq === 'WEEKLY') {
+                                  setEditReminderDays([idx]);
+                                } else {
+                                  setEditReminderDays(prev =>
+                                    prev.includes(idx)
+                                      ? prev.filter(d => d !== idx)
+                                      : prev.length < maxDays ? [...prev, idx] : prev
+                                  );
+                                }
+                              }}
+                              style={{ display: 'none' }}
+                            />
+                            <span style={{ color: selected ? '#ffffff' : C.text }}>{label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button type="button" style={S.btnGhost}
                 disabled={updateCycleMut.isPending}

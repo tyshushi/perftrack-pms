@@ -278,6 +278,118 @@ async def notify_self_eval_submitted(db, manager, employee, cycle):
     )
 
 
+async def notify_cycle_activated(db, employee, cycle):
+    """Sent to all active staff when cycle status changes to ACTIVE"""
+    kpi_start = cycle.get('kpi_setting_start')
+    kpi_end = cycle.get('kpi_setting_end')
+
+    window_text = ""
+    if kpi_start and kpi_end:
+        window_text = f"<p style='font-size:14px;color:#1a1a1a;line-height:1.6;margin-bottom:16px;'>KPI setting is open from <strong>{kpi_start}</strong> to <strong>{kpi_end}</strong>.</p>"
+
+    content = f"""
+<p style="font-size:15px;color:#1a1a1a;margin-bottom:16px;">Hi {employee['full_name'].split()[0]},</p>
+<p style="font-size:14px;color:#1a1a1a;line-height:1.6;margin-bottom:16px;">
+  The performance cycle <strong>{cycle['name']}</strong> is now active.
+</p>
+<p style="font-size:14px;color:#1a1a1a;line-height:1.6;margin-bottom:16px;">
+  Please log in to PerformRight and set your KPIs for this cycle.
+</p>
+{window_text}
+{button('Set My KPIs', 'https://tyshushi.github.io/perftrack-pms/scorecard/setting')}
+<p style="font-size:13px;color:#6b6b6b;line-height:1.6;margin-top:24px;">
+  If you need help, reach out to your manager or HR.
+</p>
+"""
+    html = base_email_html(content, f"{cycle['name']} is now active")
+    return await send_email(
+        db=db,
+        to_email=employee['email'],
+        subject=f"Your performance cycle is now active: {cycle['name']}",
+        html_content=html,
+        template_name='cycle_activated',
+        template_data={'cycle_id': str(cycle['id'])},
+        idempotency_key=f"cycle_activated_{cycle['id']}_{employee['id']}",
+    )
+
+
+async def notify_reminder(db, employee, pending_actions: list):
+    """
+    Sent on schedule to remind employees of pending actions.
+    pending_actions: list of dicts like:
+    [
+      {'type': 'kpi_setting', 'cycle_name': '...', 'days_left': 5, 'kpi_count': 3},
+      {'type': 'self_eval', 'cycle_name': '...', 'days_left': 2, 'kpi_count': 5},
+      {'type': 'mgr_eval', 'cycle_name': '...', 'days_left': 1, 'employees': ['Amanda', 'Brian']},
+    ]
+    """
+    if not pending_actions:
+        return
+
+    action_blocks = ""
+    for action in pending_actions:
+        urgency_color = "#16a34a" if action.get('days_left', 0) > 3 else "#f59e0b" if action.get('days_left', 0) > 0 else "#dc2626"
+
+        if action['type'] == 'kpi_setting':
+            title = f"Set KPIs for {action['cycle_name']}"
+            description = "You haven't submitted your scorecard for approval yet."
+            cta = "Set KPIs"
+            cta_url = "https://tyshushi.github.io/perftrack-pms/scorecard/setting"
+        elif action['type'] == 'self_eval':
+            title = f"Self evaluation for {action['cycle_name']}"
+            description = "Complete your self evaluation for the locked KPIs."
+            cta = "Self Evaluate"
+            cta_url = "https://tyshushi.github.io/perftrack-pms/scorecard/self-eval"
+        elif action['type'] == 'mgr_eval':
+            count = len(action.get('employees', []))
+            title = f"Evaluate {count} team member(s)"
+            description = f"Pending evaluations for: {', '.join(action.get('employees', []))}"
+            cta = "Evaluate Team"
+            cta_url = "https://tyshushi.github.io/perftrack-pms/tray/team-eval"
+        elif action['type'] == 'approval':
+            count = action.get('employee_count', 0)
+            title = f"Approve {count} scorecard(s)"
+            description = "Direct reports waiting for your approval."
+            cta = "Approve"
+            cta_url = "https://tyshushi.github.io/perftrack-pms/tray/approve"
+        else:
+            continue
+
+        days_text = f"{action['days_left']} day(s) left" if action.get('days_left') is not None and action['days_left'] >= 0 else "Window closed (late submission)"
+
+        action_blocks += f"""
+<table cellpadding="0" cellspacing="0" style="background:#f7f7f5;border-radius:8px;width:100%;margin:12px 0;border-left:4px solid {urgency_color};">
+  <tr><td style="padding:16px;">
+    <div style="font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:4px;">{title}</div>
+    <div style="font-size:13px;color:#6b6b6b;margin-bottom:8px;">{description}</div>
+    <div style="font-size:11px;color:{urgency_color};font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px;">{days_text}</div>
+    <a href="{cta_url}" style="display:inline-block;padding:8px 20px;background:#1a1a1a;color:#ffffff;text-decoration:none;border-radius:6px;font-size:12px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">{cta}</a>
+  </td></tr>
+</table>
+"""
+
+    content = f"""
+<p style="font-size:15px;color:#1a1a1a;margin-bottom:16px;">Hi {employee['full_name'].split()[0]},</p>
+<p style="font-size:14px;color:#1a1a1a;line-height:1.6;margin-bottom:24px;">
+  You have <strong>{len(pending_actions)}</strong> pending action(s) on PerformRight.
+</p>
+{action_blocks}
+<p style="font-size:13px;color:#6b6b6b;line-height:1.6;margin-top:24px;">
+  Please complete these as soon as possible.
+</p>
+"""
+    html = base_email_html(content, f"You have {len(pending_actions)} pending action(s)")
+    return await send_email(
+        db=db,
+        to_email=employee['email'],
+        subject=f"Reminder: {len(pending_actions)} pending action(s) on PerformRight",
+        html_content=html,
+        template_name='reminder',
+        template_data={'action_count': len(pending_actions)},
+        idempotency_key=f"reminder_{employee['id']}_{datetime.now().strftime('%Y%m%d')}",  # one per day max
+    )
+
+
 async def notify_mgr_eval_complete(db, employee, cycle, manager):
     content = f"""
 <p style="font-size:15px;color:#1a1a1a;margin-bottom:16px;">Hi {employee['full_name'].split()[0]},</p>

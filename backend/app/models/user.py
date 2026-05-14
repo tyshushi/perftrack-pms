@@ -100,6 +100,11 @@ class PerformanceCycle(Base):
     rating_scale_max    = Column(Integer, default=5)
     rating_levels       = Column(JSON)
     approval_chain      = Column(JSON, default=lambda: ["DM"])
+    reminder_frequency      = Column(String(20), default='NONE')  # NONE, DAILY, TWICE_WEEKLY, WEEKLY
+    reminder_days_of_week   = Column(JSON)  # array of 0-6 (Mon-Sun) for TWICE_WEEKLY (2 days) or WEEKLY (1 day)
+    reminder_day_of_month   = Column(Integer)  # kept for compat, not used
+    last_reminder_sent_at   = Column(DateTime(timezone=True))
+    last_reminder_check_at  = Column(DateTime(timezone=True))
     created_by          = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at          = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at          = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
