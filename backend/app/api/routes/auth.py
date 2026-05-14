@@ -125,6 +125,12 @@ async def login(
 
     permissions, derived_roles = await _resolve_permissions_and_derived(db, user)
 
+    from app.services.reminder_service import maybe_run_reminders
+    try:
+        await maybe_run_reminders(db)
+    except Exception as e:
+        print(f"Reminder check error during login: {e}")
+
     return TokenOut(
         access_token  = create_access_token({"sub": str(user.id), "role": user.role}),
         refresh_token = create_refresh_token({"sub": str(user.id)}),

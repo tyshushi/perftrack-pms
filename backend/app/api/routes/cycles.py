@@ -86,19 +86,21 @@ class CycleCreate(BaseModel):
 
 
 class CycleUpdate(BaseModel):
-    name:               Optional[str]       = None
-    year:               Optional[int]       = None
-    status:             Optional[str]       = None
-    kpi_setting_start:  Optional[date]      = None
-    kpi_setting_end:    Optional[date]      = None
-    self_eval_start:    Optional[date]      = None
-    self_eval_end:      Optional[date]      = None
-    mgr_eval_start:     Optional[date]      = None
-    mgr_eval_end:       Optional[date]      = None
-    approval_chain:     Optional[List[str]] = None
-    rating_type:        Optional[str]       = None
-    rating_scale_max:   Optional[int]       = None
-    rating_levels:      Optional[list]      = None
+    name:                   Optional[str]       = None
+    year:                   Optional[int]       = None
+    status:                 Optional[str]       = None
+    kpi_setting_start:      Optional[date]      = None
+    kpi_setting_end:        Optional[date]      = None
+    self_eval_start:        Optional[date]      = None
+    self_eval_end:          Optional[date]      = None
+    mgr_eval_start:         Optional[date]      = None
+    mgr_eval_end:           Optional[date]      = None
+    approval_chain:         Optional[List[str]] = None
+    rating_type:            Optional[str]       = None
+    rating_scale_max:       Optional[int]       = None
+    rating_levels:          Optional[list]      = None
+    reminder_frequency:     Optional[str]       = None
+    reminder_days_of_week:  Optional[List[int]] = None
 
 
 class IncrementBandIn(BaseModel):
@@ -161,8 +163,10 @@ async def list_cycles(
             "rating_scale_max":  c.rating_scale_max or 5,
             "rating_levels":     c.rating_levels,
             "approval_chain":    normalise_approval_chain(c.approval_chain),
-            "kpi_count":         kpi_count or 0,
-            "employee_count":    employee_count or 0,
+            "kpi_count":             kpi_count or 0,
+            "employee_count":        employee_count or 0,
+            "reminder_frequency":    c.reminder_frequency or "NONE",
+            "reminder_days_of_week": c.reminder_days_of_week or [],
         }
         for c, kpi_count, employee_count in rows
     ]
@@ -235,26 +239,68 @@ async def update_cycle(
     if "approval_chain" in data:
         data["approval_chain"] = validate_approval_chain(data["approval_chain"])
 
+    # Validate reminder_frequency
+    VALID_FREQUENCIES = {"NONE", "DAILY", "TWICE_WEEKLY", "WEEKLY"}
+    if "reminder_frequency" in data:
+        freq = data["reminder_frequency"]
+        if freq not in VALID_FREQUENCIES:
+            raise HTTPException(400, f"Invalid reminder_frequency. Must be one of: {', '.join(sorted(VALID_FREQUENCIES))}")
+        days = data.get("reminder_days_of_week", [])
+        if freq == "TWICE_WEEKLY":
+            if len(days) != 2:
+                raise HTTPException(400, "TWICE_WEEKLY requires exactly 2 days_of_week (0=Mon to 6=Sun)")
+        elif freq == "WEEKLY":
+            if len(days) != 1:
+                raise HTTPException(400, "WEEKLY requires exactly 1 day_of_week (0=Mon to 6=Sun)")
+
+    prev_status = cycle.status
+
     for key, val in data.items():
         setattr(cycle, key, val)
 
     await db.flush()
     await db.refresh(cycle)
+
+    # Send cycle activation email to all active users if status changed to ACTIVE
+    if data.get("status") == "ACTIVE" and prev_status != "ACTIVE":
+        from app.services.email_service import notify_cycle_activated
+        users_result = await db.execute(select(User).where(User.is_active == True))
+        active_users = users_result.scalars().all()
+        cycle_dict = {
+            'id': cycle.id,
+            'name': cycle.name,
+            'kpi_setting_start': str(cycle.kpi_setting_start) if cycle.kpi_setting_start else None,
+            'kpi_setting_end': str(cycle.kpi_setting_end) if cycle.kpi_setting_end else None,
+        }
+        for user in active_users:
+            if not user.email:
+                continue
+            try:
+                await notify_cycle_activated(db, {
+                    'id': user.id,
+                    'full_name': user.full_name,
+                    'email': user.email,
+                }, cycle_dict)
+            except Exception as e:
+                print(f"Cycle activation email failed for {user.email}: {e}")
+
     return {
-        "id":                str(cycle.id),
-        "name":              cycle.name,
-        "year":              cycle.year,
-        "status":            cycle.status,
-        "kpi_setting_start": str(cycle.kpi_setting_start),
-        "kpi_setting_end":   str(cycle.kpi_setting_end),
-        "self_eval_start":   str(cycle.self_eval_start),
-        "self_eval_end":     str(cycle.self_eval_end),
-        "mgr_eval_start":    str(cycle.mgr_eval_start) if cycle.mgr_eval_start else None,
-        "mgr_eval_end":      str(cycle.mgr_eval_end)   if cycle.mgr_eval_end   else None,
-        "rating_type":       cycle.rating_type or "NUMERIC",
-        "rating_scale_max":  cycle.rating_scale_max or 5,
-        "rating_levels":     cycle.rating_levels,
-        "approval_chain":    normalise_approval_chain(cycle.approval_chain),
+        "id":                   str(cycle.id),
+        "name":                 cycle.name,
+        "year":                 cycle.year,
+        "status":               cycle.status,
+        "kpi_setting_start":    str(cycle.kpi_setting_start),
+        "kpi_setting_end":      str(cycle.kpi_setting_end),
+        "self_eval_start":      str(cycle.self_eval_start),
+        "self_eval_end":        str(cycle.self_eval_end),
+        "mgr_eval_start":       str(cycle.mgr_eval_start) if cycle.mgr_eval_start else None,
+        "mgr_eval_end":         str(cycle.mgr_eval_end)   if cycle.mgr_eval_end   else None,
+        "rating_type":          cycle.rating_type or "NUMERIC",
+        "rating_scale_max":     cycle.rating_scale_max or 5,
+        "rating_levels":        cycle.rating_levels,
+        "approval_chain":       normalise_approval_chain(cycle.approval_chain),
+        "reminder_frequency":   cycle.reminder_frequency or "NONE",
+        "reminder_days_of_week": cycle.reminder_days_of_week or [],
     }
 
 

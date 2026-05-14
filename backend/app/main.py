@@ -476,6 +476,22 @@ DO $$ BEGIN
   ON CONFLICT (key) DO NOTHING;
 EXCEPTION WHEN others THEN NULL; END $$;
 
+DO $$ BEGIN
+  ALTER TABLE performance_cycles ADD COLUMN reminder_frequency VARCHAR(20) DEFAULT 'NONE';
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE performance_cycles ADD COLUMN reminder_days_of_week JSON;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE performance_cycles ADD COLUMN last_reminder_sent_at TIMESTAMPTZ;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE performance_cycles ADD COLUMN last_reminder_check_at TIMESTAMPTZ;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
 """
 
 
