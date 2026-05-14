@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuthStore } from '../store/auth';
 import { kpisApi, cyclesApi, groupsApi, departmentsApi } from '../api/client';
 
 function buildEmptyTargetRows(cycle: any) {
@@ -81,17 +82,24 @@ const S: Record<string, any> = {
   btnSm:      { padding: '6px 10px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.bg, color: C.textSecond, fontSize: 12, cursor: 'pointer', fontFamily: C.font },
 };
 
-function appliesLabel(t: any): string {
-  if (t.group_id)      return 'Custom Group';
+function appliesLabel(t: any, groups: any[], depts: any[]): string {
+  if (t.group_id) {
+    const g = groups.find((g: any) => g.id === t.group_id);
+    return `Custom Group: ${g ? g.name : t.group_id.slice(0, 8) + '…'}`;
+  }
   if (t.hierarchy)     return `Hierarchy: ${t.hierarchy}`;
   if (t.user_category) return `Category: ${t.user_category}`;
+  if (t.department_id) {
+    const d = depts.find((d: any) => d.id === t.department_id);
+    return `Department: ${d ? d.name : t.department_id.slice(0, 8) + '…'}`;
+  }
   if (t.job_grade)     return `Grade: ${t.job_grade}`;
-  if (t.department_id) return `Dept ID: ${String(t.department_id).slice(0, 8)}…`;
   return 'Everyone';
 }
 
 export default function KpiTemplatesPage() {
   const qc = useQueryClient();
+  const isAdmin = useAuthStore(s => s.isHrAdmin()) || useAuthStore(s => s.isSuperAdmin());
   const [cycleId, setCycleId] = useState('');
 
   const { data: cycles = [] } = useQuery({
@@ -139,6 +147,20 @@ export default function KpiTemplatesPage() {
   const [cascading,   setCascading]   = useState<string | null>(null);
   const [adding,      setAdding]      = useState(false);
   const [inlineTargets, setInlineTargets] = useState<any[]>([]);
+  const [editingId,   setEditingId]   = useState<string | null>(null);
+  const [editTargets, setEditTargets] = useState<any[]>([]);
+  const [editName,    setEditName]    = useState('');
+  const [editDesc,    setEditDesc]    = useState('');
+  const [editDim,     setEditDim]     = useState('Financials');
+  const [editWeight,  setEditWeight]  = useState(0);
+  const [editMeas,    setEditMeas]    = useState('');
+  const [editApplies, setEditApplies] = useState('everyone');
+  const [editGroupId,    setEditGroupId]    = useState('');
+  const [editDeptId,     setEditDeptId]     = useState('');
+  const [editJobGrade,   setEditJobGrade]   = useState('');
+  const [editHierarchy,  setEditHierarchy]  = useState('');
+  const [editCategory,   setEditCategory]   = useState('');
+  const [saveFlash,   setSaveFlash]   = useState<string | null>(null);
 
   useEffect(() => {
     if (adding) setInlineTargets(buildEmptyTargetRows(currentCycle));
@@ -173,6 +195,52 @@ export default function KpiTemplatesPage() {
     mutationFn: (id: string) => kpisApi.deleteTemplate(id),
     onSuccess:  () => qc.invalidateQueries({ queryKey: ['kpi-templates', cycleId] }),
   });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) =>
+      kpisApi.updateTemplate(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['kpi-templates', cycleId] });
+      setEditingId(null);
+      setSaveFlash('Template updated.');
+      setTimeout(() => setSaveFlash(null), 3000);
+    },
+  });
+
+  function openEdit(t: any) {
+    setEditingId(t.id);
+    setEditName(t.name || '');
+    setEditDesc(t.description || '');
+    setEditDim(t.kpi_dimension || 'Financials');
+    setEditWeight(t.weight ?? 0);
+    setEditMeas(t.measurement || '');
+    setEditTargets(t.rating_targets ? [...t.rating_targets] : buildEmptyTargetRows(currentCycle));
+    if (t.group_id)      { setEditApplies('group');      setEditGroupId(t.group_id);       setEditDeptId(''); setEditJobGrade(''); setEditHierarchy(''); setEditCategory(''); }
+    else if (t.hierarchy)     { setEditApplies('hierarchy');  setEditHierarchy(t.hierarchy);   setEditGroupId(''); setEditDeptId(''); setEditJobGrade(''); setEditCategory(''); }
+    else if (t.user_category) { setEditApplies('category');   setEditCategory(t.user_category); setEditGroupId(''); setEditDeptId(''); setEditJobGrade(''); setEditHierarchy(''); }
+    else if (t.department_id) { setEditApplies('department'); setEditDeptId(t.department_id);  setEditGroupId(''); setEditJobGrade(''); setEditHierarchy(''); setEditCategory(''); }
+    else if (t.job_grade)     { setEditApplies('grade');      setEditJobGrade(t.job_grade);    setEditGroupId(''); setEditDeptId(''); setEditHierarchy(''); setEditCategory(''); }
+    else { setEditApplies('everyone'); setEditGroupId(''); setEditDeptId(''); setEditJobGrade(''); setEditHierarchy(''); setEditCategory(''); }
+  }
+
+  function submitEdit(t: any) {
+    updateMutation.mutate({
+      id: t.id,
+      data: {
+        name:          editName,
+        description:   editDesc,
+        kpi_dimension: editDim,
+        weight:        editWeight,
+        measurement:   editMeas,
+        rating_targets: editTargets,
+        group_id:      editApplies === 'group'      ? editGroupId   || null : null,
+        hierarchy:     editApplies === 'hierarchy'  ? editHierarchy || null : null,
+        user_category: editApplies === 'category'   ? editCategory  || null : null,
+        department_id: editApplies === 'department' ? editDeptId    || null : null,
+        job_grade:     editApplies === 'grade'      ? editJobGrade  || null : null,
+      },
+    });
+  }
 
   async function handleCascade(t: any) {
     setCascading(t.id);
@@ -242,6 +310,13 @@ export default function KpiTemplatesPage() {
 
       {cycleId && (
         <div>
+          {/* Save flash */}
+          {saveFlash && (
+            <div style={{ marginBottom: 12, padding: '8px 12px', background: '#dcfce7', borderRadius: 8, fontSize: 12, color: '#166534' }}>
+              ✓ {saveFlash}
+            </div>
+          )}
+
           {/* Template list */}
           {templatesLoading && (
             <div style={{ padding: 24, textAlign: 'center', color: C.textSecond, fontSize: 13 }}>
@@ -256,35 +331,169 @@ export default function KpiTemplatesPage() {
           )}
 
           {(templates as any[]).map((t: any) => (
-            <div key={t.id} style={{ ...S.card, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 500, fontSize: 14, color: C.text, marginBottom: 4 }}>{t.name}</div>
-                {t.description && (
-                  <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 4 }}>{t.description}</div>
-                )}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12, color: C.textSecond }}>
-                  <span>{t.kpi_dimension}</span>
-                  <span>·</span>
-                  <span>{t.weight}–{t.max_weight ?? t.weight}%</span>
-                  {t.measurement && (
-                    <>
-                      <span>·</span>
-                      <span>Measurement: {t.measurement}</span>
-                    </>
+            <div key={t.id} style={S.card}>
+              {editingId === t.id ? (
+                /* ── Inline edit form ── */
+                <div>
+                  <div style={{ fontWeight: 500, marginBottom: 12, color: C.text }}>Edit Template</div>
+                  <div style={S.grid2}>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={S.label}>KPI Name</label>
+                      <input style={S.input} value={editName} onChange={e => setEditName(e.target.value)} placeholder="e.g. Customer Satisfaction Score" />
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={S.label}>Description</label>
+                      <textarea style={{ ...S.input, minHeight: 54, resize: 'vertical' }} value={editDesc} onChange={e => setEditDesc(e.target.value)} />
+                    </div>
+                    <div>
+                      <label style={S.label}>KPI Dimension</label>
+                      <select style={S.input} value={editDim} onChange={e => setEditDim(e.target.value)}>
+                        {DIMENSIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={S.label}>Applies To</label>
+                      <select style={S.input} value={editApplies} onChange={e => { setEditApplies(e.target.value); setEditGroupId(''); setEditDeptId(''); setEditJobGrade(''); setEditHierarchy(''); setEditCategory(''); }}>
+                        {APPLIES_TO_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    </div>
+                    {editApplies === 'group' && (
+                      <div>
+                        <label style={S.label}>Custom Group</label>
+                        <select style={S.input} value={editGroupId} onChange={e => setEditGroupId(e.target.value)}>
+                          <option value="">Select group…</option>
+                          {(groups as any[]).map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {editApplies === 'department' && (
+                      <div>
+                        <label style={S.label}>Department</label>
+                        <select style={S.input} value={editDeptId} onChange={e => setEditDeptId(e.target.value)}>
+                          <option value="">Select department…</option>
+                          {(depts as any[]).map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {editApplies === 'grade' && (
+                      <div>
+                        <label style={S.label}>Job Grade</label>
+                        <input style={S.input} value={editJobGrade} onChange={e => setEditJobGrade(e.target.value)} placeholder="e.g. G2" />
+                      </div>
+                    )}
+                    {editApplies === 'hierarchy' && (
+                      <div>
+                        <label style={S.label}>Hierarchy</label>
+                        <input style={S.input} value={editHierarchy} onChange={e => setEditHierarchy(e.target.value)} placeholder="e.g. Apex-1" />
+                      </div>
+                    )}
+                    {editApplies === 'category' && (
+                      <div>
+                        <label style={S.label}>Employee Category</label>
+                        <input style={S.input} value={editCategory} onChange={e => setEditCategory(e.target.value)} placeholder="e.g. Corporate Staff" />
+                      </div>
+                    )}
+                    <div>
+                      <label style={S.label}>Weight %</label>
+                      <input style={S.input} type="number" min={0} max={100} value={editWeight} onChange={e => setEditWeight(Number(e.target.value))} />
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={S.label}>Measurement</label>
+                      <input style={S.input} value={editMeas} onChange={e => setEditMeas(e.target.value)} placeholder="How achievement will be tracked and verified" />
+                    </div>
+                  </div>
+
+                  {/* Rating Targets */}
+                  {currentCycle && (
+                    <div style={{ marginTop: 8, padding: 12, background: C.bgSecondary, borderRadius: 8, border: `0.5px solid ${C.borderLight}` }}>
+                      <div style={{ fontWeight: 500, fontSize: 13, color: C.text, marginBottom: 8 }}>Rating Targets</div>
+                      {(currentCycle.rating_type || 'NUMERIC') === 'OKR' ? (
+                        <div>
+                          <label style={S.label}>Measurement description</label>
+                          <input style={S.input}
+                            value={editTargets[0]?.target || ''}
+                            onChange={e => setEditTargets(prev => prev.length
+                              ? prev.map((r, i) => i === 0 ? { ...r, target: e.target.value } : r)
+                              : [{ value: 'OKR', label: 'OKR', target: e.target.value }])} />
+                        </div>
+                      ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          <thead>
+                            <tr>
+                              <th style={{ textAlign: 'left', padding: '4px 8px', fontSize: 11, color: C.textSecond, fontWeight: 600, width: 160 }}>Rating</th>
+                              <th style={{ textAlign: 'left', padding: '4px 8px', fontSize: 11, color: C.textSecond, fontWeight: 600 }}>Target Description</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {editTargets.map((r, i) => (
+                              <tr key={String(r.value)}>
+                                <td style={{ padding: '4px 8px', fontSize: 12, color: C.text }}>
+                                  <strong>{r.value}</strong>{r.label ? ` — ${r.label}` : ''}
+                                </td>
+                                <td style={{ padding: '4px 8px' }}>
+                                  <input style={S.input} value={r.target}
+                                    onChange={e => setEditTargets(prev => prev.map((row, idx) => idx === i ? { ...row, target: e.target.value } : row))}
+                                    placeholder="What achievement looks like for this rating" />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
                   )}
-                  <span>·</span>
-                  <span style={{ color: C.textTertiary }}>{appliesLabel(t)}</span>
+
+                  {updateMutation.isError && (
+                    <div style={{ fontSize: 12, color: C.textDanger, marginTop: 8 }}>
+                      {(updateMutation.error as any)?.response?.data?.detail || 'Failed to save'}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <button
+                      onClick={() => submitEdit(t)}
+                      disabled={!editName || updateMutation.isPending}
+                      style={{ ...S.btnPrimary, opacity: !editName ? 0.5 : 1 }}>
+                      {updateMutation.isPending ? 'Saving…' : 'Save'}
+                    </button>
+                    <button onClick={() => setEditingId(null)} style={S.btnSm}>Cancel</button>
+                  </div>
                 </div>
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                <button onClick={() => handleCascade(t)} disabled={cascading === t.id} style={S.btnPrimary}>
-                  {cascading === t.id ? 'Cascading…' : 'Cascade Now'}
-                </button>
-                <button onClick={() => deleteMutation.mutate(t.id)} disabled={deleteMutation.isPending}
-                  style={{ ...S.btnSm, padding: '6px 10px', color: C.textTertiary, fontSize: 14, lineHeight: 1 }}>
-                  ✕
-                </button>
-              </div>
+              ) : (
+                /* ── Read-only card row ── */
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 500, fontSize: 14, color: C.text, marginBottom: 4 }}>{t.name}</div>
+                    {t.description && (
+                      <div style={{ fontSize: 12, color: C.textSecond, marginBottom: 4 }}>{t.description}</div>
+                    )}
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12, color: C.textSecond }}>
+                      <span>{t.kpi_dimension}</span>
+                      <span>·</span>
+                      <span>{t.weight}%</span>
+                      {t.measurement && (
+                        <>
+                          <span>·</span>
+                          <span>Measurement: {t.measurement}</span>
+                        </>
+                      )}
+                      <span>·</span>
+                      <span style={{ color: C.textTertiary }}>{appliesLabel(t, groups as any[], depts as any[])}</span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <button onClick={() => handleCascade(t)} disabled={cascading === t.id} style={S.btnPrimary}>
+                      {cascading === t.id ? 'Cascading…' : 'Cascade Now'}
+                    </button>
+                    {isAdmin && (
+                      <button onClick={() => openEdit(t)} style={S.btnSm}>Edit</button>
+                    )}
+                    <button onClick={() => deleteMutation.mutate(t.id)} disabled={deleteMutation.isPending}
+                      style={{ ...S.btnSm, padding: '6px 10px', color: C.textTertiary, fontSize: 14, lineHeight: 1 }}>
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
 

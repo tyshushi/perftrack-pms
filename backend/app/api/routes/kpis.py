@@ -887,6 +887,55 @@ async def create_template(
     return template_to_dict(t)
 
 
+class TemplateUpdate(BaseModel):
+    name:          Optional[str]  = None
+    description:   Optional[str]  = None
+    kpi_dimension: Optional[str]  = None
+    weight:        Optional[int]  = None
+    measurement:   Optional[str]  = None
+    group_id:      Optional[UUID] = None
+    hierarchy:     Optional[str]  = None
+    user_category: Optional[str]  = None
+    department_id: Optional[UUID] = None
+    job_grade:     Optional[str]  = None
+    rating_targets: Optional[list] = None
+
+
+@router.patch("/templates/{template_id}")
+async def update_template(
+    template_id: UUID,
+    body:        TemplateUpdate,
+    db:          AsyncSession = Depends(get_db),
+    _:           User         = Depends(require_permission("manage_templates")),
+):
+    from app.models.user import KpiTemplate  # noqa
+    result = await db.execute(
+        select(KpiTemplate).where(KpiTemplate.id == template_id, KpiTemplate.is_active == True)
+    )
+    t = result.scalar_one_or_none()
+    if not t:
+        raise HTTPException(404, "Template not found")
+
+    if body.name          is not None: t.name          = body.name
+    if body.description   is not None: t.description   = body.description
+    if body.kpi_dimension is not None: t.category      = body.kpi_dimension
+    if body.weight        is not None: t.weight        = body.weight
+    if body.measurement   is not None: t.measurement   = body.measurement
+    if body.rating_targets is not None: t.rating_targets = body.rating_targets
+
+    # Filter fields — store the provided value (may be None to clear a filter)
+    patch_data = body.model_dump(exclude_unset=True)
+    if "group_id"      in patch_data: t.group_id      = body.group_id
+    if "hierarchy"     in patch_data: t.hierarchy     = body.hierarchy
+    if "user_category" in patch_data: t.user_category = body.user_category
+    if "department_id" in patch_data: t.department_id = body.department_id
+    if "job_grade"     in patch_data: t.job_grade     = body.job_grade
+
+    await db.flush()
+    await db.refresh(t)
+    return template_to_dict(t)
+
+
 @router.delete("/templates/{template_id}")
 async def delete_template(
     template_id: UUID,
