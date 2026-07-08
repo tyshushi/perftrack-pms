@@ -233,171 +233,13 @@ DO $$ BEGIN
   UPDATE users SET role = 'MANAGER' WHERE role = 'MGR2';
 EXCEPTION WHEN others THEN NULL; END $$;
 
-DO $$ BEGIN
-  INSERT INTO custom_roles (name, description, is_system) VALUES
-    ('SUPER_ADMIN', 'Full system access including role management', TRUE),
-    ('HR_ADMIN', 'Full HR operations access', TRUE),
-    ('MANAGER', 'Team management and scorecard approval', TRUE),
-    ('HOD', 'Department head access', TRUE),
-    ('STAFF', 'Standard employee access', TRUE)
-  ON CONFLICT (name) DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
-
-DO $$ BEGIN
-  INSERT INTO role_permissions (role_id, permission)
-  SELECT id, unnest(ARRAY[
-    'view_employees', 'edit_employee_profiles', 'manage_reporting_lines',
-    'deactivate_employees', 'create_employees',
-    'view_own_scorecard', 'view_team_scorecards', 'view_all_scorecards',
-    'approve_scorecards', 'reject_scorecards', 'reset_scorecards',
-    'view_cycles', 'manage_cycles',
-    'manage_templates', 'cascade_kpis', 'manage_weight_rules',
-    'view_groups', 'manage_groups',
-    'view_team_dashboard', 'view_org_dashboard',
-    'manage_roles'
-  ])
-  FROM custom_roles WHERE name = 'HR_ADMIN'
-  ON CONFLICT DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
-
-DO $$ BEGIN
-  INSERT INTO role_permissions (role_id, permission)
-  SELECT id, unnest(ARRAY[
-    'view_employees', 'edit_employee_profiles', 'manage_reporting_lines',
-    'deactivate_employees', 'create_employees',
-    'view_own_scorecard', 'view_team_scorecards', 'view_all_scorecards',
-    'approve_scorecards', 'reject_scorecards', 'reset_scorecards', 'delete_scorecards',
-    'view_cycles', 'manage_cycles',
-    'manage_templates', 'cascade_kpis', 'manage_weight_rules',
-    'view_groups', 'manage_groups',
-    'view_team_dashboard', 'view_org_dashboard',
-    'manage_roles', 'manage_custom_roles'
-  ])
-  FROM custom_roles WHERE name = 'SUPER_ADMIN'
-  ON CONFLICT DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
-
-DO $$ BEGIN
-  INSERT INTO role_permissions (role_id, permission)
-  SELECT id, unnest(ARRAY[
-    'view_own_scorecard', 'view_team_scorecards',
-    'approve_scorecards', 'reject_scorecards',
-    'cascade_kpis',
-    'view_team_dashboard'
-  ])
-  FROM custom_roles WHERE name = 'MANAGER'
-  ON CONFLICT DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
-
-DO $$ BEGIN
-  INSERT INTO role_permissions (role_id, permission)
-  SELECT id, unnest(ARRAY[
-    'view_own_scorecard', 'view_team_scorecards', 'view_all_scorecards',
-    'approve_scorecards', 'reject_scorecards',
-    'view_team_dashboard', 'view_org_dashboard'
-  ])
-  FROM custom_roles WHERE name = 'HOD'
-  ON CONFLICT DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
-
-DO $$ BEGIN
-  INSERT INTO role_permissions (role_id, permission)
-  SELECT id, unnest(ARRAY[
-    'view_own_scorecard'
-  ])
-  FROM custom_roles WHERE name = 'STAFF'
-  ON CONFLICT DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
-
-DO $$ BEGIN
-  INSERT INTO user_roles (user_id, role_id)
-  SELECT u.id, r.id
-  FROM users u
-  JOIN custom_roles r ON r.name = UPPER(u.role::text)
-  ON CONFLICT DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
-
-DO $$ BEGIN
-  -- Re-seed custom_roles if empty
-  INSERT INTO custom_roles (name, description, is_system) VALUES
-    ('SUPER_ADMIN', 'Full system access including role management', TRUE),
-    ('HR_ADMIN', 'Full HR operations access', TRUE),
-    ('MANAGER', 'Team management and scorecard approval', TRUE),
-    ('HOD', 'Department head access', TRUE),
-    ('STAFF', 'Standard employee access', TRUE)
-  ON CONFLICT (name) DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
-
-DO $$ BEGIN
-  -- Re-seed permissions for all system roles
-  DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM custom_roles WHERE is_system = TRUE);
-
-  INSERT INTO role_permissions (role_id, permission)
-  SELECT r.id, p.permission
-  FROM custom_roles r
-  CROSS JOIN (VALUES
-    ('HR_ADMIN', 'view_employees'),
-    ('HR_ADMIN', 'edit_employee_profiles'),
-    ('HR_ADMIN', 'manage_reporting_lines'),
-    ('HR_ADMIN', 'deactivate_employees'),
-    ('HR_ADMIN', 'create_employees'),
-    ('HR_ADMIN', 'view_own_scorecard'),
-    ('HR_ADMIN', 'view_team_scorecards'),
-    ('HR_ADMIN', 'view_all_scorecards'),
-    ('HR_ADMIN', 'approve_scorecards'),
-    ('HR_ADMIN', 'reject_scorecards'),
-    ('HR_ADMIN', 'reset_scorecards'),
-    ('HR_ADMIN', 'view_cycles'),
-    ('HR_ADMIN', 'manage_cycles'),
-    ('HR_ADMIN', 'manage_templates'),
-    ('HR_ADMIN', 'cascade_kpis'),
-    ('HR_ADMIN', 'manage_weight_rules'),
-    ('HR_ADMIN', 'view_groups'),
-    ('HR_ADMIN', 'manage_groups'),
-    ('HR_ADMIN', 'view_team_dashboard'),
-    ('HR_ADMIN', 'view_org_dashboard'),
-    ('HR_ADMIN', 'manage_roles'),
-    ('SUPER_ADMIN', 'view_employees'),
-    ('SUPER_ADMIN', 'edit_employee_profiles'),
-    ('SUPER_ADMIN', 'manage_reporting_lines'),
-    ('SUPER_ADMIN', 'deactivate_employees'),
-    ('SUPER_ADMIN', 'create_employees'),
-    ('SUPER_ADMIN', 'view_own_scorecard'),
-    ('SUPER_ADMIN', 'view_team_scorecards'),
-    ('SUPER_ADMIN', 'view_all_scorecards'),
-    ('SUPER_ADMIN', 'approve_scorecards'),
-    ('SUPER_ADMIN', 'reject_scorecards'),
-    ('SUPER_ADMIN', 'reset_scorecards'),
-    ('SUPER_ADMIN', 'delete_scorecards'),
-    ('SUPER_ADMIN', 'view_cycles'),
-    ('SUPER_ADMIN', 'manage_cycles'),
-    ('SUPER_ADMIN', 'manage_templates'),
-    ('SUPER_ADMIN', 'cascade_kpis'),
-    ('SUPER_ADMIN', 'manage_weight_rules'),
-    ('SUPER_ADMIN', 'view_groups'),
-    ('SUPER_ADMIN', 'manage_groups'),
-    ('SUPER_ADMIN', 'view_team_dashboard'),
-    ('SUPER_ADMIN', 'view_org_dashboard'),
-    ('SUPER_ADMIN', 'manage_roles'),
-    ('SUPER_ADMIN', 'manage_custom_roles'),
-    ('MANAGER', 'view_own_scorecard'),
-    ('MANAGER', 'view_team_scorecards'),
-    ('MANAGER', 'approve_scorecards'),
-    ('MANAGER', 'reject_scorecards'),
-    ('MANAGER', 'cascade_kpis'),
-    ('MANAGER', 'view_team_dashboard'),
-    ('HOD', 'view_own_scorecard'),
-    ('HOD', 'view_team_scorecards'),
-    ('HOD', 'view_all_scorecards'),
-    ('HOD', 'approve_scorecards'),
-    ('HOD', 'reject_scorecards'),
-    ('HOD', 'view_team_dashboard'),
-    ('HOD', 'view_org_dashboard'),
-    ('STAFF', 'view_own_scorecard')
-  ) AS p(role_name, permission)
-  WHERE r.name = p.role_name
-  ON CONFLICT DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
+-- NOTE: RBAC data seeding (system roles + permissions + user-role
+-- assignments) intentionally does NOT run in these migrations. The
+-- migrations only guarantee the RBAC *schema* (custom_roles /
+-- role_permissions / user_roles tables) exists. The actual data seed
+-- lives in RBAC_SEED and is applied by run_schema_and_seed() ONLY when
+-- the custom_roles table is empty, so an existing deployment with
+-- populated roles is never re-seeded.
 
 DO $$ BEGIN
   INSERT INTO users (
@@ -416,14 +258,6 @@ DO $$ BEGIN
     hashed_password = '$2b$12$b0L5ZNPU4hLN0K15lwjzWujAXwo0J6QbD9bZ3HVhsR54lkmkFTZZ2',
     role = 'SUPER_ADMIN',
     is_active = true;
-EXCEPTION WHEN others THEN NULL; END $$;
-
-DO $$ BEGIN
-  INSERT INTO user_roles (user_id, role_id)
-  SELECT u.id, r.id
-  FROM users u, custom_roles r
-  WHERE u.email = 'superadmin@pms.local' AND r.name = 'SUPER_ADMIN'
-  ON CONFLICT DO NOTHING;
 EXCEPTION WHEN others THEN NULL; END $$;
 
 DO $$ BEGIN
@@ -517,6 +351,105 @@ EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 """
 
 
+# Full RBAC seed: the 5 system roles, their permissions, and the user->role
+# assignments for every existing user. This is applied by run_schema_and_seed()
+# ONLY when the custom_roles table is empty (a fresh / un-seeded database), so
+# an existing deployment that already has roles is never touched. Every
+# statement is idempotent (ON CONFLICT DO NOTHING) as a belt-and-suspenders
+# guard even inside the empty-table gate.
+RBAC_SEED = """
+-- 1. System roles (SUPER_ADMIN, HR_ADMIN, MANAGER, HOD, STAFF)
+DO $$ BEGIN
+  INSERT INTO custom_roles (name, description, is_system) VALUES
+    ('SUPER_ADMIN', 'Full system access including role management', TRUE),
+    ('HR_ADMIN', 'Full HR operations access', TRUE),
+    ('MANAGER', 'Team management and scorecard approval', TRUE),
+    ('HOD', 'Department head access', TRUE),
+    ('STAFF', 'Standard employee access', TRUE)
+  ON CONFLICT (name) DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+-- 2. Permissions for every system role
+DO $$ BEGIN
+  INSERT INTO role_permissions (role_id, permission)
+  SELECT r.id, p.permission
+  FROM custom_roles r
+  CROSS JOIN (VALUES
+    ('HR_ADMIN', 'view_employees'),
+    ('HR_ADMIN', 'edit_employee_profiles'),
+    ('HR_ADMIN', 'manage_reporting_lines'),
+    ('HR_ADMIN', 'deactivate_employees'),
+    ('HR_ADMIN', 'create_employees'),
+    ('HR_ADMIN', 'view_own_scorecard'),
+    ('HR_ADMIN', 'view_team_scorecards'),
+    ('HR_ADMIN', 'view_all_scorecards'),
+    ('HR_ADMIN', 'approve_scorecards'),
+    ('HR_ADMIN', 'reject_scorecards'),
+    ('HR_ADMIN', 'reset_scorecards'),
+    ('HR_ADMIN', 'view_cycles'),
+    ('HR_ADMIN', 'manage_cycles'),
+    ('HR_ADMIN', 'manage_templates'),
+    ('HR_ADMIN', 'cascade_kpis'),
+    ('HR_ADMIN', 'manage_weight_rules'),
+    ('HR_ADMIN', 'view_groups'),
+    ('HR_ADMIN', 'manage_groups'),
+    ('HR_ADMIN', 'view_team_dashboard'),
+    ('HR_ADMIN', 'view_org_dashboard'),
+    ('HR_ADMIN', 'manage_roles'),
+    ('SUPER_ADMIN', 'view_employees'),
+    ('SUPER_ADMIN', 'edit_employee_profiles'),
+    ('SUPER_ADMIN', 'manage_reporting_lines'),
+    ('SUPER_ADMIN', 'deactivate_employees'),
+    ('SUPER_ADMIN', 'create_employees'),
+    ('SUPER_ADMIN', 'view_own_scorecard'),
+    ('SUPER_ADMIN', 'view_team_scorecards'),
+    ('SUPER_ADMIN', 'view_all_scorecards'),
+    ('SUPER_ADMIN', 'approve_scorecards'),
+    ('SUPER_ADMIN', 'reject_scorecards'),
+    ('SUPER_ADMIN', 'reset_scorecards'),
+    ('SUPER_ADMIN', 'delete_scorecards'),
+    ('SUPER_ADMIN', 'view_cycles'),
+    ('SUPER_ADMIN', 'manage_cycles'),
+    ('SUPER_ADMIN', 'manage_templates'),
+    ('SUPER_ADMIN', 'cascade_kpis'),
+    ('SUPER_ADMIN', 'manage_weight_rules'),
+    ('SUPER_ADMIN', 'view_groups'),
+    ('SUPER_ADMIN', 'manage_groups'),
+    ('SUPER_ADMIN', 'view_team_dashboard'),
+    ('SUPER_ADMIN', 'view_org_dashboard'),
+    ('SUPER_ADMIN', 'manage_roles'),
+    ('SUPER_ADMIN', 'manage_custom_roles'),
+    ('MANAGER', 'view_own_scorecard'),
+    ('MANAGER', 'view_team_scorecards'),
+    ('MANAGER', 'approve_scorecards'),
+    ('MANAGER', 'reject_scorecards'),
+    ('MANAGER', 'cascade_kpis'),
+    ('MANAGER', 'view_team_dashboard'),
+    ('HOD', 'view_own_scorecard'),
+    ('HOD', 'view_team_scorecards'),
+    ('HOD', 'view_all_scorecards'),
+    ('HOD', 'approve_scorecards'),
+    ('HOD', 'reject_scorecards'),
+    ('HOD', 'view_team_dashboard'),
+    ('HOD', 'view_org_dashboard'),
+    ('STAFF', 'view_own_scorecard')
+  ) AS p(role_name, permission)
+  WHERE r.name = p.role_name
+  ON CONFLICT DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+-- 3. Assign each existing user to their matching system role
+DO $$ BEGIN
+  INSERT INTO user_roles (user_id, role_id)
+  SELECT u.id, r.id
+  FROM users u
+  JOIN custom_roles r ON r.name = u.role::text
+  WHERE u.role::text IN ('SUPER_ADMIN', 'HR_ADMIN', 'MANAGER', 'HOD', 'STAFF')
+  ON CONFLICT DO NOTHING;
+EXCEPTION WHEN others THEN NULL; END $$;
+"""
+
+
 async def run_schema_and_seed():
     import asyncpg
     from sqlalchemy import text
@@ -557,56 +490,53 @@ async def run_schema_and_seed():
         await conn.execute(MIGRATIONS)
         print("==> Schema migrations complete.")
 
-        # Explicit RBAC seeding with visible errors
+        # RBAC seeding — gated on the custom_roles table being EMPTY.
+        #   * custom_roles has 0 rows  -> run the full RBAC seed (create the 5
+        #     system roles + their permissions + assign roles to every user).
+        #   * custom_roles has rows     -> skip; an already-seeded deployment is
+        #     never re-seeded or mutated.
         try:
-            # Count check
             cr_count = await conn.fetchval("SELECT COUNT(*) FROM custom_roles")
             print(f"==> RBAC: custom_roles count = {cr_count}")
-            rp_count = await conn.fetchval("SELECT COUNT(*) FROM role_permissions")
-            print(f"==> RBAC: role_permissions count = {rp_count}")
-            ur_count = await conn.fetchval("SELECT COUNT(*) FROM user_roles")
-            print(f"==> RBAC: user_roles count = {ur_count}")
 
-            # Force user_roles population
-            inserted = await conn.fetchval("""
-                WITH deleted AS (
-                    DELETE FROM user_roles ur
-                    USING custom_roles cr
-                    WHERE ur.role_id = cr.id AND cr.is_system = TRUE
-                    RETURNING ur.id
-                )
-                SELECT COUNT(*) FROM deleted
-            """)
-            print(f"==> RBAC: deleted {inserted} old user_roles")
+            if cr_count == 0:
+                print("==> RBAC: custom_roles is empty — running full RBAC seed...")
+                await conn.execute(RBAC_SEED)
 
-            inserted = await conn.fetchval("""
-                WITH ins AS (
-                    INSERT INTO user_roles (user_id, role_id)
-                    SELECT u.id, r.id
+                # Verify the seed populated all three RBAC tables
+                cr_after = await conn.fetchval("SELECT COUNT(*) FROM custom_roles")
+                rp_after = await conn.fetchval("SELECT COUNT(*) FROM role_permissions")
+                ur_after = await conn.fetchval("SELECT COUNT(*) FROM user_roles")
+                print(f"==> RBAC: seeded custom_roles={cr_after} "
+                      f"role_permissions={rp_after} user_roles={ur_after}")
+
+                # Confirm all 5 system roles exist with their permission counts
+                roles = await conn.fetch("""
+                    SELECT r.name, COUNT(rp.id) AS perm_count
+                    FROM custom_roles r
+                    LEFT JOIN role_permissions rp ON rp.role_id = r.id
+                    WHERE r.is_system = TRUE
+                    GROUP BY r.name
+                    ORDER BY r.name
+                """)
+                for row in roles:
+                    print(f"==> RBAC role seeded: {row['name']} "
+                          f"({row['perm_count']} permissions)")
+
+                # Sample user->role assignments
+                sample = await conn.fetch("""
+                    SELECT u.email, u.role, r.name as role_name
                     FROM users u
-                    JOIN custom_roles r ON r.name = u.role::text
-                    WHERE u.role::text IN ('HR_ADMIN', 'SUPER_ADMIN', 'MANAGER', 'HOD', 'STAFF')
-                    ON CONFLICT DO NOTHING
-                    RETURNING id
-                )
-                SELECT COUNT(*) FROM ins
-            """)
-            print(f"==> RBAC: inserted {inserted} user_roles")
-
-            # Verify
-            ur_count_after = await conn.fetchval("SELECT COUNT(*) FROM user_roles")
-            print(f"==> RBAC: user_roles count after = {ur_count_after}")
-
-            # Sample check
-            sample = await conn.fetch("""
-                SELECT u.email, u.role, r.name as role_name
-                FROM users u
-                JOIN user_roles ur ON ur.user_id = u.id
-                JOIN custom_roles r ON r.id = ur.role_id
-                LIMIT 5
-            """)
-            for row in sample:
-                print(f"==> RBAC sample: {row['email']} role={row['role']} custom_role={row['role_name']}")
+                    JOIN user_roles ur ON ur.user_id = u.id
+                    JOIN custom_roles r ON r.id = ur.role_id
+                    LIMIT 5
+                """)
+                for row in sample:
+                    print(f"==> RBAC sample: {row['email']} role={row['role']} "
+                          f"custom_role={row['role_name']}")
+            else:
+                print(f"==> RBAC: custom_roles already has {cr_count} rows — "
+                      f"skipping RBAC seed.")
 
         except Exception as rbac_e:
             import traceback
