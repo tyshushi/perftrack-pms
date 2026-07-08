@@ -51,23 +51,23 @@ MIGRATIONS = """
     DO $$ BEGIN ALTER TABLE users ADD COLUMN approval_levels INT DEFAULT 3;
     EXCEPTION WHEN duplicate_column THEN NULL; END $$;
     DO $$ BEGIN ALTER TABLE performance_cycles ALTER COLUMN status TYPE VARCHAR(20) USING status::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
+    EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
     DO $$ BEGIN ALTER TABLE kpis ALTER COLUMN status TYPE VARCHAR(20) USING status::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
+    EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
     DO $$ BEGIN ALTER TABLE kpis ALTER COLUMN kpi_type TYPE VARCHAR(20) USING kpi_type::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
+    EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
     DO $$ BEGIN ALTER TABLE kpi_templates ALTER COLUMN kpi_type TYPE VARCHAR(20) USING kpi_type::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
+    EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
     DO $$ BEGIN ALTER TABLE kpi_audit_log ALTER COLUMN from_status TYPE VARCHAR(20) USING from_status::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
+    EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
     DO $$ BEGIN ALTER TABLE kpi_audit_log ALTER COLUMN to_status TYPE VARCHAR(20) USING to_status::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
+    EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
     DO $$ BEGIN ALTER TABLE scorecards ALTER COLUMN eval_status TYPE VARCHAR(20) USING eval_status::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
+    EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
     DO $$ BEGIN ALTER TABLE scorecards ALTER COLUMN increment_status TYPE VARCHAR(20) USING increment_status::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
+    EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
     DO $$ BEGIN ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(20) USING role::text;
-    EXCEPTION WHEN others THEN NULL; END $$;
+    EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
     DO $$ BEGIN ALTER TABLE kpis ADD COLUMN cascaded_by UUID REFERENCES users(id);
     EXCEPTION WHEN duplicate_column THEN NULL; END $$;
     DO $$ BEGIN ALTER TABLE users ADD COLUMN hierarchy VARCHAR(50);
@@ -76,7 +76,7 @@ MIGRATIONS = """
     EXCEPTION WHEN duplicate_column THEN NULL; END $$;
     DO $$ BEGIN
     UPDATE kpis SET kpi_dimension = category WHERE kpi_dimension IS NULL;
-    EXCEPTION WHEN others THEN NULL; END $$;
+    EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
     DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN fin_min INT DEFAULT 0;
     EXCEPTION WHEN duplicate_column THEN NULL; END $$;
     DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN fin_max INT DEFAULT 100;
@@ -104,7 +104,7 @@ MIGRATIONS = """
     DO $$ BEGIN ALTER TABLE weight_rules ADD COLUMN created_by UUID REFERENCES users(id);
     EXCEPTION WHEN duplicate_column THEN NULL; END $$;
     DO $$ BEGIN UPDATE users SET email = lower(email) WHERE email <> lower(email);
-    EXCEPTION WHEN others THEN NULL; END $$;
+    EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
 
     DO $$ BEGIN
     CREATE TABLE IF NOT EXISTS groups (
@@ -162,7 +162,7 @@ EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 
 DO $$ BEGIN
   DELETE FROM kpi_audit_log WHERE kpi_id IS NULL;
-EXCEPTION WHEN others THEN NULL; END $$;
+EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
 
 DO $$ BEGIN ALTER TABLE performance_cycles ADD COLUMN rating_type VARCHAR(20) DEFAULT 'NUMERIC';
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
@@ -220,26 +220,27 @@ EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 DO $$ BEGIN
   ALTER TABLE performance_cycles ALTER COLUMN approval_chain TYPE TEXT USING approval_chain::text;
   ALTER TABLE performance_cycles ALTER COLUMN approval_chain SET DEFAULT '["DM"]';
-EXCEPTION WHEN others THEN NULL; END $$;
+EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
 
 DO $$ BEGIN
   UPDATE performance_cycles SET approval_chain = '["DM"]' WHERE approval_chain IS NULL OR approval_chain = 'DM_ONLY';
-EXCEPTION WHEN others THEN NULL; END $$;
+EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
 
 DO $$ BEGIN ALTER TABLE users ADD COLUMN base_role VARCHAR(50) DEFAULT 'STAFF';
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 
 DO $$ BEGIN
   UPDATE users SET role = 'MANAGER' WHERE role = 'MGR2';
-EXCEPTION WHEN others THEN NULL; END $$;
+EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
 
 -- NOTE: RBAC data seeding (system roles + permissions + user-role
 -- assignments) intentionally does NOT run in these migrations. The
 -- migrations only guarantee the RBAC *schema* (custom_roles /
 -- role_permissions / user_roles tables) exists. The actual data seed
--- lives in RBAC_SEED and is applied by run_schema_and_seed() ONLY when
--- the custom_roles table is empty, so an existing deployment with
--- populated roles is never re-seeded.
+-- lives in RBAC_SEED_ROLES / RBAC_SEED_ASSIGNMENTS and is applied by
+-- run_schema_and_seed(); the roles+permissions seed runs ONLY when the
+-- custom_roles table is empty, so an existing deployment with populated
+-- roles is never re-seeded.
 
 DO $$ BEGIN
   INSERT INTO users (
@@ -258,7 +259,7 @@ DO $$ BEGIN
     hashed_password = '$2b$12$b0L5ZNPU4hLN0K15lwjzWujAXwo0J6QbD9bZ3HVhsR54lkmkFTZZ2',
     role = 'SUPER_ADMIN',
     is_active = true;
-EXCEPTION WHEN others THEN NULL; END $$;
+EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
 
 DO $$ BEGIN
   CREATE TABLE IF NOT EXISTS system_settings (
@@ -272,7 +273,7 @@ EXCEPTION WHEN duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
   INSERT INTO system_settings (key, value) VALUES ('manager_cascade_enabled', 'true')
   ON CONFLICT DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
+EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
 
 DO $$ BEGIN ALTER TABLE kpis ADD COLUMN is_late BOOLEAN DEFAULT FALSE;
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
@@ -302,27 +303,27 @@ EXCEPTION WHEN duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
   CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status);
   CREATE INDEX IF NOT EXISTS idx_email_logs_idempotency ON email_logs(idempotency_key);
-EXCEPTION WHEN others THEN NULL; END $$;
+EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
 
 DO $$ BEGIN
   INSERT INTO system_settings (key, value) VALUES
     ('email_notifications_enabled', 'true'),
     ('email_test_mode', 'true')
   ON CONFLICT (key) DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
+EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
 
 DO $$ BEGIN
   INSERT INTO system_settings (key, value) VALUES
     ('max_kpis_per_scorecard', '10'),
     ('min_kpis_per_scorecard', '3')
   ON CONFLICT (key) DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
+EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
 
 DO $$ BEGIN
   INSERT INTO system_settings (key, value) VALUES
     ('global_min_weight_per_kpi', '5')
   ON CONFLICT (key) DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
+EXCEPTION WHEN others THEN RAISE NOTICE 'Migration error: %', SQLERRM; END $$;
 
 DO $$ BEGIN
   ALTER TABLE performance_cycles ADD COLUMN reminder_frequency VARCHAR(20) DEFAULT 'NONE';
@@ -351,13 +352,13 @@ EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 """
 
 
-# Full RBAC seed: the 5 system roles, their permissions, and the user->role
-# assignments for every existing user. This is applied by run_schema_and_seed()
-# ONLY when the custom_roles table is empty (a fresh / un-seeded database), so
-# an existing deployment that already has roles is never touched. Every
-# statement is idempotent (ON CONFLICT DO NOTHING) as a belt-and-suspenders
+# RBAC role + permission seed: the 5 system roles and their permissions. This is
+# applied by run_schema_and_seed() ONLY when the custom_roles table is empty (a
+# fresh / un-seeded database), so an existing deployment that already has roles
+# is never touched. It must run BEFORE seed.sql (it does not reference users).
+# Every statement is idempotent (ON CONFLICT DO NOTHING) as a belt-and-suspenders
 # guard even inside the empty-table gate.
-RBAC_SEED = """
+RBAC_SEED_ROLES = """
 -- 1. System roles (SUPER_ADMIN, HR_ADMIN, MANAGER, HOD, STAFF)
 DO $$ BEGIN
   INSERT INTO custom_roles (name, description, is_system) VALUES
@@ -367,7 +368,7 @@ DO $$ BEGIN
     ('HOD', 'Department head access', TRUE),
     ('STAFF', 'Standard employee access', TRUE)
   ON CONFLICT (name) DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
+EXCEPTION WHEN others THEN RAISE NOTICE 'RBAC seed error: %', SQLERRM; END $$;
 
 -- 2. Permissions for every system role
 DO $$ BEGIN
@@ -436,8 +437,16 @@ DO $$ BEGIN
   ) AS p(role_name, permission)
   WHERE r.name = p.role_name
   ON CONFLICT DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
+EXCEPTION WHEN others THEN RAISE NOTICE 'RBAC seed error: %', SQLERRM; END $$;
+"""
 
+
+# RBAC user->role assignments live in a SEPARATE seed constant because they
+# depend on the users table being populated. run_schema_and_seed() applies this
+# AFTER seed.sql has created the users; every statement is idempotent (ON
+# CONFLICT DO NOTHING), so it is safe to run on every startup and will backfill
+# assignments for any users added later.
+RBAC_SEED_ASSIGNMENTS = """
 -- 3. Assign each existing user to their matching system role
 DO $$ BEGIN
   INSERT INTO user_roles (user_id, role_id)
@@ -446,7 +455,7 @@ DO $$ BEGIN
   JOIN custom_roles r ON r.name = u.role::text
   WHERE u.role::text IN ('SUPER_ADMIN', 'HR_ADMIN', 'MANAGER', 'HOD', 'STAFF')
   ON CONFLICT DO NOTHING;
-EXCEPTION WHEN others THEN NULL; END $$;
+EXCEPTION WHEN others THEN RAISE NOTICE 'RBAC seed error: %', SQLERRM; END $$;
 """
 
 
@@ -490,9 +499,11 @@ async def run_schema_and_seed():
         await conn.execute(MIGRATIONS)
         print("==> Schema migrations complete.")
 
-        # RBAC seeding — gated on the custom_roles table being EMPTY.
-        #   * custom_roles has 0 rows  -> run the full RBAC seed (create the 5
-        #     system roles + their permissions + assign roles to every user).
+        # RBAC roles + permissions seed — gated on the custom_roles table being
+        # EMPTY. This runs BEFORE seed.sql (it does not reference the users
+        # table); the user->role assignment step runs AFTER seed.sql below, once
+        # the users it needs actually exist.
+        #   * custom_roles has 0 rows  -> seed the 5 system roles + permissions.
         #   * custom_roles has rows     -> skip; an already-seeded deployment is
         #     never re-seeded or mutated.
         try:
@@ -500,15 +511,14 @@ async def run_schema_and_seed():
             print(f"==> RBAC: custom_roles count = {cr_count}")
 
             if cr_count == 0:
-                print("==> RBAC: custom_roles is empty — running full RBAC seed...")
-                await conn.execute(RBAC_SEED)
+                print("==> RBAC: custom_roles is empty — seeding roles + permissions...")
+                await conn.execute(RBAC_SEED_ROLES)
 
-                # Verify the seed populated all three RBAC tables
+                # Verify the seed populated the two role tables
                 cr_after = await conn.fetchval("SELECT COUNT(*) FROM custom_roles")
                 rp_after = await conn.fetchval("SELECT COUNT(*) FROM role_permissions")
-                ur_after = await conn.fetchval("SELECT COUNT(*) FROM user_roles")
                 print(f"==> RBAC: seeded custom_roles={cr_after} "
-                      f"role_permissions={rp_after} user_roles={ur_after}")
+                      f"role_permissions={rp_after}")
 
                 # Confirm all 5 system roles exist with their permission counts
                 roles = await conn.fetch("""
@@ -522,37 +532,52 @@ async def run_schema_and_seed():
                 for row in roles:
                     print(f"==> RBAC role seeded: {row['name']} "
                           f"({row['perm_count']} permissions)")
-
-                # Sample user->role assignments
-                sample = await conn.fetch("""
-                    SELECT u.email, u.role, r.name as role_name
-                    FROM users u
-                    JOIN user_roles ur ON ur.user_id = u.id
-                    JOIN custom_roles r ON r.id = ur.role_id
-                    LIMIT 5
-                """)
-                for row in sample:
-                    print(f"==> RBAC sample: {row['email']} role={row['role']} "
-                          f"custom_role={row['role_name']}")
             else:
                 print(f"==> RBAC: custom_roles already has {cr_count} rows — "
-                      f"skipping RBAC seed.")
+                      f"skipping role/permission seed.")
 
         except Exception as rbac_e:
             import traceback
-            print(f"==> RBAC seeding ERROR: {rbac_e}")
+            print(f"==> RBAC role/permission seeding ERROR: {rbac_e}")
             traceback.print_exc()
 
         # Base tables already exist (created via Base.metadata.create_all above),
         # so seed only when the database is empty of data rather than of tables.
+        # seed.sql creates the users that the RBAC assignment step below needs, so
+        # it must run BEFORE RBAC_SEED_ASSIGNMENTS.
         result = await conn.fetchval("SELECT COUNT(*) FROM users")
         if result == 0:
             print("==> Running seed.sql...")
             await conn.execute(open("seed.sql").read())
-            print(f"==> Loaded seed.sql with {result} rows")
+            print("==> Loaded seed.sql.")
             print("==> Database ready!")
         else:
             print(f"==> Database already has {result} users, skipping seed.")
+
+        # RBAC user->role assignments — runs AFTER seed.sql so the users table is
+        # populated. Idempotent (ON CONFLICT DO NOTHING), so it is safe to run on
+        # every startup and will backfill assignments for any users added later.
+        try:
+            print("==> RBAC: assigning users to their system roles...")
+            await conn.execute(RBAC_SEED_ASSIGNMENTS)
+            ur_after = await conn.fetchval("SELECT COUNT(*) FROM user_roles")
+            print(f"==> RBAC: user_roles={ur_after}")
+
+            # Sample user->role assignments
+            sample = await conn.fetch("""
+                SELECT u.email, u.role, r.name as role_name
+                FROM users u
+                JOIN user_roles ur ON ur.user_id = u.id
+                JOIN custom_roles r ON r.id = ur.role_id
+                LIMIT 5
+            """)
+            for row in sample:
+                print(f"==> RBAC sample: {row['email']} role={row['role']} "
+                      f"custom_role={row['role_name']}")
+        except Exception as ur_e:
+            import traceback
+            print(f"==> RBAC user assignment ERROR: {ur_e}")
+            traceback.print_exc()
     except Exception as e:
         import traceback
         print(f"==> DB init ERROR: {e}")
