@@ -613,17 +613,16 @@ async def run_schema_and_seed():
             print(f"==> RBAC seeding ERROR: {rbac_e}")
             traceback.print_exc()
 
-        exists = await conn.fetchval(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='users')"
-        )
-        if not exists:
-            print("==> Running schema.sql...")
-            await conn.execute(open("schema.sql").read())
+        # Base tables already exist (created via Base.metadata.create_all above),
+        # so seed only when the database is empty of data rather than of tables.
+        result = await conn.fetchval("SELECT COUNT(*) FROM users")
+        if result == 0:
             print("==> Running seed.sql...")
             await conn.execute(open("seed.sql").read())
+            print(f"==> Loaded seed.sql with {result} rows")
             print("==> Database ready!")
         else:
-            print("==> Database already initialised, skipping seed.")
+            print(f"==> Database already has {result} users, skipping seed.")
     except Exception as e:
         import traceback
         print(f"==> DB init ERROR: {e}")
