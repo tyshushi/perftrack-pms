@@ -515,33 +515,11 @@ async def run_schema_and_seed():
             cr_count = await conn.fetchval("SELECT COUNT(*) FROM custom_roles")
             print(f"==> RBAC: custom_roles count = {cr_count}")
 
-            # Diagnostic — check what's in custom_roles table
-            before = await conn.fetchval("SELECT COUNT(*) FROM custom_roles")
-            print(f"==> DIAG: Before RBAC_SEED_ROLES — custom_roles count = {before}")
-
-            # Run the seed
-            try:
+            if cr_count == 0:
                 await conn.execute(RBAC_SEED_ROLES)
-                print("==> DIAG: RBAC_SEED_ROLES executed without exception")
-            except Exception as e:
-                print(f"==> DIAG: RBAC_SEED_ROLES raised: {type(e).__name__}: {e}")
-                import traceback
-                traceback.print_exc()
-
-            # Check what got inserted
-            after_roles = await conn.fetchval("SELECT COUNT(*) FROM custom_roles")
-            after_perms = await conn.fetchval("SELECT COUNT(*) FROM role_permissions")
-            print(f"==> DIAG: After RBAC_SEED_ROLES — custom_roles={after_roles}, role_permissions={after_perms}")
-
-            # Try a raw insert to test if the table is writable
-            try:
-                await conn.execute("INSERT INTO custom_roles (name, description, is_system) VALUES ('TEST_ROLE', 'test', TRUE) ON CONFLICT (name) DO NOTHING")
-                test_count = await conn.fetchval("SELECT COUNT(*) FROM custom_roles WHERE name = 'TEST_ROLE'")
-                print(f"==> DIAG: Manual test insert result — TEST_ROLE exists: {test_count > 0}")
-                # Clean up
-                await conn.execute("DELETE FROM custom_roles WHERE name = 'TEST_ROLE'")
-            except Exception as e:
-                print(f"==> DIAG: Manual insert failed: {type(e).__name__}: {e}")
+                print("==> RBAC: seeded system roles + permissions.")
+            else:
+                print("==> RBAC: custom_roles already seeded, skipping role seed.")
 
         except Exception as rbac_e:
             import traceback
