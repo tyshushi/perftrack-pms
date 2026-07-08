@@ -412,7 +412,7 @@ DO $$ BEGIN
     true,
     'SA1'
   )
-  ON CONFLICT (id) DO UPDATE SET
+  ON CONFLICT (email) DO UPDATE SET
     hashed_password = '$2b$12$b0L5ZNPU4hLN0K15lwjzWujAXwo0J6QbD9bZ3HVhsR54lkmkFTZZ2',
     role = 'SUPER_ADMIN',
     is_active = true;
@@ -420,8 +420,9 @@ EXCEPTION WHEN others THEN NULL; END $$;
 
 DO $$ BEGIN
   INSERT INTO user_roles (user_id, role_id)
-  SELECT '11111111-1111-1111-1111-111111111111', id
-  FROM custom_roles WHERE name = 'SUPER_ADMIN'
+  SELECT u.id, r.id
+  FROM users u, custom_roles r
+  WHERE u.email = 'superadmin@pms.local' AND r.name = 'SUPER_ADMIN'
   ON CONFLICT DO NOTHING;
 EXCEPTION WHEN others THEN NULL; END $$;
 
