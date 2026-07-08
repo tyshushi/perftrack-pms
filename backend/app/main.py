@@ -22,6 +22,11 @@ from app.api.routes.reports import router as reports_router
 from app.api.routes.email_logs import router as email_logs_router
 
 MIGRATIONS = """
+    DO $$ BEGIN
+      CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    EXCEPTION WHEN others THEN
+      RAISE NOTICE 'Extension error: %', SQLERRM;
+    END $$;
     DO $$ BEGIN ALTER TABLE users ADD COLUMN employment_unit VARCHAR(100);
     EXCEPTION WHEN duplicate_column THEN NULL; END $$;
     DO $$ BEGIN ALTER TABLE users ADD COLUMN division VARCHAR(100);
@@ -361,19 +366,19 @@ EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 RBAC_SEED_ROLES = """
 -- 1. System roles (SUPER_ADMIN, HR_ADMIN, MANAGER, HOD, STAFF)
 DO $$ BEGIN
-  INSERT INTO custom_roles (name, description, is_system) VALUES
-    ('SUPER_ADMIN', 'Full system access including role management', TRUE),
-    ('HR_ADMIN', 'Full HR operations access', TRUE),
-    ('MANAGER', 'Team management and scorecard approval', TRUE),
-    ('HOD', 'Department head access', TRUE),
-    ('STAFF', 'Standard employee access', TRUE)
+  INSERT INTO custom_roles (id, name, description, is_system) VALUES
+    (uuid_generate_v4(), 'SUPER_ADMIN', 'Full system access including role management', TRUE),
+    (uuid_generate_v4(), 'HR_ADMIN', 'Full HR operations access', TRUE),
+    (uuid_generate_v4(), 'MANAGER', 'Team management and scorecard approval', TRUE),
+    (uuid_generate_v4(), 'HOD', 'Department head access', TRUE),
+    (uuid_generate_v4(), 'STAFF', 'Standard employee access', TRUE)
   ON CONFLICT (name) DO NOTHING;
 EXCEPTION WHEN others THEN RAISE NOTICE 'RBAC seed error: %', SQLERRM; END $$;
 
 -- 2. Permissions for every system role
 DO $$ BEGIN
-  INSERT INTO role_permissions (role_id, permission)
-  SELECT r.id, p.permission
+  INSERT INTO role_permissions (id, role_id, permission)
+  SELECT uuid_generate_v4(), r.id, p.permission
   FROM custom_roles r
   CROSS JOIN (VALUES
     ('HR_ADMIN', 'view_employees'),
@@ -449,8 +454,8 @@ EXCEPTION WHEN others THEN RAISE NOTICE 'RBAC seed error: %', SQLERRM; END $$;
 RBAC_SEED_ASSIGNMENTS = """
 -- 3. Assign each existing user to their matching system role
 DO $$ BEGIN
-  INSERT INTO user_roles (user_id, role_id)
-  SELECT u.id, r.id
+  INSERT INTO user_roles (id, user_id, role_id)
+  SELECT uuid_generate_v4(), u.id, r.id
   FROM users u
   JOIN custom_roles r ON r.name = u.role::text
   WHERE u.role::text IN ('SUPER_ADMIN', 'HR_ADMIN', 'MANAGER', 'HOD', 'STAFF')
