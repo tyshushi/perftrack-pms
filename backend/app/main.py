@@ -519,13 +519,41 @@ EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 
 async def run_schema_and_seed():
     import asyncpg
+    from sqlalchemy import text
+    from app.db.session import engine, Base
+    import app.models.user  # noqa: F401 — register every ORM model on Base.metadata
+
     raw_url = os.environ.get("DATABASE_URL", "")
     url = raw_url.replace("postgresql+asyncpg://", "postgresql://").replace("postgres://", "postgresql://")
     if not url:
         return
+
+    # 1. Create all base tables from the SQLAlchemy models FIRST, so the
+    #    ALTER TABLE / CREATE TABLE statements in MIGRATIONS have their target
+    #    tables (and required extensions/types) already in place.
+    try:
+        async with engine.begin() as conn:
+            # Prerequisites the ORM models and raw migrations depend on
+            await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
+            await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "pgcrypto"'))
+            await conn.execute(text(
+                "DO $$ BEGIN "
+                "CREATE TYPE user_role AS ENUM "
+                "('STAFF','MANAGER','MGR2','HOD','HR_ADMIN','SUPER_ADMIN'); "
+                "EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
+            ))
+            # Create all base tables defined on the ORM models
+            await conn.run_sync(Base.metadata.create_all)
+        print("==> Base tables created (Base.metadata.create_all).")
+    except Exception as base_e:
+        import traceback
+        print(f"==> Base table creation ERROR: {base_e}")
+        traceback.print_exc()
+
     conn = None
     try:
         conn = await asyncpg.connect(url)
+        # 2. Run migrations (adds columns / auxiliary tables to the base tables)
         await conn.execute(MIGRATIONS)
         print("==> Schema migrations complete.")
 
@@ -585,17 +613,16 @@ async def run_schema_and_seed():
             print(f"==> RBAC seeding ERROR: {rbac_e}")
             traceback.print_exc()
 
-        exists = await conn.fetchval(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='users')"
-        )
-        if not exists:
-            print("==> Running schema.sql...")
-            await conn.execute(open("schema.sql").read())
+        # Base tables already exist (created via Base.metadata.create_all above),
+        # so seed only when the database is empty of data rather than of tables.
+        result = await conn.fetchval("SELECT COUNT(*) FROM users")
+        if result == 0:
             print("==> Running seed.sql...")
             await conn.execute(open("seed.sql").read())
+            print(f"==> Loaded seed.sql with {result} rows")
             print("==> Database ready!")
         else:
-            print("==> Database already initialised, skipping seed.")
+            print(f"==> Database already has {result} users, skipping seed.")
     except Exception as e:
         import traceback
         print(f"==> DB init ERROR: {e}")
