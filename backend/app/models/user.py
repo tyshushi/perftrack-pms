@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import (
     Column, String, Boolean, Integer, Numeric, Text, JSON,
-    ForeignKey, DateTime, Date, UniqueConstraint, CheckConstraint
+    ForeignKey, DateTime, Date, UniqueConstraint, CheckConstraint, text
 )
 from sqlalchemy.dialects.postgresql import UUID, ENUM as PgEnum
 from sqlalchemy.orm import relationship
@@ -19,7 +19,7 @@ user_role_enum = PgEnum(
 
 class Department(Base):
     __tablename__ = "departments"
-    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     code       = Column(String(20), unique=True, nullable=False)
     name       = Column(String(100), nullable=False)
     parent_id  = Column(UUID(as_uuid=True), ForeignKey("departments.id"), nullable=True)
@@ -31,7 +31,7 @@ class Department(Base):
 
 class User(Base):
     __tablename__ = "users"
-    id                   = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id                   = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     employee_id          = Column(String(50), unique=True, nullable=False)
     email                = Column(String(255), unique=True, nullable=False)
     full_name            = Column(String(150), nullable=False)
@@ -80,7 +80,7 @@ class User(Base):
 
 class PerformanceCycle(Base):
     __tablename__ = "performance_cycles"
-    id                  = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id                  = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     name                = Column(String(100), nullable=False)
     year                = Column(Integer, nullable=False)
     status              = Column(String(20), default="DRAFT", nullable=False)
@@ -116,7 +116,7 @@ class PerformanceCycle(Base):
 
 class WeightRule(Base):
     __tablename__ = "weight_rules"
-    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     cycle_id        = Column(UUID(as_uuid=True), ForeignKey("performance_cycles.id", ondelete="CASCADE"), nullable=False)
 
     # Target — only one should be set, rest null = "Everyone"
@@ -153,7 +153,7 @@ class WeightRule(Base):
 
 class KpiTemplate(Base):
     __tablename__ = "kpi_templates"
-    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     cycle_id        = Column(UUID(as_uuid=True), ForeignKey("performance_cycles.id", ondelete="CASCADE"), nullable=False)
     name            = Column(String(200), nullable=False)
     description     = Column(Text)
@@ -176,7 +176,7 @@ class KpiTemplate(Base):
 
 class Kpi(Base):
     __tablename__ = "kpis"
-    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     cycle_id        = Column(UUID(as_uuid=True), ForeignKey("performance_cycles.id"), nullable=False)
     user_id         = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     template_id     = Column(UUID(as_uuid=True), ForeignKey("kpi_templates.id"))
@@ -217,7 +217,7 @@ class Kpi(Base):
 
 class KpiAuditLog(Base):
     __tablename__ = "kpi_audit_log"
-    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     kpi_id      = Column(UUID(as_uuid=True), ForeignKey("kpis.id"), nullable=False)
     actor_id    = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     from_status = Column(String(20))
@@ -230,7 +230,7 @@ class KpiAuditLog(Base):
 
 class RatingScale(Base):
     __tablename__ = "rating_scales"
-    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     cycle_id    = Column(UUID(as_uuid=True), ForeignKey("performance_cycles.id", ondelete="CASCADE"), nullable=False)
     score       = Column(Numeric(3, 1), nullable=False)
     label       = Column(String(50), nullable=False)
@@ -242,7 +242,7 @@ class RatingScale(Base):
 
 class Scorecard(Base):
     __tablename__ = "scorecards"
-    id                      = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id                      = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     cycle_id                = Column(UUID(as_uuid=True), ForeignKey("performance_cycles.id"), nullable=False)
     user_id                 = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     self_total              = Column(Numeric(4, 2))
@@ -267,7 +267,7 @@ class Scorecard(Base):
 
 class IncrementBand(Base):
     __tablename__ = "increment_bands"
-    id            = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id            = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     cycle_id      = Column(UUID(as_uuid=True), ForeignKey("performance_cycles.id", ondelete="CASCADE"), nullable=False)
     band_name     = Column(String(50), nullable=False)
     min_score     = Column(Numeric(4, 2), nullable=False)
@@ -279,7 +279,7 @@ class IncrementBand(Base):
 
 class BellCurveTarget(Base):
     __tablename__ = "bell_curve_targets"
-    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     cycle_id        = Column(UUID(as_uuid=True), ForeignKey("performance_cycles.id", ondelete="CASCADE"), nullable=False)
     department_id   = Column(UUID(as_uuid=True), ForeignKey("departments.id"))
     band_name       = Column(String(50), nullable=False)
@@ -288,7 +288,7 @@ class BellCurveTarget(Base):
 
 class Notification(Base):
     __tablename__ = "notifications"
-    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     user_id         = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     title           = Column(String(200), nullable=False)
     body            = Column(Text, nullable=False)
@@ -300,7 +300,7 @@ class Notification(Base):
 
 class Group(Base):
     __tablename__ = "groups"
-    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     name        = Column(String(100), nullable=False)
     description = Column(Text)
     cycle_id    = Column(UUID(as_uuid=True), ForeignKey("performance_cycles.id"), nullable=True)
@@ -313,7 +313,7 @@ class Group(Base):
 
 class GroupMember(Base):
     __tablename__ = "group_members"
-    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     group_id   = Column(UUID(as_uuid=True), ForeignKey("groups.id", ondelete="CASCADE"), nullable=False)
     user_id    = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     added_by   = Column(UUID(as_uuid=True), ForeignKey("users.id"))
@@ -325,7 +325,7 @@ class GroupMember(Base):
 
 class CustomRole(Base):
     __tablename__ = "custom_roles"
-    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     name        = Column(String(100), nullable=False, unique=True)
     description = Column(Text)
     is_system   = Column(Boolean, default=False)
@@ -338,7 +338,7 @@ class CustomRole(Base):
 
 class RolePermission(Base):
     __tablename__ = "role_permissions"
-    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     role_id    = Column(UUID(as_uuid=True), ForeignKey("custom_roles.id", ondelete="CASCADE"), nullable=False)
     permission = Column(String(100), nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
@@ -348,7 +348,7 @@ class RolePermission(Base):
 
 class UserRole(Base):
     __tablename__ = "user_roles"
-    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("uuid_generate_v4()"))
     user_id     = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     role_id     = Column(UUID(as_uuid=True), ForeignKey("custom_roles.id", ondelete="CASCADE"), nullable=False)
     assigned_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
