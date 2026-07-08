@@ -510,31 +510,33 @@ async def run_schema_and_seed():
             cr_count = await conn.fetchval("SELECT COUNT(*) FROM custom_roles")
             print(f"==> RBAC: custom_roles count = {cr_count}")
 
-            if cr_count == 0:
-                print("==> RBAC: custom_roles is empty — seeding roles + permissions...")
+            # Diagnostic — check what's in custom_roles table
+            before = await conn.fetchval("SELECT COUNT(*) FROM custom_roles")
+            print(f"==> DIAG: Before RBAC_SEED_ROLES — custom_roles count = {before}")
+
+            # Run the seed
+            try:
                 await conn.execute(RBAC_SEED_ROLES)
+                print("==> DIAG: RBAC_SEED_ROLES executed without exception")
+            except Exception as e:
+                print(f"==> DIAG: RBAC_SEED_ROLES raised: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
 
-                # Verify the seed populated the two role tables
-                cr_after = await conn.fetchval("SELECT COUNT(*) FROM custom_roles")
-                rp_after = await conn.fetchval("SELECT COUNT(*) FROM role_permissions")
-                print(f"==> RBAC: seeded custom_roles={cr_after} "
-                      f"role_permissions={rp_after}")
+            # Check what got inserted
+            after_roles = await conn.fetchval("SELECT COUNT(*) FROM custom_roles")
+            after_perms = await conn.fetchval("SELECT COUNT(*) FROM role_permissions")
+            print(f"==> DIAG: After RBAC_SEED_ROLES — custom_roles={after_roles}, role_permissions={after_perms}")
 
-                # Confirm all 5 system roles exist with their permission counts
-                roles = await conn.fetch("""
-                    SELECT r.name, COUNT(rp.id) AS perm_count
-                    FROM custom_roles r
-                    LEFT JOIN role_permissions rp ON rp.role_id = r.id
-                    WHERE r.is_system = TRUE
-                    GROUP BY r.name
-                    ORDER BY r.name
-                """)
-                for row in roles:
-                    print(f"==> RBAC role seeded: {row['name']} "
-                          f"({row['perm_count']} permissions)")
-            else:
-                print(f"==> RBAC: custom_roles already has {cr_count} rows — "
-                      f"skipping role/permission seed.")
+            # Try a raw insert to test if the table is writable
+            try:
+                await conn.execute("INSERT INTO custom_roles (name, description, is_system) VALUES ('TEST_ROLE', 'test', TRUE) ON CONFLICT (name) DO NOTHING")
+                test_count = await conn.fetchval("SELECT COUNT(*) FROM custom_roles WHERE name = 'TEST_ROLE'")
+                print(f"==> DIAG: Manual test insert result — TEST_ROLE exists: {test_count > 0}")
+                # Clean up
+                await conn.execute("DELETE FROM custom_roles WHERE name = 'TEST_ROLE'")
+            except Exception as e:
+                print(f"==> DIAG: Manual insert failed: {type(e).__name__}: {e}")
 
         except Exception as rbac_e:
             import traceback
