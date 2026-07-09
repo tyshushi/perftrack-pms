@@ -64,11 +64,13 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div style={{ marginTop:16, padding:12, background:'#f9f9f7', borderRadius:8, fontSize:12, color:'#666' }}>
-          <div style={{ fontWeight:500, marginBottom:4 }}>Demo accounts</div>
-          <div>staff@pms.local · manager@pms.local</div>
-          <div>hod@pms.local · hradmin@pms.local</div>
-          <div style={{ marginTop:2, color:'#aaa' }}>All passwords: <code>demo1234</code></div>
+        <div style={{ textAlign:'center', marginTop:16 }}>
+          <span
+            onClick={() => navigate('/forgot-password')}
+            style={{ fontFamily:"'Inter', sans-serif", fontWeight:300, fontSize:12, color:'#6b6b6b', cursor:'pointer' }}
+          >
+            Forgot password?
+          </span>
         </div>
       </div>
     </div>

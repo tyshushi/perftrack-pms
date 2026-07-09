@@ -30,6 +30,10 @@ export const authApi = {
     api.post('/auth/login', new URLSearchParams({ username: email, password }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }),
   me: () => api.get('/auth/me'),
+  requestPasswordReset: (email: string) => api.post('/auth/request-password-reset', { email }),
+  verifyResetToken: (token: string) => api.get('/auth/verify-reset-token', { params: { token } }),
+  resetPassword: (token: string, newPassword: string) =>
+    api.post('/auth/reset-password', { token, new_password: newPassword }),
 };
 
 export const cyclesApi = {
