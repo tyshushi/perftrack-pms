@@ -1,20 +1,23 @@
 """
-Auth routes: login, refresh, me
+Auth routes: login, refresh, me, password reset
 """
+import hashlib
 import logging
+import secrets
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, func, or_, text
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Any, Dict
 
 from app.db.session import get_db
 from app.core.security import (
-    verify_password, create_access_token, create_refresh_token, get_current_user
+    verify_password, hash_password, create_access_token, create_refresh_token, get_current_user
 )
 from app.models.user import User, UserRole, CustomRole, RolePermission
+from app.services import email_service
 
 router = APIRouter()
 log = logging.getLogger("auth")
@@ -163,4 +166,145 @@ async def me(
         "derived_roles": derived_roles,
         "permissions":   permissions,
     }
+
+
+# ---------------------------------------------------------------------------
+# Password reset (magic link)
+# ---------------------------------------------------------------------------
+
+RESET_URL_BASE = "https://tyshushi.github.io/perftrack-pms/reset-password"
+RESET_TOKEN_TTL_MINUTES = 15
+RESET_RATE_LIMIT_PER_HOUR = 3
+MIN_PASSWORD_LENGTH = 6
+
+GENERIC_RESET_MESSAGE = "If the email exists, a reset link has been sent."
+
+
+class PasswordResetRequest(BaseModel):
+    email: str
+
+
+class PasswordResetPayload(BaseModel):
+    token: str
+    new_password: str
+
+
+def _hash_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+@router.post("/request-password-reset")
+async def request_password_reset(
+    body: PasswordResetRequest,
+    db:   AsyncSession = Depends(get_db),
+):
+    """Always returns 200 with a generic message to avoid email enumeration."""
+    email = (body.email or "").strip().lower()
+    if not email:
+        return {"message": GENERIC_RESET_MESSAGE}
+
+    result = await db.execute(text("""
+        SELECT id, email, full_name, is_active
+        FROM users WHERE lower(email) = :email
+    """), {"email": email})
+    row = result.first()
+
+    if not row or not row.is_active:
+        return {"message": GENERIC_RESET_MESSAGE}
+
+    user = {"id": row.id, "email": row.email, "full_name": row.full_name}
+
+    # Rate limit: max N requests per email per hour.
+    recent = await db.execute(text("""
+        SELECT COUNT(*) FROM password_reset_tokens
+        WHERE user_id = :uid AND created_at > NOW() - INTERVAL '1 hour'
+    """), {"uid": str(user["id"])})
+    if (recent.scalar() or 0) >= RESET_RATE_LIMIT_PER_HOUR:
+        log.warning("Password reset rate limit hit for user %s", user["id"])
+        return {"message": GENERIC_RESET_MESSAGE}
+
+    # Invalidate any older unused tokens for this user.
+    await db.execute(text("""
+        DELETE FROM password_reset_tokens
+        WHERE user_id = :uid AND used_at IS NULL
+    """), {"uid": str(user["id"])})
+
+    # Generate + store a fresh token (only the hash is persisted).
+    token = secrets.token_urlsafe(32)
+    token_hash = _hash_reset_token(token)
+    expires_at = datetime.utcnow() + timedelta(minutes=RESET_TOKEN_TTL_MINUTES)
+
+    await db.execute(text("""
+        INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+        VALUES (:uid, :token_hash, :expires_at)
+    """), {"uid": str(user["id"]), "token_hash": token_hash, "expires_at": expires_at})
+
+    reset_url = f"{RESET_URL_BASE}?token={token}"
+    try:
+        await email_service.notify_password_reset(db, user, reset_url)
+    except Exception as e:
+        log.error("Failed to send password reset email: %s", e)
+
+    return {"message": GENERIC_RESET_MESSAGE}
+
+
+@router.get("/verify-reset-token")
+async def verify_reset_token(
+    token: str,
+    db:    AsyncSession = Depends(get_db),
+):
+    """Check whether a reset token is valid without consuming it."""
+    token_hash = _hash_reset_token((token or "").strip())
+    result = await db.execute(text("""
+        SELECT id FROM password_reset_tokens
+        WHERE token_hash = :token_hash
+          AND used_at IS NULL
+          AND expires_at > NOW()
+        LIMIT 1
+    """), {"token_hash": token_hash})
+
+    if result.first():
+        return {"valid": True, "message": "Token is valid."}
+    return {"valid": False, "message": "This reset link is invalid or has expired."}
+
+
+@router.post("/reset-password")
+async def reset_password(
+    body: PasswordResetPayload,
+    db:   AsyncSession = Depends(get_db),
+):
+    token = (body.token or "").strip()
+    token_hash = _hash_reset_token(token)
+
+    result = await db.execute(text("""
+        SELECT id, user_id FROM password_reset_tokens
+        WHERE token_hash = :token_hash
+          AND used_at IS NULL
+          AND expires_at > NOW()
+        LIMIT 1
+    """), {"token_hash": token_hash})
+    reset_row = result.first()
+
+    if not reset_row:
+        raise HTTPException(400, "This reset link is invalid or has expired.")
+
+    if len(body.new_password or "") < MIN_PASSWORD_LENGTH:
+        raise HTTPException(400, f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
+
+    new_hash = hash_password(body.new_password)
+
+    await db.execute(text("""
+        UPDATE users SET hashed_password = :pw WHERE id = :uid
+    """), {"pw": new_hash, "uid": str(reset_row.user_id)})
+
+    # Mark this token used, and clear any other outstanding tokens.
+    await db.execute(text("""
+        UPDATE password_reset_tokens SET used_at = NOW() WHERE id = :id
+    """), {"id": str(reset_row.id)})
+    await db.execute(text("""
+        DELETE FROM password_reset_tokens
+        WHERE user_id = :uid AND used_at IS NULL
+    """), {"uid": str(reset_row.user_id)})
+
+    return {"message": "Password reset successfully. You can now log in."}
 

@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import { useAuthStore } from './store/auth';
 import { settingsApi } from './api/client';
 import LoginPage from './pages/LoginPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import Layout from './components/common/Layout';
 import KpiSettingPage from './pages/KpiSettingPage';
 import SelfEvalPage from './pages/SelfEvalPage';
@@ -75,6 +77,8 @@ export default function App() {
       <BrowserRouter basename="/perftrack-pms">
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
             <Route index element={<Navigate to="/scorecard/setting" replace />} />
             <Route path="scorecard/setting"        element={<KpiSettingPage />} />

@@ -1,7 +1,7 @@
 import os
 import json
 import resend
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import uuid4
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -387,6 +387,36 @@ async def notify_reminder(db, employee, pending_actions: list):
         template_name='reminder',
         template_data={'action_count': len(pending_actions)},
         idempotency_key=f"reminder_{employee['id']}_{datetime.now().strftime('%Y%m%d')}",  # one per day max
+    )
+
+
+async def notify_password_reset(db, user, reset_url):
+    expires_time = (datetime.utcnow() + timedelta(minutes=15)).strftime('%b %d, %Y at %H:%M UTC')
+    content = f"""
+<p style="font-size:15px;color:#1a1a1a;margin-bottom:16px;">Hi {user['full_name'].split()[0]},</p>
+<p style="font-size:14px;color:#1a1a1a;line-height:1.6;margin-bottom:16px;">
+  We received a request to reset your PerformRight password.
+</p>
+<p style="font-size:14px;color:#1a1a1a;line-height:1.6;margin-bottom:16px;">
+  Click the button below to set a new password. This link will expire in 15 minutes.
+</p>
+{button('Reset Password', reset_url)}
+<p style="font-size:13px;color:#6b6b6b;line-height:1.6;margin-top:24px;">
+  If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.
+</p>
+<p style="font-size:12px;color:#9a9a9a;line-height:1.5;margin-top:16px;">
+  For security, this link can only be used once and will expire on {expires_time}.
+</p>
+"""
+    html = base_email_html(content, "Password reset requested")
+    return await send_email(
+        db=db,
+        to_email=user['email'],
+        subject="Reset your PerformRight password",
+        html_content=html,
+        template_name='password_reset',
+        template_data={'user_id': str(user['id'])},
+        # Do NOT use idempotency key for reset - each request should send fresh
     )
 
 
